@@ -1,0 +1,62 @@
+# SITL 整合測試:mission_exec 對 PX4 SITL(headless Gazebo)跑 demo_square 任務全程,
+# 驗證 RECEIVED → UPLOADED → IN_PROGRESS → COMPLETED 完整序列。
+#
+# 刻意不掛 pull_request:SITL 需要實時模擬(單跑約 5-8 分鐘)且穩定性未知,
+# 先以 nightly 觀察,連續穩定約兩週後再評估升為 PR gate。
+#
+# 已知限制:PX4_SIM_SPEED_FACTOR 在此 image 不易注入(啟動腳本未透傳),
+# 先用實時模擬;若之後要加速,需換基底 image 或自建。
+name: sitl-integration
+
+on:
+  schedule:
+    - cron: "30 18 * * *" # UTC 18:30 = 台北 02:30
+  workflow_dispatch:
+
+jobs:
+  mission-sitl:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 啟動 PX4 SITL(背景容器)
+        # 此 image 會主動把 MAVLink 封包送往 docker gateway(即 host),
+        # host 端客戶端用 udpin://0.0.0.0:14540 監聽即可收到——
+        # 不需要也不應該做 -p UDP 埠映射(方向相反,映射反而無效)。
+        # 預設 bridge 網路即可,毋須 --network host(本機與 runner 皆實測可用)。
+        run: docker run --rm -d --name px4-sitl jonasvautherin/px4-gazebo-headless:1.15.4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: 安裝 mission_exec 依賴 + proto 生成碼套件
+        run: |
+          pip install -r onboard/mission_exec/requirements.txt
+          pip install -e interfaces/proto/gen/python
+
+      - name: 等待 SITL EKF/GPS lock(實測約 40 秒,留餘裕)
+        run: sleep 60
+
+      - name: 執行 demo_square 任務
+        # mission_exec 無 pyproject(不可 pip install -e),對齊 README 跑法:
+        # 於套件目錄內以 python -m 執行。timeout 300 為單次任務上限,
+        # 早於 job 層 timeout-minutes 觸發以便留時間傾印 log。
+        working-directory: onboard/mission_exec
+        run: |
+          set -o pipefail
+          timeout 300 python -m mission_exec.main \
+            --mission missions/demo_square.json --drone-id ci-1 \
+            | tee /tmp/mission-output.log
+
+      - name: 斷言任務完成(STATE_COMPLETED)
+        run: grep "STATE_COMPLETED" /tmp/mission-output.log
+
+      - name: 失敗時傾印 SITL log
+        if: failure()
+        run: docker logs px4-sitl --tail 100 || true
+
+      - name: 清理 SITL 容器
+        if: always()
+        run: docker rm -f px4-sitl || true
