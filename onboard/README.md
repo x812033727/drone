@@ -20,6 +20,7 @@ onboard/
 
 - Jetson Orin NX / JetPack 6(Ubuntu 22.04)+ ROS 2 Humble
 - 與 PX4 通訊:uXRCE-DDS(Ethernet);Phase 0 於 x86 + SITL 開發,同一套 code
+  (SITL 環境建置見 [docs/50-project/phase0/sitl-setup.md](../docs/50-project/phase0/sitl-setup.md))
 - 安全邊界:感知模組只對 PX4 發**速度限制與 setpoint 修正**,絕不發姿態級指令;
   任一 node 崩潰 → obstacle_guard 進入保守限速模式,不影響飛行
 
