@@ -1,0 +1,64 @@
+// 機-雲任務契約 v0.1.0
+//
+// 傳輸:
+//   - MissionProgress:MQTT 主題 `fleet/{drone_id}/mission/progress`(事件觸發,QoS 1)
+//   - MissionPlan:預留 MQTT 主題 `fleet/{drone_id}/cmd/mission`(Phase 0 不實作下行)
+// 編碼:Phase 0 使用 proto3 JSON mapping;Phase 1 切換 binary。
+syntax = "proto3";
+
+package drone.v1;
+
+// 單一航點(相對高度座標系,對應 MAVSDK MissionItem 子集)。
+message Waypoint {
+  // 緯度,度(WGS84)。
+  double lat_deg = 1;
+  // 經度,度(WGS84)。
+  double lon_deg = 2;
+  // 相對起飛點高度,公尺。
+  float rel_alt_m = 3;
+  // 抵達後停留時間,秒(0 = 不停留)。
+  float hold_s = 4;
+  // 前往此航點的巡航速度,公尺/秒(0 = 使用預設)。
+  float speed_ms = 5;
+}
+
+// 一次任務的完整航線計畫。
+message MissionPlan {
+  // 任務唯一識別碼(雲端派遣時產生)。
+  string mission_id = 1;
+  // 依序執行的航點清單。
+  repeated Waypoint waypoints = 2;
+  // 完成最後一個航點後是否自動返航(RTL)。
+  bool rtl_after_last = 3;
+}
+
+// 任務執行進度事件(狀態變化或航點推進時發布)。
+message MissionProgress {
+  // 任務執行狀態機。
+  enum State {
+    STATE_UNSPECIFIED = 0;
+    // 機上已收到任務計畫。
+    STATE_RECEIVED = 1;
+    // 任務已上傳至飛控。
+    STATE_UPLOADED = 2;
+    // 任務執行中。
+    STATE_IN_PROGRESS = 3;
+    // 任務全部航點完成。
+    STATE_COMPLETED = 4;
+    // 任務失敗(上傳失敗、中止、失效保護接管等)。
+    STATE_FAILED = 5;
+  }
+
+  // 對應 MissionPlan.mission_id。
+  string mission_id = 1;
+  // 回報機身識別碼(同 MQTT 主題中的 {drone_id})。
+  string drone_id = 2;
+  // 目前執行中的航點索引(0-based)。
+  int32 current_item = 3;
+  // 航點總數。
+  int32 total_items = 4;
+  // 目前狀態。
+  State state = 5;
+  // 事件時間,Unix epoch 毫秒(UTC)。
+  int64 unix_time_ms = 6;
+}

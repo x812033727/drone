@@ -1,0 +1,36 @@
+// 機-雲遙測契約 v0.1.0
+//
+// 傳輸:MQTT 主題 `fleet/{drone_id}/telemetry`,1 Hz,QoS 1。
+// 編碼:Phase 0 使用 proto3 JSON mapping(除錯友善);Phase 1 切換 binary。
+syntax = "proto3";
+
+package drone.v1;
+
+// 機上 drone-agent 每秒彙整一筆的遙測摘要。
+// 欄位來源對應 MAVSDK telemetry(見 tools/telemetry_monitor.py)。
+message TelemetrySummary {
+  // 機隊內唯一機身識別碼(同 MQTT 主題中的 {drone_id})。
+  string drone_id = 1;
+  // 取樣時間,Unix epoch 毫秒(UTC)。
+  int64 unix_time_ms = 2;
+  // 緯度,度(WGS84)。
+  double lat_deg = 3;
+  // 經度,度(WGS84)。
+  double lon_deg = 4;
+  // 相對起飛點高度,公尺。
+  float rel_alt_m = 5;
+  // 航向,度(0-360,北為 0)。
+  float heading_deg = 6;
+  // 地速,公尺/秒。
+  float ground_speed_ms = 7;
+  // 飛行模式字串(PX4/MAVSDK FlightMode,如 "HOLD"、"MISSION")。
+  string flight_mode = 8;
+  // 是否已解鎖。
+  bool armed = 9;
+  // 電池電壓,伏特。
+  float battery_v = 10;
+  // 電池剩餘電量,百分比(0-100)。
+  float battery_pct = 11;
+  // 健康總評:MAVSDK health 各項(可解鎖/定位/校準)全部通過為 true。
+  bool health_all_ok = 12;
+}

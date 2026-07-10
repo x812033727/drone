@@ -1,0 +1,38 @@
+name: proto
+
+on:
+  pull_request:
+    paths:
+      - "interfaces/**"
+      - ".github/workflows/proto.yml"
+
+jobs:
+  lint-and-codegen:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 安裝 buf(官方 release binary,版本固定)
+        env:
+          BUF_VERSION: 1.71.0
+        run: |
+          curl -sSL -o /usr/local/bin/buf \
+            "https://github.com/bufbuild/buf/releases/download/v${BUF_VERSION}/buf-Linux-x86_64"
+          chmod +x /usr/local/bin/buf
+          buf --version
+
+      - name: buf lint
+        working-directory: interfaces/proto
+        run: buf lint
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: 安裝 codegen 工具鏈(固定版 grpcio-tools)
+        run: pip install -r interfaces/proto/requirements-dev.txt
+
+      - name: 重跑 codegen,驗證生成碼與 schema 同步
+        run: |
+          bash interfaces/proto/generate.sh
+          git diff --exit-code interfaces/proto/gen/

@@ -1,0 +1,2 @@
+# proto codegen 工具鏈 — 版本固定,確保本地與 CI 產出 byte-for-byte 一致
+grpcio-tools==1.82.1

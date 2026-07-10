@@ -1,0 +1,17 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "drone-proto"
+version = "0.1.0"
+description = "機-雲介面契約(drone.v1)Protobuf Python 生成碼"
+requires-python = ">=3.9"
+dependencies = [
+  "protobuf>=5.26,<8",
+]
+
+[tool.setuptools]
+# import 路徑刻意與 proto package 一致(drone.v1),
+# 生成碼之間的 cross-import 才能直接運作
+packages = ["drone", "drone.v1"]
