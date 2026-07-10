@@ -6,9 +6,8 @@
 
 from datetime import datetime, timezone
 
-from google.protobuf import json_format
-
 from drone.v1 import mission_pb2, telemetry_pb2
+from google.protobuf import json_format
 
 TELEMETRY_COLUMNS = (
     "time",
