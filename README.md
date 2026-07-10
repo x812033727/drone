@@ -37,6 +37,7 @@
 - [機載電腦(ROS 2 / AI)](docs/20-software/companion-computer.md)
 - [地面站(GCS)](docs/20-software/ground-station.md)
 - [雲端機隊管理](docs/20-software/cloud-fleet.md)
+- [資安架構](docs/20-software/security.md)
 
 ### 30 結構
 - [機體結構設計](docs/30-structure/airframe-design.md)
