@@ -1,0 +1,27 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  lint-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      - name: 安裝工具
+        run: pip install ruff pytest
+
+      - name: Ruff 靜態檢查
+        run: ruff check .
+
+      - name: Pytest
+        # 目前 repo 尚無測試,pytest 收不到測試會回 exit code 5,暫予容忍;
+        # 首批測試落地後,請把這行改回單純的 `pytest -q`。
+        run: pytest -q || [ $? -eq 5 ]
