@@ -20,6 +20,7 @@
 ### 總覽與需求
 - [00 產品總覽與平台策略](docs/00-overview.md)
 - [01 需求規格(四場景)](docs/01-requirements.md)
+- [02 測試與驗證總計畫(V&V)](docs/02-verification-validation.md)
 
 ### 10 硬體
 - [系統架構(方塊圖、電源樹、資料流)](docs/10-hardware/system-architecture.md)
