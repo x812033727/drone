@@ -84,7 +84,7 @@
 
 ## 6. 電池安全
 
-- **認證前置**:UN38.3(REQ-SAF-03);過充/過放/短路/針刺濫用測試委外執行([propulsion §4](10-hardware/propulsion.md) 電池濫用列)。
+- **認證前置**:UN38.3(REQ-SAF-03);過充/過放/短路/針刺濫用測試委外執行([propulsion §9](10-hardware/propulsion.md) 電池濫用列)。
 - **熱失控傳播隔離(pack 設計要求,交付 pack 廠)**:電芯間隔熱、洩壓路徑避開相鄰電芯與航電艙、單電芯熱失控不得引燃相鄰電芯;BMS 全程監控電芯溫度並於異常時觸發 GCS 緊急告警。
 - **充電/儲運規範**(引 phase0 SOP,[build-and-first-flight §2/§7](50-project/phase0/build-and-first-flight.md)):上電前電壓與外觀(膨脹)檢查;飛行後放電至儲存電壓(3.80–3.85 V/cell);充電不離人、遠離可燃物;運輸依 UN38.3 + 標籤([certification-roadmap §4](40-regulatory/certification-roadmap.md))。
 

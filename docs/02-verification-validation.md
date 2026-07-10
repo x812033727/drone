@@ -1,6 +1,6 @@
 # 02 測試與驗證總計畫(V&V)
 
-> rev 1 · 2026-07。本文件定義全案的驗證方法、測試 ID 體系與需求追溯矩陣(RTM),銜接 [01-requirements.md](01-requirements.md)(rev 2 起全需求編 ID)與各階段退出條件([50-project/roadmap.md](50-project/roadmap.md))。子系統既有測試表(韌體 [firmware.md §4](20-software/firmware.md)、動力 [propulsion.md §4](10-hardware/propulsion.md))收編為本體系的測試項,細節仍在原文件維護。
+> rev 1 · 2026-07。本文件定義全案的驗證方法、測試 ID 體系與需求追溯矩陣(RTM),銜接 [01-requirements.md](01-requirements.md)(rev 2 起全需求編 ID)與各階段退出條件([50-project/roadmap.md](50-project/roadmap.md))。子系統既有測試表(韌體 [firmware.md §4](20-software/firmware.md)、動力 [propulsion.md §9](10-hardware/propulsion.md))收編為本體系的測試項,細節仍在原文件維護。
 
 ## 1. V&V 策略金字塔
 
@@ -9,7 +9,7 @@
 | 層 | 內容 | 節奏 | 主要證據 |
 |----|------|------|----------|
 | L1 SITL 回歸 | 任務流程與失效保護場景腳本(見 phase0/sitl-setup.md 場景表),Phase 1 起進 CI nightly | 每 PR / nightly | CI 紀錄 |
-| L2 HITL / 台架 | 實體飛控迴圈、推力台、振動台架(propulsion §4 測試項) | 每硬體 rev | 台架報告 |
+| L2 HITL / 台架 | 實體飛控迴圈、推力台、振動台架(propulsion §9 測試項) | 每硬體 rev | 台架報告 |
 | L3 繫留 / 場地受限 | 新機型、新失效保護場景第一次實機化 | 進實飛前 | 繫留紀錄 + ULog |
 | L4 實飛包線 | 架次制飛測(Phase 0 = F01–F20,見 [flight-test-plan.md](50-project/phase0/flight-test-plan.md);Phase 1 起為 EVT 架次) | 每飛行日 | ULog + ulog_report + 架次紀錄 |
 | L5 耐久與統計 | 飛行小時累積、MTBF 統計、DVT/HALT | Phase 1–2 | 可靠度報告 |
@@ -30,14 +30,14 @@
 | REQ-NAV-02 | VT-NAV-02 | L1 場景 + L3 繫留 + L4(遮蔽劣化 = F12) | 0→1 | 降級順序正確、傾角 ≤ 30° |
 | REQ-NAV-03 | VT-NAV-03 | L1 + L4(F01/F05/F06/F07) | 0 | 續飛點誤差 ≤ 5 m |
 | REQ-NAV-04 | VT-NAV-04 | L1 全場景 + L4(F08–F11) | 0 | 各觸發行為與 [03-safety 失效保護矩陣](03-safety-analysis.md) 一致 |
-| REQ-NAV-05 | VT-NAV-05 | L3 繫留關單軸 + L4 開闊場(propulsion §4) | 2 | 姿態峰值 < 30° 受控落地 |
+| REQ-NAV-05 | VT-NAV-05 | L3 繫留關單軸 + L4 開闊場(propulsion §9) | 2 | 姿態峰值 < 30° 受控落地 |
 | REQ-COM-01 | VT-COM-01 | L4 距離梯度實測(1/2/4/8 km) | 1 | 8 km 封包成功率 ≥ 99% |
 | REQ-COM-02 | VT-COM-02 | L4 主鏈路人工切斷(F 系列延伸) | 1 | ≤ 3 s 切換、任務不中斷 |
 | REQ-COM-03 | VT-COM-03 | L2 端到端延遲儀測 + L4 | 1 | < 250 / 500 ms |
 | REQ-COM-04 | VT-COM-04 | L2 協議一致性(ASTM F3411) | 3 | 認證實驗室報告 |
 | REQ-SAF-01 | VT-SAF-01 | L2 逐感測器注錯 + L1 投票邏輯回歸 | 1 | 單感測器失效零影響 |
 | REQ-SAF-02 | VT-SAF-02 | L2 寫入中斷電 ×20 | 0→1 | 已寫入資料零丟失(F 架次全程 ULog 為佐證) |
-| REQ-SAF-03 | VT-SAF-03 | L2 BMS 功能 + 委外濫用測試(UN38.3 前置) | 1 | 見 propulsion §4 電池濫用列 |
+| REQ-SAF-03 | VT-SAF-03 | L2 BMS 功能 + 委外濫用測試(UN38.3 前置) | 1 | 見 propulsion §9 電池濫用列 |
 | REQ-SAF-04 | VT-SAF-04 | L5 機隊統計(Phase 2 試點 500 h) | 2 | MTBF ≥ 300 h(口徑見 §7) |
 | REQ-OPS-01 | VT-OPS-01 | 秒表實測 ×10 人次 | 1 | 中位數達標 |
 | REQ-OPS-02 | VT-OPS-02 | 維修演練(拆換四大件) | 1 | 每件 < 30 min |
