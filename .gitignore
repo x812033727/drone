@@ -1,0 +1,25 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# ROS 2
+build/
+install/
+log/
+
+# 飛行日誌與大檔(正式歸檔走雲端/LFS)
+*.ulg
+*.bag
+*.mcap
+
+# EDA / CAD 暫存
+*.kicad_pcb-bak
+*.bak
+~$*
+
+# IDE / OS
+.vscode/
+.idea/
+.DS_Store

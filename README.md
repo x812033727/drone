@@ -49,6 +49,20 @@
 - [預算估算](docs/50-project/budget.md)
 - [團隊組成](docs/50-project/team.md)
 
+## Repo 結構
+
+| 目錄 | 內容 | 狀態 |
+|------|------|------|
+| [`docs/`](docs/00-overview.md) | 完整規劃文件(本階段主要產出) | ✅ rev 1 |
+| [`firmware/`](firmware/README.md) | PX4 客製韌體、FC-H7 板級支援 | 骨架 + SITL 指引 |
+| [`onboard/`](onboard/README.md) | Jetson / ROS 2 機載軟體、drone-agent | 骨架 |
+| [`gcs/`](gcs/README.md) | 地面站(QGC 客製 → 自研) | 骨架 |
+| [`cloud/`](cloud/README.md) | 雲端機隊管理平台 | 骨架 |
+| [`interfaces/`](interfaces/README.md) | 跨端介面契約(MAVLink dialect / Protobuf) | 骨架 |
+| [`hardware/`](hardware/README.md) | 電子硬體設計(KiCad) | 骨架 |
+| [`structure/`](structure/README.md) | 機體結構 CAD / FEA | 骨架 |
+| [`tools/`](tools/README.md) | Phase 0 工具:遙測監看、ULog 分析 | ✅ 可用 |
+
 ## 開發階段速覽
 
 | 階段 | 期間 | 目標 |
