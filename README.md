@@ -50,6 +50,7 @@
 - [開發時程與里程碑(Phase 0–3)](docs/50-project/roadmap.md)
 - [預算估算](docs/50-project/budget.md)
 - [團隊組成](docs/50-project/team.md)
+- [供應鏈與製造策略](docs/50-project/supply-chain.md)
 - [Phase 0 詳細執行計畫](docs/50-project/phase0/README.md)
 - [Phase 0 採購計畫](docs/50-project/phase0/procurement.md)
 
