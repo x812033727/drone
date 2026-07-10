@@ -26,7 +26,8 @@ gantt
 - 用 **Holybro X500 V2 + Pixhawk 6X + Jetson Orin Nano 開發套件**組裝兩台開發機
 - 跑通:PX4 任務飛行、uXRCE-DDS、QGC、簡單遙測上雲、ULog 分析腳本
 - 同步:關鍵人員招募、供應商詢價、PA-1 詳細設計啟動
-- **退出條件**:開發機自動任務飛行 20 架次無事故;PA-1 規格凍結(即本 repo 文件 rev 1)
+- **退出條件**:開發機自動任務飛行 20 架次無事故;PA-1 規格凍結(即本 repo 文件修訂為 rev 2)
+- 詳細執行計畫見 [phase0/](phase0/README.md)
 
 ### Phase 1 — 平台開發(2026 Q4 – 2027 Q2,9 個月,6–8 人)
 - FC-H7 三版迭代(見 flight-controller.md);全程 Pixhawk 6X 備援雙軌
