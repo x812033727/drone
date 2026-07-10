@@ -53,6 +53,7 @@
 - [團隊組成](docs/50-project/team.md)
 - [Phase 0 詳細執行計畫](docs/50-project/phase0/README.md)
 - [Phase 0 採購計畫](docs/50-project/phase0/procurement.md)
+- [營運/售後服務](docs/50-project/operations-support.md)
 
 ## Repo 結構
 
