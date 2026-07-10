@@ -46,6 +46,8 @@
 - [ ] EMC 設計裕度(EN 55032/55035、FCC Part 15B 預掃於 rev B)
 - [ ] PB-1:降落傘介面、急停、鎖固偵測(Specific 類 SORA 減緩措施)
 
+操作風險減緩對照見 [03-safety-analysis.md](../03-safety-analysis.md)。
+
 ## 5. 認證時程與費用量級(Phase 3 預算依據)
 
 | 項目 | 時程 | 費用量級(NTD) |

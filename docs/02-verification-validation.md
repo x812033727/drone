@@ -29,7 +29,7 @@
 | REQ-NAV-01 | VT-NAV-01 | L4:RTK 實飛對測量標記(Phase 0 粗驗 = F15) | 0→1 | 水平 ±10 cm(Phase 1 用全站儀級基準) |
 | REQ-NAV-02 | VT-NAV-02 | L1 場景 + L3 繫留 + L4(遮蔽劣化 = F12) | 0→1 | 降級順序正確、傾角 ≤ 30° |
 | REQ-NAV-03 | VT-NAV-03 | L1 + L4(F01/F05/F06/F07) | 0 | 續飛點誤差 ≤ 5 m |
-| REQ-NAV-04 | VT-NAV-04 | L1 全場景 + L4(F08–F11) | 0 | 各觸發行為與 [03-safety 失效保護矩陣](03-safety-analysis.md) 一致(該文件屬 D5 批次) |
+| REQ-NAV-04 | VT-NAV-04 | L1 全場景 + L4(F08–F11) | 0 | 各觸發行為與 [03-safety 失效保護矩陣](03-safety-analysis.md) 一致 |
 | REQ-NAV-05 | VT-NAV-05 | L3 繫留關單軸 + L4 開闊場(propulsion §4) | 2 | 姿態峰值 < 30° 受控落地 |
 | REQ-COM-01 | VT-COM-01 | L4 距離梯度實測(1/2/4/8 km) | 1 | 8 km 封包成功率 ≥ 99% |
 | REQ-COM-02 | VT-COM-02 | L4 主鏈路人工切斷(F 系列延伸) | 1 | ≤ 3 s 切換、任務不中斷 |
