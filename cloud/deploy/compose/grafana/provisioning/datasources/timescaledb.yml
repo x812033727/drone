@@ -1,0 +1,17 @@
+apiVersion: 1
+
+datasources:
+  - name: TimescaleDB
+    uid: drone-tsdb
+    type: postgres
+    access: proxy
+    url: timescaledb:5432
+    user: drone
+    isDefault: true
+    jsonData:
+      database: drone
+      sslmode: disable
+      timescaledb: true
+      postgresVersion: 1600
+    secureJsonData:
+      password: $PG_PASSWORD

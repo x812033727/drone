@@ -1,0 +1,75 @@
+# Phase 0 雲端最小棧:MQTT broker + 遙測落庫 + Grafana 看板 + ingest
+# 對 cloud/README.md「Phase 0 最小目標」。宿主埠可用環境變數覆寫
+# (MQTT_PORT / PG_PORT / GRAFANA_PORT),避免與同機其他服務衝突。
+#
+# 啟動:docker compose up -d --build
+# 驗證:python tools/publish_fake_telemetry.py --mqtt-port ${MQTT_PORT:-1883} --count 10
+#       開 http://localhost:${GRAFANA_PORT:-3000} 看 fleet 看板
+
+services:
+  mosquitto:
+    image: eclipse-mosquitto:2
+    ports:
+      - "${MQTT_PORT:-1883}:1883"
+    volumes:
+      - ./mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+    healthcheck:
+      test: ["CMD", "mosquitto_sub", "-t", "$$SYS/broker/uptime", "-C", "1", "-W", "3"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  timescaledb:
+    image: timescale/timescaledb:latest-pg16
+    environment:
+      POSTGRES_USER: drone
+      POSTGRES_PASSWORD: ${PG_PASSWORD:-dronedev}
+      POSTGRES_DB: drone
+    ports:
+      - "127.0.0.1:${PG_PORT:-5432}:5432"
+    volumes:
+      - ./timescale/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+      - timescale-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U drone -d drone"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:11.4.0
+    ports:
+      - "${GRAFANA_PORT:-3000}:3000"
+    environment:
+      # Phase 0 開發內網:匿名唯讀;正式部署改掉
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-dronedev}
+      PG_PASSWORD: ${PG_PASSWORD:-dronedev}
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+    depends_on:
+      timescaledb:
+        condition: service_healthy
+    restart: unless-stopped
+
+  ingest:
+    build:
+      # context 是 repo 根:Dockerfile 需要 COPY interfaces/proto/gen/python
+      context: ../../..
+      dockerfile: cloud/ingest/Dockerfile
+    environment:
+      MQTT_HOST: mosquitto
+      MQTT_PORT: "1883"
+      PG_DSN: postgresql://drone:${PG_PASSWORD:-dronedev}@timescaledb:5432/drone
+    depends_on:
+      mosquitto:
+        condition: service_healthy
+      timescaledb:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  timescale-data:
