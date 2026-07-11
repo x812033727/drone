@@ -15,6 +15,7 @@ pytest -q             # 全部單元測試(testpaths=onboard/cloud/tools,不需 
 
 # 雲端棧(本機驗證用隔離埠,勿用預設埠——此機可能跑著其他服務)
 cd cloud/deploy/compose && MQTT_PORT=31883 PG_PORT=35432 GRAFANA_PORT=33100 \
+  RTSP_PORT=38554 PLAYBACK_PORT=39996 MTX_API_PORT=39997 \
   docker-compose -p <獨特名> up -d --build --wait   # 結束必 down -v
 
 # SITL(headless,不需編譯 PX4)

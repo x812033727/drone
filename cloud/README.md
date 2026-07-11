@@ -23,3 +23,17 @@ cloud/
   任務下行以 CLI 工具([tools/dispatch_mission.py](../tools/dispatch_mission.py) 發
   `fleet/{drone_id}/cmd/mission`)代替 mission-svc(Phase 0 內網豁免:anonymous
   broker、無 TLS/ACL,見 [security.md §8](../docs/20-software/security.md))
+
+## 影像錄存回放(S21,Phase 0 邊界)
+
+compose 內的 `mediamtx` 服務(官方 image v1.12.3)常駐收 RTSP 推流並
+fMP4 錄存(1 s part / 15 min 分段 / 72 h 自動清理,volume
+`mediamtx-recordings`),回放走 MediaMTX playback API
+(`GET :9996/list?path=stream`、`GET :9996/get?path=stream&start=…&duration=…`)。
+常駐棧只收 RTSP + 錄存 + 回放(rtmp/hls/srt/webrtc 全關);回放/管理 API
+只綁 loopback(內網豁免同上)。WebRTC 直播上雲(media/ SFU)是 Phase 1。
+煙霧驗證:[deploy/compose/video_smoke.sh](deploy/compose/video_smoke.sh)
+(本地/CI 共用;本地請帶隔離埠 `RTSP_PORT/PLAYBACK_PORT/MTX_API_PORT`
+與獨特 `COMPOSE_PROJECT`)。機上推流端見
+[onboard/video_pipeline](../onboard/video_pipeline/README.md)
+(`sender.py --source test|v4l2:/dev/videoN`)。
