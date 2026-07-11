@@ -62,6 +62,8 @@
 
 ## 3. 架次紀錄模板
 
+飛行後以 [tools/flight_ops](../../../tools/flight_ops/README.md) 的 `archive_flight.py` 歸檔:自動拷 ULog、跑 `ulog_report.py`、依本模板生成紀錄底稿並提示四件套缺項。
+
 | 欄位 | 內容 |
 |------|------|
 | 架次編號 / 日期 / 機號 | F__ / 2026-__-__ / DEV-0_ |
