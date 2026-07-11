@@ -70,7 +70,7 @@
 |--------|-------------------|----------|
 | RC 失聯 | `NAV_RCL_ACT=2`(RTL)、`COM_RC_LOSS_T=0.5 s` | F09 |
 | 數傳 + 4G 全失聯 | `NAV_DLL_ACT=0`(Phase 0 以 RC 為主鏈路,僅警告不動作,與本表「警告」格一致;BVLOS 格為 †) | —(Phase 1 起) |
-| 低電量 Low/Critical/Emergency | `COM_LOW_BAT_ACT=2` + 門檻 0.20 / 0.10 / 0.05 | F10 |
+| 低電量 Low/Critical/Emergency | `COM_LOW_BAT_ACT=3`(Critical 返航、Emergency 降落;v1.15 的 2=Land mode,SITL 實測修正)+ 門檻 0.20 / 0.10 / 0.05 | F10 |
 | GPS 劣化 | 無專屬參數(EKF 降級行為),Phase 0 僅遮蔽劣化不做全拒止 | F12 |
 | GeoFence 越界 | `GF_ACTION=3`(RTL)、圍欄 500 m / 100 m | F11 |
 | Jetson 失聯 | `COM_OBL_RC_ACT=0`(Offboard 失聯且 RC 在手 → 交還 Position) | —(W8 起 DEV-02 驗證) |
