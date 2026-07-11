@@ -4,6 +4,7 @@
 |------|------|
 | `telemetry_monitor.py` | 連上 PX4(SITL/實機)即時列印模式、電池、位置、健康狀態——鏈路煙霧測試 |
 | `ulog_report.py` | 飛行後 ULog 摘要與異常規則(振動、電壓、GPS 品質)——log-svc 的雛形 |
+| `sitl_scenarios/` | 失效保護 SITL 場景回歸(F09–F12,注入 + 斷言;用法見其 README) |
 
 ```bash
 python -m venv .venv && source .venv/bin/activate
