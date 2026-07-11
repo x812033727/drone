@@ -1,0 +1,95 @@
+# drone_agent — 遙測上雲常駐服務(Phase 0 雛形)
+
+機載電腦上的**非 ROS** 常駐服務:純 MAVSDK 連 PX4,把關鍵遙測彙整成
+`drone.v1.TelemetrySummary`(契約:[interfaces/proto/drone/v1/telemetry.proto](../../interfaces/proto/drone/v1/telemetry.proto)),
+以 1 Hz、QoS 1 發佈到 MQTT 主題 `fleet/{drone_id}/telemetry`。
+Phase 0 線上編碼為 proto3 JSON mapping(`mosquitto_sub` 直接可讀),Phase 1 切 binary。
+
+由 [tools/telemetry_monitor.py](../../tools/telemetry_monitor.py) 重構而來:
+各 `watch_*` 訂閱協程改為寫入共享 `TelemetryState`(只存最新快照),
+publisher 以固定頻率取樣組包 —— 純函式 `snapshot()` 與 I/O 分離,單測不需 SITL/MQTT。
+
+## 結構
+
+```
+drone_agent/
+├── state.py        # TelemetryState + MAVSDK 各流訂閱協程(position/heading/velocity/
+│                   #   flight_mode/armed/battery/health);每次更新後 touch() 記錄取樣時間
+├── publisher.py    # snapshot()/is_stale() 純函式 + publish_loop()(MQTT 斷線自動重連、
+│                   #   遙測斷流暫停上報)
+└── main.py         # CLI 進入點
+```
+
+## 跑法
+
+安裝依賴(repo 根目錄下):
+
+```bash
+pip install -r onboard/drone_agent/requirements.txt
+pip install -e interfaces/proto/gen/python        # 契約生成碼 drone-proto
+```
+
+### SITL(開發)
+
+```bash
+# 1. PX4 SITL(任一方式,offboard 埠 14540)+ 本機 mosquitto
+# 2. 於 onboard/drone_agent/ 下:
+python -m drone_agent.main --drone-id dev-1
+```
+
+### 實機(Jetson,經序列埠數傳或 Ethernet)
+
+```bash
+python -m drone_agent.main --url serial:///dev/ttyUSB0:57600 \
+    --mqtt-host <雲端 broker> --drone-id qs-0001
+```
+
+CLI 參數:`--url`(MAVSDK 連線字串,預設 `udpin://0.0.0.0:14540`)、
+`--mqtt-host`(預設 localhost)、`--mqtt-port`(預設 1883)、
+`--drone-id`(必填)、`--rate`(預設 1 Hz)、
+`--stale-timeout`(遙測斷流判定秒數,預設 5)、
+`--mavsdk-address`(`host:port`,連既有 mavsdk_server,見下)。
+
+### 同機多程序(共用 mavsdk_server)
+
+MAVSDK Python 每個 `System()` 預設會自行 spawn 一個 mavsdk_server(佔 gRPC 埠
+50051,且會綁 `--url` 的飛控埠)。同一台機器上多個 MAVSDK 程序(如 drone_agent
+與 mission_exec)併跑時,**只能一個程序 spawn,其他程序必須顯式共用**,否則後起
+的程序綁埠失敗、gRPC client 可能連上別人的 server 而不自知:
+
+```bash
+# 程序 A:自行 spawn(佔 50051 與飛控埠 14540)
+python -m drone_agent.main --drone-id dev-1
+
+# 程序 B(同機):顯式共用 A 的 server,不自行 spawn
+python -m drone_agent.main --mavsdk-address localhost:50051 --drone-id dev-1
+```
+
+給 `--mavsdk-address` 時不會啟動內嵌 server,飛控連線由既有 server 決定,
+`--url` 不生效。
+
+## 行為約定
+
+- **MQTT 斷線**:自動重連;重連期間遙測**直接丟棄,不緩存**(Phase 0 不做補傳)。
+- **尚未收到某遙測流**:對應欄位維持 proto3 預設值(0 / 空字串 / false)。
+- **`unix_time_ms` = 取樣時間**(契約語意):取「最後一次任一流更新」的
+  wall-clock 時間,而非發佈當下時間;完全沒收過任何流時退回當下系統時間
+  (此時 `health_all_ok` 必為 false,雲端可辨識)。
+- **遙測斷流即停止上報**:飛控鏈路中斷後 MAVSDK 流可能靜默(不結束、不拋錯),
+  若照常發布會變成「時間戳全新、內容凍結」的殭屍遙測。故全部流超過
+  `--stale-timeout`(預設 5 秒)無更新時**跳過發布**並記 WARNING(狀態轉換時
+  各記一次,不逐秒刷);恢復更新後自動恢復發布。雲端據此以「訊息停止」判定失聯。
+- **MAVSDK 訂閱異常結束**:整個行程結束,交給 systemd 重啟(Phase 0 策略)。
+
+## 與 onboard 安全邊界的關係
+
+[onboard/README.md](../README.md) 的安全邊界規範感知模組只對 PX4 發速度限制與
+setpoint 修正。drone_agent 比這更保守:**唯讀遙測、不對 PX4 發任何指令**,
+崩潰或斷線只影響雲端可見性,不影響飛行。後續指令下行(`fleet/{id}/cmd/mission`,
+Phase 0 預留)進場時,將經 mission_exec 轉譯而非由本服務直接下 MAVLink。
+
+## 測試
+
+```bash
+pytest onboard/drone_agent/tests -q
+```

@@ -12,7 +12,7 @@ onboard/
 │   ├── mission_exec/       # 任務狀態機(雲端任務 → MAVLink 轉譯、續飛)
 │   ├── stereo_depth/       # 雙目深度(CUDA SGM)
 │   └── local_mapper/       # ESDF 佔據圖
-├── drone-agent/            # 非 ROS 常駐服務:MQTT 遙測上雲、gRPC 指令、WebRTC、OTA
+├── drone_agent/            # 非 ROS 常駐服務:MQTT 遙測上雲、gRPC 指令、WebRTC、OTA(遙測已實作)
 └── video-pipeline/         # GStreamer/DeepStream:錄影 + 串流 + 推論分支
 ```
 
@@ -28,4 +28,4 @@ onboard/
 
 - [ ] ros2_ws 建立 + px4_ros_com bridge 跑通(SITL)
 - [ ] mission_exec 雛形:接收 JSON 任務 → 上傳 MAVLink mission → 進度回報
-- [ ] drone-agent 雛形:MQTT 連雲、遙測摘要 1 Hz 上報
+- [x] drone-agent 雛形:MQTT 連雲、遙測摘要 1 Hz 上報 → [drone_agent/](drone_agent/)
