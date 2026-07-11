@@ -1,0 +1,4 @@
+# mission_exec 目標執行環境為 Python 3.10+(companion computer);
+# executor 使用 3.10 內建 aiter()/anext(),ruff 需知道 target-version 才不誤報 F821。
+target-version = "py310"
+line-length = 100

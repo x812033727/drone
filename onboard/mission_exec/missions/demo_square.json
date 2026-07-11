@@ -1,0 +1,10 @@
+{
+  "missionId": "demo-square-v1",
+  "waypoints": [
+    {"latDeg": 47.398642, "lonDeg": 8.545594, "relAltM": 20.0, "holdS": 0.0, "speedMs": 5.0},
+    {"latDeg": 47.398642, "lonDeg": 8.546920, "relAltM": 20.0, "holdS": 2.0, "speedMs": 0.0},
+    {"latDeg": 47.397742, "lonDeg": 8.546920, "relAltM": 20.0, "holdS": 0.0, "speedMs": 5.0},
+    {"latDeg": 47.397742, "lonDeg": 8.545594, "relAltM": 20.0, "holdS": 0.0, "speedMs": 5.0}
+  ],
+  "rtlAfterLast": true
+}
