@@ -10,7 +10,8 @@ build/
 install/
 log/
 
-# 飛行日誌與大檔(正式歸檔走雲端/LFS)
+# 飛行日誌與大檔(正式歸檔走雲端/LFS;flight-logs/ 為 flight_ops 歸檔產物)
+flight-logs/
 *.ulg
 *.bag
 *.mcap
