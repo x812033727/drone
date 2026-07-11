@@ -150,3 +150,58 @@ def test_battery_ladder_land_before_emergency_fails():
     checks = {label: ok for label, ok, _ in evaluate_battery_ladder(warn, nav)}
     assert not checks["CRITICAL 後切 AUTO_RTL(允許 AUTO_LOITER 5s Hold 過渡)"]
     assert not checks["EMERGENCY 後 AUTO_LAND 且 RTL 在 LAND 之前"]
+
+
+# --- arm_with_retry(2026-07-11 nightly f10/f11 事故回歸)---
+
+
+def test_arm_with_retry_succeeds_after_denials():
+    import asyncio
+    import types
+
+    from mavsdk.action import ActionError
+    from sitl_scenarios.runner import arm_with_retry
+
+    def _err():
+        return ActionError(
+            types.SimpleNamespace(result=None, result_str="COMMAND_DENIED"), "arm()"
+        )
+
+    class FakeAction:
+        def __init__(self, deny_times):
+            self.deny_times = deny_times
+            self.calls = 0
+
+        async def arm(self):
+            self.calls += 1
+            if self.calls <= self.deny_times:
+                raise _err()
+
+    class FakeDrone:
+        def __init__(self, deny_times):
+            self.action = FakeAction(deny_times)
+
+    drone = FakeDrone(deny_times=2)
+    asyncio.run(arm_with_retry(drone, attempts=4, delay_s=0.01))
+    assert drone.action.calls == 3
+
+
+def test_arm_with_retry_exhausted_raises_scenario_error():
+    import asyncio
+    import types
+
+    import pytest
+    from mavsdk.action import ActionError
+    from sitl_scenarios.runner import ScenarioError, arm_with_retry
+
+    class FakeAction:
+        async def arm(self):
+            raise ActionError(
+                types.SimpleNamespace(result=None, result_str="COMMAND_DENIED"), "arm()"
+            )
+
+    class FakeDrone:
+        action = FakeAction()
+
+    with pytest.raises(ScenarioError):
+        asyncio.run(arm_with_retry(FakeDrone(), attempts=3, delay_s=0.01))

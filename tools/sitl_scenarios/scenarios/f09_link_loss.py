@@ -45,6 +45,7 @@ from sitl_scenarios.runner import (
     ScenarioConfig,
     ScenarioError,
     ScenarioResult,
+    arm_with_retry,
     docker_container_ip,
     logline,
     make_clock,
@@ -185,7 +186,7 @@ async def run(cfg: ScenarioConfig) -> ScenarioResult:
 
         await upload_square(drone, alt_m=30.0, speed_ms=4.0, rtl_after_last=True)
         await asyncio.wait_for(wait_position_ready(drone), timeout=120)
-        await drone.action.arm()
+        await arm_with_retry(drone)
         await drone.mission.start_mission()
         logline(clock(), "已 arm + start_mission(4 航點方形,30 m,4 m/s)")
 

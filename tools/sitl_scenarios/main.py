@@ -13,6 +13,7 @@ import argparse
 import asyncio
 import importlib
 import sys
+import traceback
 
 from sitl_scenarios.runner import ScenarioConfig, ScenarioError, print_result
 
@@ -47,6 +48,12 @@ def main(argv: list[str] | None = None) -> None:
         help="F09 被動觀測(14550)的源 IP 過濾;未給則由 --container docker inspect 推導",
     )
     parser.add_argument(
+        "--scenario-timeout",
+        type=float,
+        default=600.0,
+        help="單一場景硬逾時秒數(預設 600;逾時立即 RESULT: FAIL,不留懸掛給外層 timeout)",
+    )
+    parser.add_argument(
         "--grpc-port",
         type=int,
         default=50600,
@@ -66,7 +73,16 @@ def main(argv: list[str] | None = None) -> None:
         )
         print(f"\n########## {module.TITLE} ##########", flush=True)
         try:
-            result = asyncio.run(module.run(cfg))
+            result = asyncio.run(
+                asyncio.wait_for(module.run(cfg), timeout=args.scenario_timeout)
+            )
+        except (asyncio.TimeoutError, TimeoutError):
+            # 2026-07-11 nightly 實錄:場景內部懸掛會吃滿外層 timeout(exit 124),
+            # RESULT 行從未出現、log 難讀——此處硬逾時保證快速失敗且結論可 grep
+            print(f"場景硬逾時({args.scenario_timeout:.0f}s)", flush=True)
+            print(f"RESULT: FAIL scenario={name}", flush=True)
+            failures += 1
+            continue
         except NotImplementedError as e:
             # 探測判定不可行的場景走此路(現四場景皆可行;保留誠實出口)
             print(f"RESULT: NOT-IMPLEMENTED scenario={name} 原因:{e}", flush=True)
@@ -74,6 +90,12 @@ def main(argv: list[str] | None = None) -> None:
             continue
         except ScenarioError as e:
             print(f"場景環境錯誤:{e}", flush=True)
+            print(f"RESULT: FAIL scenario={name}", flush=True)
+            failures += 1
+            continue
+        except Exception:
+            # 任何未預期例外(如 MAVSDK ActionError)→ 立刻失敗,不得懸掛
+            traceback.print_exc()
             print(f"RESULT: FAIL scenario={name}", flush=True)
             failures += 1
             continue
