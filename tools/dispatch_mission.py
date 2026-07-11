@@ -10,7 +10,12 @@
         --mqtt-host broker.internal --mqtt-port 1883
 
 結束碼:0 = COMPLETED(或未 --wait 時發布成功);1 = FAILED;2 = 任務檔錯誤;
-3 = --wait 逾時。
+3 = --wait 逾時;4 = MQTT 連線失敗/訂閱串流提前結束(結果未知,非任務失敗)。
+
+終態語意:機上側為 at-least-once,同一任務的終態事件可能重複;本工具以
+**首個終態為準**(收到即退出)。等待逾時預設 960 秒,刻意大於 agent 的任務
+子程序逾時(--cmd-timeout 預設 900 秒),確保 agent 逾時 kill 後補發的
+FAILED 能在本工具退出前收到。
 
 安全註記(Phase 0 明列豁免,見 docs/20-software/security.md §8):
 broker 為 anonymous、無 TLS/ACL——開發內網上任何人都能對任何機派任務,
@@ -28,7 +33,8 @@ import aiomqtt
 from drone.v1 import mission_pb2
 from google.protobuf import json_format
 
-DEFAULT_WAIT_TIMEOUT_S = 600.0
+#: --wait 逾時預設:> agent 任務子程序逾時 900 秒(等得到逾時 kill 後補發的 FAILED)
+DEFAULT_WAIT_TIMEOUT_S = 960.0
 _STATE = mission_pb2.MissionProgress.State
 
 
@@ -86,7 +92,7 @@ async def _dispatch_and_wait(args: argparse.Namespace, plan_json: str, mission_i
                 return 0
             if progress.state == _STATE.STATE_FAILED:
                 return 1
-    return 1  # 訂閱串流提前結束(broker 斷線)
+    return 4  # 訂閱串流提前結束(broker 斷線):結果未知,不可與 FAILED(1)混淆
 
 
 async def _run(args: argparse.Namespace) -> int:
@@ -116,7 +122,8 @@ def main() -> None:
         "--timeout",
         type=float,
         default=DEFAULT_WAIT_TIMEOUT_S,
-        help=f"--wait 等待逾時秒數(預設 {DEFAULT_WAIT_TIMEOUT_S:g};逾時結束碼 3)",
+        help=f"--wait 等待逾時秒數(預設 {DEFAULT_WAIT_TIMEOUT_S:g},"
+        "> agent --cmd-timeout 900;逾時結束碼 3)",
     )
     args = parser.parse_args()
     try:
@@ -126,7 +133,7 @@ def main() -> None:
         code = 2
     except aiomqtt.MqttError as e:
         print(f"MQTT 連線失敗:{e}", file=sys.stderr)
-        code = 1
+        code = 4  # 連線異常 ≠ 任務 FAILED(1):結果未知,由呼叫端決定重試/查證
     except KeyboardInterrupt:
         print("\n中斷", file=sys.stderr)
         code = 130
