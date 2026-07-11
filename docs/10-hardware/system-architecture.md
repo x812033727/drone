@@ -32,7 +32,7 @@ flowchart TB
     end
 
     subgraph POWER["動力系統"]
-        BATT["智慧電池<br/>PA-1: 12S 12Ah<br/>PB-1: 14S 22Ah×2"]
+        BATT["智慧電池<br/>PA-1: 12S 11.6Ah<br/>PB-1: 14S 22Ah×2"]
         PMU["電源管理 PMU<br/>(自研,含配電/監測)"]
         ESC["FOC 電變 ×4/×6<br/>(DroneCAN)"]
         MOTOR["無刷馬達 ×4/×6"]
@@ -122,7 +122,7 @@ flowchart LR
 |------|------|------|
 | 動力 | 4 × MN505-S KV320 + 18" 槳 | 6 × P80 III KV100 + 30" 槳 |
 | ESC | 40 A FOC DroneCAN | 80 A HV FOC DroneCAN |
-| 電池 | 12S 12 Ah ×1 | 14S 22 Ah ×2(並聯、熱插拔) |
+| 電池 | 12S 11.6 Ah ×1(12S2P 能量型,[propulsion §7.3](propulsion.md)) | 14S 22 Ah ×2(並聯、熱插拔) |
 | GNSS 天線 | 單天線 RTK | 雙天線 RTK(定向,抗磁干擾) |
 | 避障 | 前/下雙目 + 上 ToF | 前雙目 + 上/下毫米波 + 仿地雷達 |
 | 酬載介面 | 下掛單點快拆 | 腹部大型快拆(藥箱/貨箱互換) |
