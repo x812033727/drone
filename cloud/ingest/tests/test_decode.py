@@ -2,7 +2,6 @@ from datetime import datetime, timezone
 
 from drone.v1 import mission_pb2, telemetry_pb2
 from google.protobuf.json_format import MessageToJson
-
 from ingest import decode
 
 
