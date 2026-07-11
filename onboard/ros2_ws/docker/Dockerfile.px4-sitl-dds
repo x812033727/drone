@@ -28,19 +28,25 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         rsync \
     && rm -rf /var/lib/apt/lists/*
 
-# PX4 build 的 python 依賴(對齊 Tools/setup/requirements.txt 的必要子集;
-# empy 鎖 3.3.4:PX4 1.15 與 empy 4.x 不相容)
+# PX4 build 的 python 依賴(對齊 Tools/setup/requirements.txt 的必要子集)。
+# 全部釘版,防 nightly 因上游發新版而無聲漂移(釘的是 2026-07 實際建置
+# 通過的版本):
+# - empy==3.3.4:PX4 1.15 與 empy 4.x 不相容(上游 requirements 同鎖)
+# - numpy:查證 v1.15.4 requirements.txt 僅要求 >=1.13(無 <2 上限),
+#   且本 image 一直以 numpy 2.x 建置、煙霧 PASS → 免降 1.x;
+#   釘 2.2.6 = 本 image(Ubuntu 22.04 / py3.10)pip 實際解到的最新相容版
+#   (numpy 2.3+ 要求 py>=3.11,py3.10 裝不上)
 RUN pip3 install --no-cache-dir \
         empy==3.3.4 \
-        future \
-        jinja2 \
-        jsonschema \
-        kconfiglib \
-        numpy \
-        packaging \
-        pyros-genmsg \
-        pyyaml \
-        toml
+        future==1.0.0 \
+        jinja2==3.1.6 \
+        jsonschema==4.26.0 \
+        kconfiglib==14.1.0 \
+        numpy==2.2.6 \
+        packaging==26.2 \
+        pyros-genmsg==0.5.8 \
+        pyyaml==6.0.3 \
+        toml==0.10.2
 
 # 韌體版本鎖 v1.15.4(= SITL 回歸與實機 X500 V2 的基準版)
 RUN git clone --depth 1 --recursive --shallow-submodules -b v1.15.4 \

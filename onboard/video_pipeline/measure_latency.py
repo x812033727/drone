@@ -80,6 +80,10 @@ def main() -> int:
         if not ok:
             return Gst.FlowReturn.OK
         try:
+            # stride 假設:現況 avdec_h264 + videoconvert 輸出 GRAY8 為緊密
+            # 打包(buffer 長度 = stride × height,各列等寬),len//height 成立。
+            # Phase 1 換 nvv4l2decoder/NVMM 路徑時對齊與記憶體佈局不同,
+            # 此假設不成立,屆時需改用 caps/GstVideoFrame 取真實 stride。
             stride = len(mapinfo.data) // height
             luma = np.frombuffer(mapinfo.data, dtype=np.uint8)[: stride * height]
             luma = luma.reshape(height, stride)[:, :width]
@@ -88,6 +92,12 @@ def main() -> int:
                 return Gst.FlowReturn.OK
             ts_ms = decode_stamp(luma)
             if ts_ms is None:
+                state["decode_failures"] += 1
+                return Gst.FlowReturn.OK
+            # sanity window:1-byte XOR checksum 對花屏幀有 1/256 碰撞率,
+            # 碰撞會產生離譜的假時戳毒化統計。與本機時鐘差超過 60s
+            # 者視為解碼失敗丟棄(正常延遲為十至數百 ms 量級)。
+            if abs(now_ms - ts_ms) > 60_000:
                 state["decode_failures"] += 1
                 return Gst.FlowReturn.OK
             latencies.append(now_ms - ts_ms)

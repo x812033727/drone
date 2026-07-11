@@ -60,7 +60,7 @@ def encode_stamp(luma: np.ndarray, ts_ms: int) -> None:
 
 
 def decode_stamp(luma: np.ndarray) -> int | None:
-    """讀回 luma 左上角時戳條。checksum 不符(幀損毀)回傳 None。"""
+    """讀回 luma 左上角時戳條。checksum 不符(幀損毀)或 ts=0(全暗幀盲點)回傳 None。"""
     _check_plane(luma)
     # 只取每塊中央 4×4 均值,避開壓縮/去塊效應造成的邊緣暈染
     c0 = (BLOCK - 4) // 2
@@ -76,4 +76,10 @@ def decode_stamp(luma: np.ndarray) -> int | None:
         expected ^= b
     if checksum != expected:
         return None
-    return struct.unpack(">Q", raw)[0]
+    ts = struct.unpack(">Q", raw)[0]
+    # checksum 盲點:全零 payload 的 XOR checksum 恰好也是 0,全暗/全灰
+    # (門檻下)幀會「合法」解出 ts=0(實證過毒化延遲統計)。
+    # 0(1970-01-01)不是合語意的時戳,一律視為解碼失敗。
+    if ts == 0:
+        return None
+    return ts

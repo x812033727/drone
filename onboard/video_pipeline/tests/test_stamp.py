@@ -15,9 +15,10 @@ def _frame(h=1080, w=1920, fill=90):
     return np.full((h, w), fill, dtype=np.uint8)
 
 
+# ts=0 不在列:0 是全暗幀盲點的保留值,decode 一律回 None(見下方盲點測試)
 @pytest.mark.parametrize(
     "ts_ms",
-    [0, 1, 255, 1_752_200_000_123, 2**63, 2**64 - 1],
+    [1, 255, 1_752_200_000_123, 2**63, 2**64 - 1],
 )
 def test_roundtrip_exact(ts_ms):
     luma = _frame()
@@ -50,6 +51,26 @@ def test_corrupted_block_returns_none():
     x0 = 3 * BLOCK
     region = luma[0:STRIP_HEIGHT, x0 : x0 + BLOCK]
     luma[0:STRIP_HEIGHT, x0 : x0 + BLOCK] = np.where(region > 128, 16, 235)
+    assert decode_stamp(luma) is None
+
+
+def test_all_dark_frame_returns_none():
+    """全暗幀(全 0)每 bit 讀成 0 → payload 全零,XOR checksum 恰好也是 0,
+    會「合法」解出 ts=0(實證毒化統計的盲點)→ 必須回 None。"""
+    luma = np.zeros((64, 640), dtype=np.uint8)
+    assert decode_stamp(luma) is None
+
+
+def test_uniform_gray_below_threshold_returns_none():
+    """全灰(亮度低於門檻 125)幀同樣解出全零 payload → 必須回 None。"""
+    luma = _frame(h=64, w=640, fill=90)
+    assert decode_stamp(luma) is None
+
+
+def test_encoded_zero_ts_decodes_to_none():
+    """ts=0 是盲點保留值:即使是自己編碼的 0,decode 也拒收。"""
+    luma = _frame()
+    encode_stamp(luma, 0)
     assert decode_stamp(luma) is None
 
 
