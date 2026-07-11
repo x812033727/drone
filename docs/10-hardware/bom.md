@@ -13,7 +13,7 @@
 | GNSS | ZED-F9P 模組 + 天線 + RM3100 | u-blox ZED-F9P + PNI RM3100 | 1 | 12,000 | 0.05 | u-blox/PNI 代理、Mouser | ArduSimple simpleRTK2B(模組級) | 4–6 週 | 未詢價 |
 | 通訊 | 數傳空中端 + 遙控器(Herelink 級) | CubePilot Herelink 套裝 | 1 套 | 35,000 | 0.05(僅空中端;遙控器地面端不計) | CubePilot 代理 | SIYI MK15(先到先用) | 4–6 週 | 未詢價 |
 | | 5G 模組 RM520N-GL + 天線 | Quectel RM520N-GL | 1 | 8,000 | 0.04(註 a) | Quectel 台灣代理 | Quectel RM500Q-GL | 4–6 週 | 未詢價 |
-| | Remote ID 模組 | 待選型(Dronetag/BlueMark 級) | 1 | 2,500 | 0.02(註 a) | 待定 | — | ~8 週 | 未詢價 |
+| | Remote ID 模組 | Dronetag DRI(OEM,u.FL 外接天線版,UART MAVLink 2;**2026-07-11 定案**,選型 [communication §4.1](communication.md);規格需查證) | 1 | 2,500(模組 ~US$59 ≈1,900 + 天線/線材) | 0.02(註 a;模組實重 1.5 g,餘為天線/線材/佔位裕度) | Dronetag 直購/經銷 | BlueMark db201(MAVLink/DroneCAN + WiFi NAN 全制式);db121(獨立 GNSS 保底) | 現貨–4 週 | 未詢價;2026-07-11 選型定案,Phase 1 航電批 RFQ 併詢 |
 | 動力 | MN505-S 馬達 | T-Motor MN505-S KV320 | 4 | 16,000 | 0.78 | T-Motor 代理 | Hobbywing X 級整合動力(plan B,[propulsion §10](propulsion.md)) | 4–8 週 | Phase 0 RFQ 已發 |
 | | 40A FOC ESC(DroneCAN) | T-Motor Alpha 40A LV(12S 版,首選) | 4 | 12,000 | 0.22 | T-Motor 代理 | APD 40F3 / Hobbywing XRotor Pro 40A(轉單條件見 [propulsion §8](propulsion.md)) | 4–8 週 | Phase 0 RFQ 已發 |
 | | 18" 摺疊碳槳 | T-Motor 18×6.1 摺疊碳槳 | 2 套 | 6,000 | 0.20(裝機 1 套) | T-Motor 代理 | MEJZLIK(高階) | ~4 週 | Phase 0 RFQ 已發 |
