@@ -192,6 +192,45 @@ async def _poller(container: str, watch: _Watch) -> None:
         await proc.wait()
 
 
+async def _inject_drain(drone, watch, container: str, clock) -> None:
+    """放電注入 + 回讀驗證 + 生效看門狗。
+
+    2026-07-12 nightly 實錄:單發 set_param_float(SIM_BAT_MIN_PCT=0) 疑似未黏住,
+    三門檻全程未觸發、420 s 靜默逾時吃滿。把「靜默無效」收斂為自癒或快速失敗:
+    (1) 寫後回讀不符即重寫(×3);(2) 60 s 內電量未跌破 0.45 → 容器內 px4-param
+    後備注入;再 30 s 仍無下降 → ScenarioError 快速失敗(帶當下 pct 可診斷)。
+    """
+    for attempt in range(1, 4):
+        await drone.param.set_param_float("SIM_BAT_MIN_PCT", 0.0)
+        try:
+            rb = await drone.param.get_param_float("SIM_BAT_MIN_PCT")
+        except Exception:
+            rb = None
+        if rb is not None and rb < 0.5:
+            logline(
+                clock(),
+                f"注入:SIM_BAT_MIN_PCT=0 生效(回讀 {rb:.1f},第 {attempt} 次;90 s 放電開始)",
+            )
+            break
+        logline(clock(), f"注入回讀不符(rb={rb}),重寫 {attempt}/3")
+    else:
+        raise ScenarioError("SIM_BAT_MIN_PCT 注入三次回讀皆不符")
+
+    deadline = clock() + 60
+    while clock() < deadline:
+        if watch.pct is not None and watch.pct < 0.45:
+            return
+        await asyncio.sleep(1)
+    logline(clock(), f"60 s 電量未開始下降(pct={watch.pct}),px4-param 後備注入")
+    await asyncio.to_thread(pxh_param_set, container, "SIM_BAT_MIN_PCT", 0)
+    deadline = clock() + 30
+    while clock() < deadline:
+        if watch.pct is not None and watch.pct < 0.45:
+            return
+        await asyncio.sleep(1)
+    raise ScenarioError(f"放電注入未生效(pct={watch.pct})——快速失敗取代 420 s 靜默逾時")
+
+
 async def run(cfg: ScenarioConfig) -> ScenarioResult:
     if not cfg.container:
         raise ScenarioError("F10 需要 --container(docker exec 跑 px4-listener / px4-param)")
@@ -232,8 +271,7 @@ async def run(cfg: ScenarioConfig) -> ScenarioResult:
             raise ScenarioError(f"未進入 AUTO_MISSION(nav={watch.nav_name} landed={watch.landed})")
 
         await asyncio.sleep(5)  # 任務中基線
-        logline(clock(), "注入:SIM_BAT_MIN_PCT=0(90 s 線性放電開始)")
-        await drone.param.set_param_float("SIM_BAT_MIN_PCT", 0.0)
+        await _inject_drain(drone, watch, cfg.container, clock)
 
         try:
             await asyncio.wait_for(watch.done.wait(), timeout=420)
