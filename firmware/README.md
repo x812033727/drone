@@ -24,6 +24,8 @@ make px4_sitl gz_x500        # x500 模型即 Phase 0 開發機構型
 
 SITL 啟動後預設在 `udp:14540` 提供 MAVLink(offboard 埠),可用本 repo 的
 [`tools/telemetry_monitor.py`](../tools/telemetry_monitor.py) 驗證連線。
+完整環境建置、失效保護場景注入與疑難排解見
+[docs/50-project/phase0/sitl-setup.md](../docs/50-project/phase0/sitl-setup.md)。
 
 ## 開發原則
 
