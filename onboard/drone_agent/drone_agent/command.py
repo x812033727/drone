@@ -8,8 +8,16 @@ Phase 0 為**明列豁免**——anonymous MQTT、無 TLS/ACL,即「開發內網
 - 訂閱主題寫死為自身 `fleet/{drone_id}/cmd/mission`(不收別機的指令);
 - payload 需為合法 MissionPlan proto3 JSON 且 mission_id 非空(Parse 級把關;
   語意驗證由 mission_exec 載入任務檔時自行執行,agent 不重複實作);
-- **單一任務互斥**:已有任務子程序存活時拒絕新任務,發 STATE_FAILED 事件
-  (Phase 0 不做佇列)。
+- **單一任務互斥**:已有任務子程序存活時拒絕新任務(不同 mission_id),
+  發 STATE_FAILED 事件(Phase 0 不做佇列);
+- **重複投遞去重**:QoS 1 為 at-least-once,同一 mission_id 可能重複到達。
+  與「執行中」或「最近一筆已終結」任務同 id 的指令一律忽略(只記 log、
+  不發 FAILED、不重飛)——分支判定見 classify_command()。
+
+終態事件語意為 **at-least-once**:mission_exec 的 exit code 不可盡信
+(任何未處理例外——連線失敗、import 錯——也會 exit 1 且 FAILED 從未發出),
+故子程序非零結束一律由 agent 補發 STATE_FAILED,終態可能重複。消費端以
+**首個終態為準**(dispatch_mission 收到第一個終態即退出;DB 落庫多一列無害)。
 
 執行面:agent 本體維持唯讀遙測,不對 PX4 發任何指令;任務指令一律由
 mission_exec 子程序轉譯下發(對齊 architecture.md §2 安全邊界)。agent 已
@@ -48,6 +56,30 @@ FailedPublisher = Callable[[str], Awaitable[None]]
 def should_accept(running: bool) -> bool:
     """單一任務互斥:已有任務子程序存活即拒絕(Phase 0 不做佇列)。"""
     return not running
+
+
+def classify_command(
+    mission_id: str,
+    running: bool,
+    current_mission_id: str | None,
+    last_terminal: str | None,
+) -> str:
+    """指令去重 + 互斥分支判定(純函式)。回傳:
+
+    - ``"dup-running"``:與執行中(或剛結束、回收中)任務同 id 的重複投遞
+      → 忽略,不發 FAILED(QoS 1 at-least-once dup,發 FAILED 會誤殺進行中任務的終態);
+    - ``"dup-terminal"``:與最近一筆已終結任務同 id 的遲到重複投遞
+      → 忽略,防已完成後 dup 重飛;
+    - ``"reject-busy"``:新 mission_id 但已有任務執行中 → 拒絕,發 FAILED(帶新 id);
+    - ``"accept"``:idle → 執行。
+    """
+    if current_mission_id is not None and mission_id == current_mission_id:
+        return "dup-running"
+    if last_terminal is not None and mission_id == last_terminal:
+        return "dup-terminal"
+    if not should_accept(running):
+        return "reject-busy"
+    return "accept"
 
 
 def parse_plan(payload: bytes | str) -> mission_pb2.MissionPlan:
@@ -118,9 +150,15 @@ class MissionRunner:
     """任務子程序生命週期:啟動、輸出收進 log、逾時 kill、結束回收。
 
     同一時間至多一個子程序(互斥由 command_loop 以 `running` 把關)。
-    子程序結束碼語意:0 = 完成;1 = mission_exec 已自行發過 STATE_FAILED;
-    其餘(驗證錯 2、逾時 kill、訊號終止)mission_exec 沒機會發事件,
-    由 on_failed 回呼補發(best-effort,失敗只記 log)。
+    子程序結束碼語意:0 = 完成;**其餘一律由 on_failed 回呼補發 STATE_FAILED**
+    (best-effort,失敗只記 log)。exit 1 不可信任為「mission_exec 已自行發過
+    FAILED」——任何未處理例外(MQTT 連線失敗、ModuleNotFoundError 等)也會
+    exit 1 且 FAILED 從未發出,故不做特例;終態因此為 at-least-once,可能
+    重複,消費端以首個終態為準。
+
+    去重狀態:`current_mission_id`(執行中/回收中的任務 id)與
+    `last_terminal`(最近一筆已終結的任務 id),供 classify_command() 判定
+    重複投遞;兩者於回收任務的 finally 收斂,互斥保證最終釋放(F6a)。
     """
 
     def __init__(
@@ -132,32 +170,48 @@ class MissionRunner:
         self._on_failed = on_failed
         self._proc: asyncio.subprocess.Process | None = None
         self._reaper: asyncio.Task | None = None
+        #: 執行中(或已結束、回收中)任務的 mission_id;回收完成後清為 None
+        self.current_mission_id: str | None = None
+        #: 最近一筆已終結(COMPLETED/FAILED 皆算)任務的 mission_id
+        self.last_terminal: str | None = None
 
     @property
     def running(self) -> bool:
         return self._proc is not None and self._proc.returncode is None
 
     async def start(self, cmd: list[str], mission_id: str, mission_file: Path) -> None:
-        """啟動子程序並掛回收任務(呼叫前需以 running 確認互斥)。"""
+        """啟動子程序並掛回收任務(呼叫前需以 running 確認互斥)。
+
+        spawn 失敗直接拋例外(不改動 current_mission_id);由呼叫端把關
+        (command_loop 對此包 except,log + 盡力補發 FAILED,不讓迴圈死掉)。
+        """
         self._proc = await asyncio.create_subprocess_exec(
             *cmd,
             cwd=MISSION_EXEC_DIR,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
+        self.current_mission_id = mission_id
         logger.info("任務 %s 子程序已啟動(pid=%d):%s", mission_id, self._proc.pid, " ".join(cmd))
         self._reaper = asyncio.create_task(self._reap(self._proc, mission_id, mission_file))
+        # reaper 內已有最外層 try/except;此回呼兜底 CancelledError 以外的漏網例外,
+        # 確保 task 例外不會靜默丟失(agent 無 shutdown 鉤子,Phase 0 靠 systemd)
+        self._reaper.add_done_callback(_log_reaper_exception)
 
     async def _reap(
         self, proc: asyncio.subprocess.Process, mission_id: str, mission_file: Path
     ) -> None:
-        """收攏 stdout/stderr 進 log、逾時 kill、記錄結束碼、清暫存檔。"""
-        timed_out = False
+        """收攏 stdout/stderr 進 log、逾時 kill、記錄結束碼、補發 FAILED、清暫存檔。
+
+        最外層 try/except:任何例外 log 後仍走 finally 收斂——子程序保證被
+        回收(互斥 `running` 最終必釋放)、暫存檔必清、去重狀態必更新。
+        """
         pump = [
             asyncio.create_task(_pump(proc.stdout, logging.INFO, mission_id)),
             asyncio.create_task(_pump(proc.stderr, logging.WARNING, mission_id)),
         ]
         try:
+            timed_out = False
             try:
                 await asyncio.wait_for(proc.wait(), timeout=self.timeout_s)
             except (asyncio.TimeoutError, TimeoutError):
@@ -166,22 +220,48 @@ class MissionRunner:
                 proc.kill()
                 await proc.wait()
             await asyncio.gather(*pump)
-        finally:
-            mission_file.unlink(missing_ok=True)
-        rc = proc.returncode
-        if rc == 0:
-            logger.info("任務 %s 子程序正常結束(exit=0)", mission_id)
-            return
-        logger.error(
-            "任務 %s 子程序失敗(exit=%s%s)", mission_id, rc, ",逾時 kill" if timed_out else ""
-        )
-        if rc != 1 and self._on_failed is not None:
-            try:
-                await self._on_failed(mission_id)
-            except Exception:
-                logger.warning(
-                    "任務 %s 補發 STATE_FAILED 失敗(broker 斷線?)", mission_id, exc_info=True
+            rc = proc.returncode
+            if rc == 0:
+                logger.info("任務 %s 子程序正常結束(exit=0)", mission_id)
+            else:
+                logger.error(
+                    "任務 %s 子程序失敗(exit=%s%s)",
+                    mission_id,
+                    rc,
+                    ",逾時 kill" if timed_out else "",
                 )
+                # 非零一律補發(at-least-once):exit 1 也可能是未處理例外,
+                # FAILED 從未發出;寧可重複,不可丟失終態
+                if self._on_failed is not None:
+                    try:
+                        await self._on_failed(mission_id)
+                    except Exception:
+                        logger.warning(
+                            "任務 %s 補發 STATE_FAILED 失敗(broker 斷線?)",
+                            mission_id,
+                            exc_info=True,
+                        )
+        except Exception:
+            logger.exception("任務 %s 回收任務異常,強制收斂狀態", mission_id)
+        finally:
+            for task in pump:
+                task.cancel()
+            if proc.returncode is None:
+                proc.kill()
+                await proc.wait()
+            mission_file.unlink(missing_ok=True)
+            self.last_terminal = mission_id
+            if self.current_mission_id == mission_id:
+                self.current_mission_id = None
+
+
+def _log_reaper_exception(task: asyncio.Task) -> None:
+    """回收 task 的 done callback:未取回例外時 log,避免靜默丟失。"""
+    if task.cancelled():
+        return
+    exc = task.exception()
+    if exc is not None:
+        logger.error("任務回收 task 帶未處理例外", exc_info=exc)
 
 
 async def _pump(stream: asyncio.StreamReader | None, level: int, mission_id: str) -> None:
@@ -194,6 +274,66 @@ async def _pump(stream: asyncio.StreamReader | None, level: int, mission_id: str
             logger.log(level, "[mission_exec %s] %s", mission_id, line)
 
 
+async def handle_command(
+    payload: bytes,
+    runner: MissionRunner,
+    drone_id: str,
+    mavsdk_address: tuple[str, int],
+    mqtt_host: str,
+    mqtt_port: int,
+    publish_reject: FailedPublisher,
+    publish_failed: FailedPublisher,
+) -> None:
+    """處理單筆 cmd 訊息:把關 → 去重/互斥分支 → 暫存檔 → spawn 子程序。
+
+    publish_reject 走訂閱連線發互斥拒絕的 FAILED(MqttError 上拋交由
+    command_loop 重連);publish_failed 為 best-effort 補發(短連線)。
+    spawn 失敗在此吸收(log + 盡力補發 FAILED + 清暫存檔),不讓
+    command_loop 與 gather 裡的遙測一起死(F5)。
+    """
+    try:
+        plan = parse_plan(payload)
+    except ValueError as e:
+        # Parse 失敗多半拿不到可信 mission_id,無從對應事件,只記 log
+        logger.error("拒收 cmd(payload 驗證失敗):%s", e)
+        return
+    decision = classify_command(
+        plan.mission_id, runner.running, runner.current_mission_id, runner.last_terminal
+    )
+    if decision == "dup-running":
+        logger.info("忽略重複投遞的任務 %s:與執行中任務同 id(QoS 1 dup)", plan.mission_id)
+        return
+    if decision == "dup-terminal":
+        logger.info("忽略遲到的重複投遞 %s:與最近已終結任務同 id,不重飛", plan.mission_id)
+        return
+    if decision == "reject-busy":
+        logger.warning(
+            "拒收任務 %s:已有任務執行中(Phase 0 單一任務互斥,不做佇列)",
+            plan.mission_id,
+        )
+        await publish_reject(plan.mission_id)
+        return
+    with tempfile.NamedTemporaryFile(
+        mode="wb", suffix=".json", prefix="mission_", delete=False
+    ) as f:
+        f.write(payload)
+        mission_file = Path(f.name)
+    cmd = build_cmd(mission_file, mavsdk_address, mqtt_host, mqtt_port, drone_id)
+    try:
+        await runner.start(cmd, plan.mission_id, mission_file)
+    except Exception:
+        logger.exception("任務 %s 子程序啟動失敗(spawn 例外)", plan.mission_id)
+        mission_file.unlink(missing_ok=True)
+        try:
+            await publish_failed(plan.mission_id)
+        except Exception:
+            logger.warning(
+                "任務 %s spawn 失敗後補發 STATE_FAILED 亦失敗(broker 斷線?)",
+                plan.mission_id,
+                exc_info=True,
+            )
+
+
 async def command_loop(
     mqtt_host: str,
     mqtt_port: int,
@@ -203,9 +343,10 @@ async def command_loop(
 ) -> None:
     """訂閱 `fleet/{drone_id}/cmd/mission`(QoS 1),收任務、派 mission_exec 子程序。
 
-    MQTT 斷線自動重連(重連期間到達的指令由 broker QoS 1 補投或丟棄,
-    Phase 0 不另做補收)。拒絕事件走訂閱連線;子程序異常結束的補發事件
-    由回收任務另開短連線(best-effort)。
+    MQTT 斷線自動重連。aiomqtt 預設 clean session:重連期間到達的指令
+    **不會**由 broker 補投,一律由派遣端(dispatch_mission)重試。
+    拒絕事件走訂閱連線;子程序異常結束的補發事件由回收任務另開短連線
+    (best-effort)。
     """
     topic = f"fleet/{drone_id}/cmd/mission"
     progress_topic = f"fleet/{drone_id}/mission/progress"
@@ -221,38 +362,32 @@ async def command_loop(
     while True:
         try:
             async with aiomqtt.Client(hostname=mqtt_host, port=mqtt_port) as client:
+
+                async def publish_reject(mission_id: str) -> None:
+                    """互斥拒絕的 FAILED 走訂閱連線(MqttError 上拋觸發重連)。"""
+                    await client.publish(
+                        progress_topic,
+                        payload=failed_progress_json(
+                            mission_id, drone_id, int(time.time() * 1000)
+                        ),
+                        qos=1,
+                    )
+
                 await client.subscribe(topic, qos=1)
                 logger.info(
                     "cmd 已訂閱 %s(Phase 0 內網豁免:anonymous broker,見 security.md §8)", topic
                 )
                 async for message in client.messages:
-                    payload = bytes(message.payload)
-                    try:
-                        plan = parse_plan(payload)
-                    except ValueError as e:
-                        # Parse 失敗多半拿不到可信 mission_id,無從對應事件,只記 log
-                        logger.error("拒收 cmd(payload 驗證失敗):%s", e)
-                        continue
-                    if not should_accept(runner.running):
-                        logger.warning(
-                            "拒收任務 %s:已有任務執行中(Phase 0 單一任務互斥,不做佇列)",
-                            plan.mission_id,
-                        )
-                        await client.publish(
-                            progress_topic,
-                            payload=failed_progress_json(
-                                plan.mission_id, drone_id, int(time.time() * 1000)
-                            ),
-                            qos=1,
-                        )
-                        continue
-                    with tempfile.NamedTemporaryFile(
-                        mode="wb", suffix=".json", prefix="mission_", delete=False
-                    ) as f:
-                        f.write(payload)
-                        mission_file = Path(f.name)
-                    cmd = build_cmd(mission_file, mavsdk_address, mqtt_host, mqtt_port, drone_id)
-                    await runner.start(cmd, plan.mission_id, mission_file)
+                    await handle_command(
+                        bytes(message.payload),
+                        runner,
+                        drone_id,
+                        mavsdk_address,
+                        mqtt_host,
+                        mqtt_port,
+                        publish_reject,
+                        publish_failed,
+                    )
         except aiomqtt.MqttError as exc:
             logger.warning("cmd MQTT 斷線:%s;%.0f 秒後重連", exc, RECONNECT_DELAY_S)
             await asyncio.sleep(RECONNECT_DELAY_S)

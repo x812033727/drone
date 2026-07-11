@@ -18,8 +18,8 @@ drone_agent/
 │                   #   flight_mode/armed/battery/health);每次更新後 touch() 記錄取樣時間
 ├── publisher.py    # snapshot()/is_stale() 純函式 + publish_loop()(MQTT 斷線自動重連、
 │                   #   遙測斷流暫停上報)
-├── command.py      # cmd/mission 訂閱 + mission_exec 子程序管理(單一任務互斥、
-│                   #   逾時 kill、輸出收進 log、異常補發 FAILED)
+├── command.py      # cmd/mission 訂閱 + mission_exec 子程序管理(重複投遞去重、
+│                   #   單一任務互斥、逾時 kill、輸出收進 log、非零結束補發 FAILED)
 └── main.py         # CLI 進入點
 ```
 
@@ -90,24 +90,41 @@ python tools/dispatch_mission.py --drone-id dev-1 \
 1. **Parse 級把關**:合法 MissionPlan JSON + `mission_id` 非空;未過只記 log
    (拿不到可信 mission_id,無從對應事件)。語意驗證(waypoints 非空、經緯度
    範圍)由 mission_exec 載入任務檔時把關,不重複實作。
-2. **單一任務互斥**:已有任務子程序存活 → 拒絕,發 `STATE_FAILED` 進度事件
-   (Phase 0 不做佇列)。
-3. **子程序執行**:任務寫入暫存檔,以
+2. **重複投遞去重**:QoS 1 為 at-least-once,同一 mission_id 可能重複到達。
+   與**執行中**任務同 id → 重複投遞,只記 log 忽略(不發 FAILED,避免誤殺
+   進行中任務的終態);與**最近一筆已終結**任務同 id → 遲到的重複投遞,
+   同樣忽略(防已完成後 dup 重飛)。
+3. **單一任務互斥**:新 mission_id 但已有任務子程序存活 → 拒絕,發
+   `STATE_FAILED` 進度事件(帶新任務的 mission_id;Phase 0 不做佇列)。
+4. **子程序執行**:任務寫入暫存檔,以
    `python -m mission_exec.main --mission <暫存檔> --mavsdk-address localhost:50051
    --mqtt-host … --drone-id …` 執行。**`--mavsdk-address` 必給**:agent 已 spawn
    mavsdk_server(佔 14540 與 gRPC 50051),mission_exec 顯式共用同一 server,
    絕不能自行 spawn(會搶飛控埠);agent 自己連既有 server 時則透傳同一位址。
    進度事件(`RECEIVED → … → COMPLETED/FAILED`)由 mission_exec 直接發
-   `fleet/{drone_id}/mission/progress`。
-4. **回收**:子程序 stdout/stderr 逐行收進 agent log;逾 `--cmd-timeout`
-   (預設 900 秒)kill;結束碼記錄——`exit 1` mission_exec 已自行發過 FAILED,
-   其餘非零(驗證錯 `2`、逾時 kill)由 agent 補發 `STATE_FAILED`。
+   `fleet/{drone_id}/mission/progress`。spawn 失敗不會拖垮 agent:log 後
+   盡力補發 `STATE_FAILED` 並清暫存檔,command loop 照常收下一筆。
+5. **回收**:子程序 stdout/stderr 逐行收進 agent log;逾 `--cmd-timeout`
+   (預設 900 秒)kill;**非零結束碼一律由 agent 補發 `STATE_FAILED`**。
+   `exit 1` 不可信任為「mission_exec 已自行發過 FAILED」——任何未處理例外
+   (MQTT 連線失敗、import 錯等)也會 exit 1 且 FAILED 從未發出,故不做特例。
+   終態事件因此為 **at-least-once**:同一任務的終態可能重複,消費端以
+   **首個終態為準**(dispatch_mission 收到第一個終態即退出;DB 落庫多一列
+   無害)。dispatch_mission 的 `--timeout` 預設 960 秒即對應此逾時
+   (> 900,等得到逾時 kill 後補發的 FAILED)。
 
 **Phase 0 安全豁免**(對齊 [security.md §8](../../docs/20-software/security.md)
 分階段落地表,明列的已知狀態):broker 為 anonymous、無 TLS/ACL——**開發內網上
 任何人都能對任何機派任務**,僅限開發內網部署。機上把關只防呆、不防敵:
 訂閱主題寫死為自身 drone_id(不收別機指令)+ payload Parse 把關。
 Phase 1 起 mTLS + 裝置憑證 + 主題 ACL 才對外。
+
+**互斥與逾時是「子程序」層級,不是「飛行」層級**:kill 子程序或補發 FAILED
+只代表 mission_exec 不在場,**飛控可能仍在執行已上傳的任務**(PX4 自主續飛,
+這正是 agent 崩潰不牽連飛行的設計);重派前操作者須以遙測確認機況(降落/
+Hold/RTL)再決定。同理,`COMPLETED` 於**最後一個航點完成時**即發出,RTL
+返航段不屬任務進度——此時互斥已釋放,新任務可被接受,操作者需自行留意
+返航中的機體。
 
 ## 行為約定
 
