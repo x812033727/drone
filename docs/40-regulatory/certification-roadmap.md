@@ -40,8 +40,8 @@
 - [x] Remote ID 模組與供電佔位(三區通用)
 - [x] MAVLink 簽章、OTA 簽章、SBOM(CRA/美國政府採購)
 - [ ] 防撞燈(夜航)、機身標識區(註冊號牌位)
-- [ ] ULog 完整飛行紀錄(事故調查與保險要求)
-- [ ] GeoFence + 禁航區圖層(台灣 CAA 圖資 / FAA / EASA)
+- [x] ULog 完整飛行紀錄(事故調查與保險要求)——設計需求已寫入:[firmware §6](../20-software/firmware.md)、REQ-SAF-02 細化(最小集 + 保存 ≥ 2 年)
+- [x] GeoFence + 禁航區圖層(台灣 CAA 圖資 / FAA / EASA)——設計需求已寫入:[firmware §2](../20-software/firmware.md) GeoFence 列、[ground-station §5](../20-software/ground-station.md)、REQ-NAV-06 新增
 - [ ] 電池 UN38.3(空運與銷售前提)+ 標籤
 - [ ] EMC 設計裕度(EN 55032/55035、FCC Part 15B 預掃於 rev B)
 - [ ] PB-1:降落傘介面、急停、鎖固偵測(Specific 類 SORA 減緩措施)
