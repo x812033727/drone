@@ -24,7 +24,7 @@ flowchart TB
 
     subgraph SENSORS["感測與避障"]
         STEREO["雙目相機(前/下)"]
-        RADAR["毫米波雷達 60GHz<br/>(PB-1 仿地/上下避障)"]
+        RADAR["毫米波雷達 60 GHz ×3<br/>(PB-1 仿地/上下避障)<br/>TI IWR6843 AOP,定案見 sensors-and-payload §6.3"]
         TOF["上視 ToF(PA-1)"]
         STEREO --> CC
         RADAR --> CC
@@ -138,3 +138,11 @@ flowchart LR
 | MAVLink dialect | 酬載狀態、噴灑遙測、電池詳情(私有 message ID 24150–24199 級) | `interfaces/mavlink/` |
 | Protobuf schema | 機-雲遙測與指令(MQTT/gRPC) | `interfaces/proto/` |
 | 酬載描述檔 schema | QR-S/QR-L EEPROM 內容定義 | `interfaces/payload/` |
+
+## 6. 版本紀錄
+
+| rev | 日期 | 變更摘要 |
+|-----|------|----------|
+| 1 | 2026-07-10 | 初版(PR #1) |
+| 2 | 2026-07 | 加系統級功耗預算表(§2)、酬載介面連接器列(§4)、介面契約索引(§5);拓撲與匯流排結論不變 |
+| 2 | 2026-07-12 | §1 雷達節點同步 60 GHz 定案口徑(×3,TI IWR6843 AOP,[sensors-and-payload §6.3](sensors-and-payload.md));補版本紀錄節 |
