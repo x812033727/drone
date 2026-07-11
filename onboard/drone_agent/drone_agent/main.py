@@ -1,4 +1,8 @@
-"""drone-agent 進入點:連 PX4 → 訂閱遙測流 → 1 Hz MQTT 上報。
+"""drone-agent 進入點:連 PX4 → 訂閱遙測流 → 1 Hz MQTT 上報 + 雲端任務下行。
+
+任務下行(--enable-cmd,預設開):訂閱 fleet/{drone_id}/cmd/mission,
+收到 MissionPlan 後以子程序跑 mission_exec(共用本程序的 mavsdk_server),
+細節與 Phase 0 安全豁免見 drone_agent/command.py 與 README。
 
 用法:
     # PX4 SITL(預設 offboard 埠 14540)+ 本機 mosquitto
@@ -19,10 +23,14 @@ import sys
 
 from mavsdk import System
 
+from drone_agent.command import DEFAULT_MISSION_TIMEOUT_S, command_loop
 from drone_agent.publisher import STALE_TIMEOUT_S, publish_loop
 from drone_agent.state import WATCHERS, TelemetryState
 
 logger = logging.getLogger("drone_agent")
+
+#: MAVSDK Python 內嵌 mavsdk_server 的預設 gRPC 埠(System() 未指定時)
+DEFAULT_MAVSDK_PORT = 50051
 
 
 def parse_mavsdk_address(value: str) -> tuple[str, int]:
@@ -51,9 +59,9 @@ async def run(args: argparse.Namespace) -> None:
             logger.info("已連上飛行器")
             break
 
-    # 全部訂閱協程 + 發佈迴圈並行;MQTT 斷線重連由 publish_loop 自理,
+    # 全部訂閱協程 + 發佈迴圈(+ cmd 訂閱)並行;MQTT 斷線重連由各迴圈自理,
     # 任一 MAVSDK 訂閱異常結束則整體結束(交給 systemd 重啟,Phase 0 策略)
-    await asyncio.gather(
+    coros = [
         *(watch(drone, state) for watch in WATCHERS),
         publish_loop(
             state,
@@ -63,7 +71,21 @@ async def run(args: argparse.Namespace) -> None:
             args.rate,
             args.stale_timeout,
         ),
-    )
+    ]
+    if args.enable_cmd:
+        # mission_exec 子程序共用的 mavsdk_server 位址:agent 連既有 server 就透傳
+        # 同一個;自行 spawn 時為內嵌 server 的 localhost:50051
+        mavsdk_address = args.mavsdk_address or ("localhost", DEFAULT_MAVSDK_PORT)
+        coros.append(
+            command_loop(
+                args.mqtt_host,
+                args.mqtt_port,
+                args.drone_id,
+                mavsdk_address,
+                timeout_s=args.cmd_timeout,
+            )
+        )
+    await asyncio.gather(*coros)
 
 
 def main() -> None:
@@ -91,6 +113,20 @@ def main() -> None:
         metavar="HOST:PORT",
         help="連既有 mavsdk_server(如 localhost:50051),不自行啟動;"
         "未給時自行 spawn(預設行為,佔 50051)。給此參數時 --url 不生效",
+    )
+    parser.add_argument(
+        "--enable-cmd",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="訂閱 fleet/{drone_id}/cmd/mission 接受雲端任務派遣(預設開;"
+        "關閉用 --no-enable-cmd)。Phase 0 安全豁免:anonymous broker = 內網"
+        "任何人可派任務,僅限開發內網,見 docs/20-software/security.md §8",
+    )
+    parser.add_argument(
+        "--cmd-timeout",
+        type=float,
+        default=DEFAULT_MISSION_TIMEOUT_S,
+        help=f"任務子程序逾時秒數,超過即 kill 並補發 FAILED(預設 {DEFAULT_MISSION_TIMEOUT_S:.0f})",
     )
     args = parser.parse_args()
 

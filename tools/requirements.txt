@@ -5,3 +5,6 @@ numpy>=1.24
 # publish_fake_telemetry.py
 paho-mqtt>=2.0,<3
 protobuf>=5.26,<8
+
+# dispatch_mission.py(另需契約生成碼:pip install -e ../interfaces/proto/gen/python)
+aiomqtt>=2,<3

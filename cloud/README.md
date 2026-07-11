@@ -19,4 +19,7 @@ cloud/
 
 - **雲廠商中立**:K8s + S3 相容儲存 + PostgreSQL/PostGIS + 時序 DB;私有部署是產品賣點
 - 飛行安全不依賴雲端:斷線時機上自主,雲端只做監控/派遣/資料沉澱
-- Phase 0 最小目標:單一 compose 檔跑起 MQTT broker + 簡易遙測落庫 + Grafana 看板
+- Phase 0 最小目標:單一 compose 檔跑起 MQTT broker + 簡易遙測落庫 + Grafana 看板;
+  任務下行以 CLI 工具([tools/dispatch_mission.py](../tools/dispatch_mission.py) 發
+  `fleet/{drone_id}/cmd/mission`)代替 mission-svc(Phase 0 內網豁免:anonymous
+  broker、無 TLS/ACL,見 [security.md §8](../docs/20-software/security.md))
