@@ -60,3 +60,53 @@ jobs:
       - name: 清理 SITL 容器
         if: always()
         run: docker rm -f px4-sitl || true
+
+  # 失效保護場景回歸(S7):F09–F12,承載 docs/03-safety-analysis.md §4 矩陣與
+  # flight-test-plan F09–F12 的 SITL 預跑。matrix 每場景一個獨立 runner VM +
+  # 獨立 SITL 容器(場景會改參數/放電/觸發失效保護,不可共用容器)。
+  # 同 mission-sitl:nightly 觀察,不擋 PR。
+  failsafe-scenarios:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        scenario: [f09, f10, f11, f12]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 啟動 PX4 SITL(背景容器)
+        # 同 mission-sitl:此 image 主動送 MAVLink 到 host,監聽即可,不做埠映射。
+        run: docker run --rm -d --name px4-failsafe jonasvautherin/px4-gazebo-headless:1.15.4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: 安裝場景依賴
+        run: pip install -r tools/sitl_scenarios/requirements.txt
+
+      - name: 等待 SITL EKF/GPS lock(實測約 40 秒,留餘裕)
+        run: sleep 60
+
+      - name: 執行場景 ${{ matrix.scenario }}
+        # --container:F10 走 docker exec(px4-listener/px4-param)、
+        # F09 走 docker inspect 取源 IP 過濾被動觀測。timeout 900 早於
+        # job 層 timeout-minutes 觸發,留時間傾印 log。
+        working-directory: tools
+        run: |
+          set -o pipefail
+          timeout 900 python -m sitl_scenarios --scenario ${{ matrix.scenario }} \
+            --url udpin://0.0.0.0:14540 --container px4-failsafe \
+            | tee /tmp/scenario-${{ matrix.scenario }}.log
+
+      - name: 斷言場景 PASS
+        run: 'grep "RESULT: PASS" /tmp/scenario-${{ matrix.scenario }}.log'
+
+      - name: 失敗時傾印 SITL log
+        if: failure()
+        run: docker logs px4-failsafe --tail 200 || true
+
+      - name: 清理 SITL 容器
+        if: always()
+        run: docker rm -f px4-failsafe || true
