@@ -7,6 +7,7 @@ snapshot() 可直接逐欄映射。
 """
 
 import math
+import time
 from dataclasses import dataclass
 
 from mavsdk import System
@@ -14,7 +15,12 @@ from mavsdk import System
 
 @dataclass
 class TelemetryState:
-    """各 MAVSDK 遙測流的最新值;None 表示尚未收到該流的任何資料。"""
+    """各 MAVSDK 遙測流的最新值;None 表示尚未收到該流的任何資料。
+
+    last_update_monotonic / last_update_wall 由 touch() 維護:任一流每次
+    更新欄位後呼叫,分別記單調時鐘(供斷流判定,不受系統校時影響)與
+    wall-clock(供 unix_time_ms 表達真正的取樣時間)。
+    """
 
     lat_deg: float | None = None
     lon_deg: float | None = None
@@ -26,6 +32,13 @@ class TelemetryState:
     battery_v: float | None = None
     battery_pct: float | None = None
     health_all_ok: bool | None = None
+    last_update_monotonic: float | None = None
+    last_update_wall: float | None = None
+
+    def touch(self) -> None:
+        """記錄「最後一次任一流更新」的時間;每個 watch_* 更新欄位後呼叫。"""
+        self.last_update_monotonic = time.monotonic()
+        self.last_update_wall = time.time()
 
 
 async def watch_position(drone: System, state: TelemetryState) -> None:
@@ -33,33 +46,39 @@ async def watch_position(drone: System, state: TelemetryState) -> None:
         state.lat_deg = pos.latitude_deg
         state.lon_deg = pos.longitude_deg
         state.rel_alt_m = pos.relative_altitude_m
+        state.touch()
 
 
 async def watch_heading(drone: System, state: TelemetryState) -> None:
     async for heading in drone.telemetry.heading():
         state.heading_deg = heading.heading_deg
+        state.touch()
 
 
 async def watch_velocity(drone: System, state: TelemetryState) -> None:
     async for vel in drone.telemetry.velocity_ned():
         # 地速 = NED 水平分量合成(不含垂直速度)
         state.ground_speed_ms = math.hypot(vel.north_m_s, vel.east_m_s)
+        state.touch()
 
 
 async def watch_flight_mode(drone: System, state: TelemetryState) -> None:
     async for mode in drone.telemetry.flight_mode():
         state.flight_mode = str(mode)
+        state.touch()
 
 
 async def watch_armed(drone: System, state: TelemetryState) -> None:
     async for armed in drone.telemetry.armed():
         state.armed = armed
+        state.touch()
 
 
 async def watch_battery(drone: System, state: TelemetryState) -> None:
     async for battery in drone.telemetry.battery():
         state.battery_v = battery.voltage_v
         state.battery_pct = battery.remaining_percent
+        state.touch()
 
 
 async def watch_health(drone: System, state: TelemetryState) -> None:
@@ -74,6 +93,7 @@ async def watch_health(drone: System, state: TelemetryState) -> None:
             and health.is_accelerometer_calibration_ok
             and health.is_magnetometer_calibration_ok
         )
+        state.touch()
 
 
 # main.py 以 asyncio.gather 啟動的全部訂閱協程
