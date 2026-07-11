@@ -37,8 +37,11 @@ def _now_ms() -> int:
     return int(time.time() * 1000)
 
 
-async def _wait_position_ready(drone) -> None:
-    """等待全球定位 + home 點就緒(可被 asyncio.wait_for 包逾時)。"""
+async def wait_position_ready(drone) -> None:
+    """等待全球定位 + home 點就緒(可被 asyncio.wait_for 包逾時)。
+
+    公開複用點(tools/sitl_scenarios 亦 import 此函式)。
+    """
     async for health in drone.telemetry.health():
         if health.is_global_position_ok and health.is_home_position_ok:
             return
@@ -91,7 +94,7 @@ async def run_mission(
 
         # 等待可起飛(全球定位 + home 點就緒);加逾時避免串流靜默時永久阻塞
         try:
-            await asyncio.wait_for(_wait_position_ready(drone), timeout=health_timeout_s)
+            await asyncio.wait_for(wait_position_ready(drone), timeout=health_timeout_s)
         except (asyncio.TimeoutError, TimeoutError):
             raise TimeoutError(
                 f"定位未就緒:等待 GPS/home 超過 {health_timeout_s:g} 秒"

@@ -41,8 +41,9 @@
 ## 跑法
 
 ```bash
-# 依賴(另需 proto 生成碼套件)
-pip install -r requirements.txt
+# 安裝(S11 起為可安裝套件,依賴由 pyproject 帶入;drone-proto 為 repo 內
+# 本地套件,需另行安裝)
+pip install -e .
 pip install -e ../../interfaces/proto/gen/python
 
 # PX4 SITL(預設 udpin://0.0.0.0:14540)
@@ -89,3 +90,17 @@ stateDiagram-v2
 
 任何例外都會先發出 `STATE_FAILED` 事件再拋出 `MissionExecError`(CLI exit code 1;
 任務檔格式錯誤為 exit code 2)。
+
+## 任務控制(契約預留,S12 實作)
+
+契約 v0.2.0 起預留下行控制主題(定義見
+[interfaces/README.md](../../interfaces/README.md) 與
+[mission.proto](../../interfaces/proto/drone/v1/mission.proto)):
+
+| 主題 | 訊息 | QoS / 編碼 | 狀態 |
+|------|------|-----------|------|
+| `fleet/{drone_id}/cmd/mission_ctrl` | `drone.v1.MissionCommand`(PAUSE / RESUME / ABORT) | QoS 1,proto3 JSON | **S12 實作**(v0.2.0 只定契約) |
+
+對應的進度狀態 `STATE_PAUSED = 6` 亦於 v0.2.0 新增;本套件的狀態機接入
+(`IN_PROGRESS ⇄ PAUSED`、`--resume` 斷點續飛)同屬 S12 範圍,Phase 0 現行
+狀態機(上圖)不變。

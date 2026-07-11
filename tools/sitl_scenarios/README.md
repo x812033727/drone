@@ -17,11 +17,15 @@ CI 由 `.github/workflows/sitl-integration.yml` 的 `failsafe-scenarios` job nig
 docker run --rm -d --name px4-sitl jonasvautherin/px4-gazebo-headless:1.15.4
 sleep 60   # 等 EKF/GPS lock(實測約 40 秒)
 
-# 2. 安裝依賴,於 tools/ 目錄下執行
-pip install -r sitl_scenarios/requirements.txt
-python -m sitl_scenarios --scenario f11 --url udpin://0.0.0.0:14540 --container px4-sitl
+# 2. 安裝依賴(S11 起 runner 複用 mission_exec,需一併安裝;於 repo 根執行)
+pip install -r tools/sitl_scenarios/requirements.txt
+pip install -e onboard/mission_exec
+pip install -e interfaces/proto/gen/python
 
-# 3. 跑完清容器
+# 3. 於 tools/ 目錄下執行
+(cd tools && python -m sitl_scenarios --scenario f11 --url udpin://0.0.0.0:14540 --container px4-sitl)
+
+# 4. 跑完清容器
 docker rm -f px4-sitl
 ```
 
@@ -83,7 +87,7 @@ docker rm -f px4-sitl
 ```
 sitl_scenarios/
 ├── main.py / __main__.py   # CLI:python -m sitl_scenarios --scenario f09|f10|f11|f12 | --all
-├── runner.py               # 共用骨架:連線/任務/遙測記錄(連線與任務段抄自 onboard/mission_exec,見檔頭)
+├── runner.py               # 共用骨架:連線/任務/遙測記錄(連線與任務段 import mission_exec 複用,S11 起不再抄碼,見檔頭)
 ├── checks.py               # 斷言純函式(無 mavsdk 依賴,單元可測)
 ├── scenarios/f09..f12*.py  # 各場景:docstring 含注入法、通過準則、與文件差異
 └── tests/test_checks.py    # 斷言邏輯單元測試(不需 SITL)

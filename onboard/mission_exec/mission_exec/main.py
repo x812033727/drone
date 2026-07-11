@@ -73,6 +73,17 @@ def _parse_server_address(value: str) -> tuple[str, int] | None:
     return host, int(port)
 
 
+async def wait_connected(drone: System) -> None:
+    """等待 core.connection_state 連上飛行器;串流先結束則 raise RuntimeError。
+
+    公開複用點(tools/sitl_scenarios 亦 import 此函式);可被 asyncio.wait_for 包逾時。
+    """
+    async for state in drone.core.connection_state():
+        if state.is_connected:
+            return
+    raise RuntimeError("連線串流結束仍未連上飛行器")
+
+
 async def _connect(url: str, server_address: tuple[str, int] | None) -> System:
     if server_address is None:
         drone = System()
@@ -82,11 +93,9 @@ async def _connect(url: str, server_address: tuple[str, int] | None) -> System:
         drone = System(mavsdk_server_address=host, port=port)
         print(f"連線既有 mavsdk_server:{host}:{port}", flush=True)
     await drone.connect(system_address=url)
-    async for state in drone.core.connection_state():
-        if state.is_connected:
-            print("已連上飛行器", flush=True)
-            return drone
-    raise RuntimeError("連線串流結束仍未連上飛行器")
+    await wait_connected(drone)
+    print("已連上飛行器", flush=True)
+    return drone
 
 
 async def _run(args: argparse.Namespace) -> None:

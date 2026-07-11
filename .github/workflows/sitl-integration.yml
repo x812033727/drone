@@ -31,17 +31,17 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: 安裝 mission_exec 依賴 + proto 生成碼套件
+      - name: 安裝 mission_exec(editable)+ proto 生成碼套件
         run: |
-          pip install -r onboard/mission_exec/requirements.txt
+          pip install -e onboard/mission_exec
           pip install -e interfaces/proto/gen/python
 
       - name: 等待 SITL EKF/GPS lock(實測約 40 秒,留餘裕)
         run: sleep 60
 
       - name: 執行 demo_square 任務
-        # mission_exec 無 pyproject(不可 pip install -e),對齊 README 跑法:
-        # 於套件目錄內以 python -m 執行。timeout 300 為單次任務上限,
+        # mission_exec 已 editable 安裝(S11 起有 pyproject);working-directory
+        # 只是讓 --mission 相對路徑成立。timeout 300 為單次任務上限,
         # 早於 job 層 timeout-minutes 觸發以便留時間傾印 log。
         working-directory: onboard/mission_exec
         run: |
@@ -83,8 +83,11 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: 安裝場景依賴
-        run: pip install -r tools/sitl_scenarios/requirements.txt
+      - name: 安裝場景依賴(runner 複用 mission_exec,S11 起需一併安裝)
+        run: |
+          pip install -r tools/sitl_scenarios/requirements.txt
+          pip install -e onboard/mission_exec
+          pip install -e interfaces/proto/gen/python
 
       - name: 等待 SITL EKF/GPS lock(實測約 40 秒,留餘裕)
         run: sleep 60

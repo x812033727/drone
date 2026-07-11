@@ -1,0 +1,25 @@
+# mission_exec 打包定義(S11 起為可安裝套件,消除 sitl_scenarios 抄碼債)。
+#
+# 安裝(editable,依賴由本檔帶入):
+#   pip install -e onboard/mission_exec
+#   pip install -e interfaces/proto/gen/python   # drone-proto 為 repo 內本地套件,
+#                                                # 不能寫進 dependencies,需另行安裝
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mission-exec"
+version = "0.1.0"
+description = "機載任務執行器(Phase 0 雛形):JSON 任務檔經 MAVSDK 上傳 PX4 執行 + 進度回報"
+requires-python = ">=3.10"
+dependencies = [
+  "mavsdk>=2",
+  "aiomqtt>=2,<3",
+  "protobuf>=5.26,<8",
+]
+
+[tool.setuptools]
+# 只打包 mission_exec 套件本體;missions/(示範任務檔)與 tests/ 留在 repo 樹,
+# 由 editable 安裝(pip install -e)情境下以相對路徑取用
+packages = ["mission_exec"]

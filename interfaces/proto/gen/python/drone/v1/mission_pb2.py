@@ -24,7 +24,7 @@ _sym_db = _symbol_database.Default()
 
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x16\x64rone/v1/mission.proto\x12\x08\x64rone.v1\"a\n\x08Waypoint\x12\x0f\n\x07lat_deg\x18\x01 \x01(\x01\x12\x0f\n\x07lon_deg\x18\x02 \x01(\x01\x12\x11\n\trel_alt_m\x18\x03 \x01(\x02\x12\x0e\n\x06hold_s\x18\x04 \x01(\x02\x12\x10\n\x08speed_ms\x18\x05 \x01(\x02\"`\n\x0bMissionPlan\x12\x12\n\nmission_id\x18\x01 \x01(\t\x12%\n\twaypoints\x18\x02 \x03(\x0b\x32\x12.drone.v1.Waypoint\x12\x16\n\x0ertl_after_last\x18\x03 \x01(\x08\"\xaf\x02\n\x0fMissionProgress\x12\x12\n\nmission_id\x18\x01 \x01(\t\x12\x10\n\x08\x64rone_id\x18\x02 \x01(\t\x12\x14\n\x0c\x63urrent_item\x18\x03 \x01(\x05\x12\x13\n\x0btotal_items\x18\x04 \x01(\x05\x12.\n\x05state\x18\x05 \x01(\x0e\x32\x1f.drone.v1.MissionProgress.State\x12\x14\n\x0cunix_time_ms\x18\x06 \x01(\x03\"\x84\x01\n\x05State\x12\x15\n\x11STATE_UNSPECIFIED\x10\x00\x12\x12\n\x0eSTATE_RECEIVED\x10\x01\x12\x12\n\x0eSTATE_UPLOADED\x10\x02\x12\x15\n\x11STATE_IN_PROGRESS\x10\x03\x12\x13\n\x0fSTATE_COMPLETED\x10\x04\x12\x10\n\x0cSTATE_FAILED\x10\x05\x62\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x16\x64rone/v1/mission.proto\x12\x08\x64rone.v1\"a\n\x08Waypoint\x12\x0f\n\x07lat_deg\x18\x01 \x01(\x01\x12\x0f\n\x07lon_deg\x18\x02 \x01(\x01\x12\x11\n\trel_alt_m\x18\x03 \x01(\x02\x12\x0e\n\x06hold_s\x18\x04 \x01(\x02\x12\x10\n\x08speed_ms\x18\x05 \x01(\x02\"`\n\x0bMissionPlan\x12\x12\n\nmission_id\x18\x01 \x01(\t\x12%\n\twaypoints\x18\x02 \x03(\x0b\x32\x12.drone.v1.Waypoint\x12\x16\n\x0ertl_after_last\x18\x03 \x01(\x08\"\xc1\x02\n\x0fMissionProgress\x12\x12\n\nmission_id\x18\x01 \x01(\t\x12\x10\n\x08\x64rone_id\x18\x02 \x01(\t\x12\x14\n\x0c\x63urrent_item\x18\x03 \x01(\x05\x12\x13\n\x0btotal_items\x18\x04 \x01(\x05\x12.\n\x05state\x18\x05 \x01(\x0e\x32\x1f.drone.v1.MissionProgress.State\x12\x14\n\x0cunix_time_ms\x18\x06 \x01(\x03\"\x96\x01\n\x05State\x12\x15\n\x11STATE_UNSPECIFIED\x10\x00\x12\x12\n\x0eSTATE_RECEIVED\x10\x01\x12\x12\n\x0eSTATE_UPLOADED\x10\x02\x12\x15\n\x11STATE_IN_PROGRESS\x10\x03\x12\x13\n\x0fSTATE_COMPLETED\x10\x04\x12\x10\n\x0cSTATE_FAILED\x10\x05\x12\x10\n\x0cSTATE_PAUSED\x10\x06\"\xcb\x01\n\x0eMissionCommand\x12\x12\n\nmission_id\x18\x01 \x01(\t\x12\x31\n\x07\x63ommand\x18\x02 \x01(\x0e\x32 .drone.v1.MissionCommand.Command\x12\x14\n\x0cunix_time_ms\x18\x03 \x01(\x03\"\\\n\x07\x43ommand\x12\x17\n\x13\x43OMMAND_UNSPECIFIED\x10\x00\x12\x11\n\rCOMMAND_PAUSE\x10\x01\x12\x12\n\x0e\x43OMMAND_RESUME\x10\x02\x12\x11\n\rCOMMAND_ABORT\x10\x03\x62\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
@@ -36,7 +36,11 @@ if not _descriptor._USE_C_DESCRIPTORS:
   _globals['_MISSIONPLAN']._serialized_start=135
   _globals['_MISSIONPLAN']._serialized_end=231
   _globals['_MISSIONPROGRESS']._serialized_start=234
-  _globals['_MISSIONPROGRESS']._serialized_end=537
+  _globals['_MISSIONPROGRESS']._serialized_end=555
   _globals['_MISSIONPROGRESS_STATE']._serialized_start=405
-  _globals['_MISSIONPROGRESS_STATE']._serialized_end=537
+  _globals['_MISSIONPROGRESS_STATE']._serialized_end=555
+  _globals['_MISSIONCOMMAND']._serialized_start=558
+  _globals['_MISSIONCOMMAND']._serialized_end=761
+  _globals['_MISSIONCOMMAND_COMMAND']._serialized_start=669
+  _globals['_MISSIONCOMMAND_COMMAND']._serialized_end=761
 # @@protoc_insertion_point(module_scope)
