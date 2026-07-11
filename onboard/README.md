@@ -13,7 +13,7 @@ onboard/
 │   ├── stereo_depth/       # 雙目深度(CUDA SGM)
 │   └── local_mapper/       # ESDF 佔據圖
 ├── drone_agent/            # 非 ROS 常駐服務:MQTT 遙測上雲、gRPC 指令、WebRTC、OTA(遙測已實作)
-└── video-pipeline/         # GStreamer/DeepStream:錄影 + 串流 + 推論分支
+└── video_pipeline/         # GStreamer/DeepStream:錄影 + 串流 + 推論分支(POC 已落地:x86 方法論)
 ```
 
 ## 環境基準
@@ -29,3 +29,5 @@ onboard/
 - [x] ros2_ws 建立 + px4_ros_com bridge 跑通(SITL)→ [ros2_ws/](ros2_ws/)(容器化環境 + bridge_smoke + run_smoke.sh 一鍵煙霧)
 - [ ] mission_exec 雛形:接收 JSON 任務 → 上傳 MAVLink mission → 進度回報
 - [x] drone-agent 雛形:MQTT 連雲、遙測摘要 1 Hz 上報 → [drone_agent/](drone_agent/)
+- [x] video_pipeline POC:RTSP/WebRTC 傳輸架構 + 像素時戳端到端延遲量測方法論(x86 基線,
+      非 REQ-COM-03 驗證)→ [video_pipeline/](video_pipeline/)

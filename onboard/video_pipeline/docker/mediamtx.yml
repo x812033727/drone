@@ -1,0 +1,20 @@
+# MediaMTX 設定(POC 最小面):RTSP 進/出 + WebRTC 出 + API(供健康檢查)。
+# 埠可由 run_poc.sh 以環境變數覆寫(MTX_RTSPADDRESS / MTX_WEBRTCADDRESS / MTX_APIADDRESS)。
+logLevel: info
+
+api: yes
+apiAddress: 127.0.0.1:9997
+
+rtsp: yes
+rtspAddress: :8554
+
+webrtc: yes
+webrtcAddress: :8889
+
+# POC 用不到的協議全關,少開埠
+rtmp: no
+hls: no
+srt: no
+
+paths:
+  stream:
