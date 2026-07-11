@@ -57,7 +57,7 @@
 |--------|------|------|
 | 招募 | **嵌入式韌體最優先**(Phase 0 就開缺,見 team.md 招募優先序);硬體電子、感知演算法建 pipeline | 每週篩選、每雙週面試日 |
 | 供應商詢價 | Phase 1 物料 RFQ 先行(T-Motor/Hobbywing 代理、電池 pack 廠、碳件 CNC),模板見 [procurement.md](procurement.md) | W3 起發出,W10 前回收比價 |
-| PA-1 詳細設計 | 重量預算表、動力選型計算、結構佈局——供 W11 規格凍結(M2)輸入 | 週更,隨架次數據修正 |
+| PA-1 詳細設計 | 重量預算表、動力選型計算、結構佈局——供 W11 規格凍結(M2)輸入;結構佈局已出 [airframe rev 2 §5–§8](../../30-structure/airframe-design.md)(2026-07-11,M2 未決項見其 §8.2) | 週更,隨架次數據修正 |
 
 ## 5. 法規前置(台灣,引 [40-regulatory](../../40-regulatory/certification-roadmap.md))
 
@@ -87,3 +87,4 @@
 | 日期 | 決議 | 理由 | 記錄人 |
 |------|------|------|--------|
 | 2026-07-11 | BAT-A 定案 12S2P 能量型 21700(基線 LG M58T,需查證),放棄 12S3P P45B;pack ≤ 2.1 kg 上限不動、額定 ~501 Wh、韌體母線限流 40 A(有效推重比 ~2.1);空載續航設計值 43.0–44.5 min 對 45 min 規格之缺口處置交 M2 表決 | 3P 裸芯 ~2.4 kg 超 ≤ 2.1 kg 機械上限;O3 唯一同時守住重量/能量/倍率三軸。影響文件:[propulsion §7.3/§2/§3/§4/§7.1](../../10-hardware/propulsion.md)、[00-overview §3](../../00-overview.md)、[bom §1](../../10-hardware/bom.md)、[roadmap §4](../roadmap.md) | HW-1(Claude) |
+| 2026-07-11 | PA-1 結構佈局 rev 2:①臂管升級 Ø25×1.5 → **Ø30×2.0 高模量**(Ø25×1.5 一階模態 96–115 Hz 對「> 3× 槳頻」準則不成立且撞 2P 帶;升級後 161–170 Hz ≥ 150–166 Hz 邊際成立,E 抽測/端質量/W12 轉速三閘放行);②佈局站位凍結草案(電池形心 x −30 後抽拉、酬載 +80 前下掛、ESC 移臂根、數傳/5G 天線對角隔離),四組態 CG ∈ [−12.8, +10.8] mm ≤ ±15 ✓;③槳尖間隙 23.6 mm/5.2% D 可行(邊際),19" 槳共面佈置不可行 | 臂升級 +0.10–0.13 kg 超 propulsion §3 成長準備金 → 減重行動(首選 ESC 轉 APD −0.14 kg)與 §3 結構列回寫交 M2。影響文件:[airframe §5–§8](../../30-structure/airframe-design.md)、[materials §1](../../30-structure/materials.md)、[payload-interface §1](../../30-structure/payload-interface.md) | HW-4(Claude) |
