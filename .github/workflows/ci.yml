@@ -1,0 +1,39 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  lint-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      - name: 安裝工具與測試依賴
+        # 各子系統 requirements 存在才裝(本 workflow 需在堆疊合併的任何中間狀態都可跑)
+        run: |
+          pip install ruff pytest
+          for f in tools/requirements.txt \
+                   onboard/drone_agent/requirements.txt \
+                   onboard/mission_exec/requirements.txt \
+                   cloud/ingest/requirements.txt; do
+            if [ -f "$f" ]; then pip install -r "$f"; fi
+          done
+          if [ -d interfaces/proto/gen/python ]; then
+            pip install -e interfaces/proto/gen/python
+          fi
+
+      - name: Ruff 靜態檢查
+        run: ruff check .
+
+      - name: Pytest
+        # 測試尚未合入前 pytest 收不到測試會回 exit code 5,暫予容忍;
+        # 全部測試 PR 合入後,請把這行改回單純的 `pytest -q`。
+        run: pytest -q || [ $? -eq 5 ]

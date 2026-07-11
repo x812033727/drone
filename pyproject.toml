@@ -1,0 +1,22 @@
+# 根層工具設定檔:僅供 ruff / pytest 等工程工具讀取,本 repo 不以此打包發佈。
+# 各子系統(onboard / cloud / tools)日後如需打包,於各自目錄自建 pyproject。
+
+[tool.ruff]
+# Phase 0 工具鏈以 Python 3.10 為基線(Jetson / 開發機皆可用)
+target-version = "py310"
+line-length = 100
+# protobuf 生成碼不受 lint 管(入版控但機器產生)
+extend-exclude = ["interfaces/proto/gen"]
+
+[tool.ruff.lint]
+# E/W: pycodestyle;F: pyflakes;I: import 排序;UP: pyupgrade(現代語法)
+select = ["E", "F", "W", "I", "UP"]
+ignore = []
+
+[tool.pytest.ini_options]
+# 掃描各子系統目錄下的測試(如 onboard/drone_agent/tests)
+testpaths = [
+    "onboard",
+    "cloud",
+    "tools",
+]
