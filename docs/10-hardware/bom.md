@@ -17,7 +17,7 @@
 | 動力 | MN505-S 馬達 | T-Motor MN505-S KV320 | 4 | 16,000 | 0.78 | T-Motor 代理 | Hobbywing X 級整合動力(plan B,[propulsion §10](propulsion.md)) | 4–8 週 | Phase 0 RFQ 已發 |
 | | 40A FOC ESC(DroneCAN) | T-Motor Alpha 40A LV(12S 版,首選) | 4 | 12,000 | 0.22 | T-Motor 代理 | APD 40F3 / Hobbywing XRotor Pro 40A(轉單條件見 [propulsion §8](propulsion.md)) | 4–8 週 | Phase 0 RFQ 已發 |
 | | 18" 摺疊碳槳 | T-Motor 18×6.1 摺疊碳槳 | 2 套 | 6,000 | 0.20(裝機 1 套) | T-Motor 代理 | MEJZLIK(高階) | ~4 週 | Phase 0 RFQ 已發 |
-| | 12S 12Ah 智慧電池(pack 含 BMS) | BAT-A:12S3P Molicel P45B(規格書草案 [propulsion §7.1](propulsion.md);⚠ 12S2P 能量型替代案併詢) | 2 顆 | 44,000 | 2.10(裝機 1 顆) | 台灣 pack 廠 ODM | 12S2P 能量型 21700(§7.1 重量待決項) | 樣品 8–12 週 | Phase 0 RFQ 已發 |
+| | 12S 11.6Ah 智慧電池(pack 含 BMS) | BAT-A:12S2P 能量型 21700,基線 LG INR21700-M58T(**2026-07-11 定案**,trade study [propulsion §7.3](propulsion.md);規格書 §7.1;芯規格需查證) | 2 顆 | 44,000(2P 芯數減、能量型芯價異,估價不動待回價) | 2.10(裝機 1 顆,合約上限) | 台灣 pack 廠 ODM | ≥ 5.6 Ah 等效韓系能量型芯(NDAA:韓系可、陸系不可) | 樣品 8–12 週 | Phase 0 RFQ 已發;2026-07-11 定案 12S2P,W10 回價以此複核 |
 | | PMU 配電板(自研,攤提) | 自研 PMU(90 A 連續) | 1 | 6,000 | 0.05 | 自研 + PCBA 委外 | Holybro PM03D(Phase 0/EVT 過渡) | 隨 FC-H7 節奏 | 未詢價 |
 | 感測 | 雙目模組 ×2 + ToF + 光流 | 待選型(OAK-D 級雙目 + ToF + 光流模組) | 1 套 | 15,000 | 0.08 | Luxonis 經銷等 | Intel RealSense D435i | 3–4 週 | 未詢價 |
 | 結構 | 碳纖維機身/臂/腳架 + CNC 件 + 緊固(原型小批) | 自研圖面(airframe §2 材料表),CNC 碳件 | 1 套 | 45,000 | 0.46 | 碳件 CNC 廠 | 第二 CNC 廠(RFQ 併比價) | 樣品 4–6 週 | Phase 0 RFQ 已發 |
@@ -47,7 +47,7 @@
 | **小計** | | | | **≈ 582,500** | | | | | |
 
 - **AC-1 108,500 同源核對**:= §1 航電列合計(FC-H7 15,000 + Orin NX 30,000 + GNSS 12,000 + 數傳 35,000 + 5G 8,000 + RID 2,500 + PMU 6,000 = 108,500 ✓),§1 任一航電列改價時本列同步改
-- PB-1 重量預算表尚未建立(規劃於 propulsion rev 3、Phase 2 啟動前),故重量欄除電池(propulsion §7.2 上限 ×2)外標「待估」,不自行發明數字;空重 26 kg 口徑見 [00-overview §3](../00-overview.md)
+- PB-1 重量預算表尚未建立(規劃於 propulsion rev 4——rev 3 已用於 PA-1 電池定案 §7.3——Phase 2 啟動前),故重量欄除電池(propulsion §7.2 上限 ×2)外標「待估」,不自行發明數字;空重 26 kg 口徑見 [00-overview §3](../00-overview.md)
 
 物流構型差異:−噴灑系統 +貨箱與鎖固(~25,000)+ 降落傘系統(~40,000)。
 
@@ -56,7 +56,7 @@
 | RFQ 批次 | 涵蓋列 | 狀態 | 下一步 |
 |----------|--------|------|--------|
 | 動力(T-Motor/Hobbywing 代理) | §1/§2 馬達、ESC、槳 | Phase 0 試探性 RFQ 已發 | W10 前回收比價,回寫單價/交期欄 |
-| 電池 pack(台灣 pack 廠 ODM) | §1 BAT-A、§2 BAT-B | Phase 0 試探性 RFQ 已發(附 propulsion §7 規格書草案) | 回價須同時回覆 §7.1 重量待決項替代案 |
+| 電池 pack(台灣 pack 廠 ODM) | §1 BAT-A、§2 BAT-B | Phase 0 試探性 RFQ 已發(附 propulsion §7 規格書草案) | BAT-A 回價以 2026-07-11 [propulsion §7.3](propulsion.md) 定案(12S2P 能量型)為準複核,附電芯突波背書與 pack 實重 |
 | 結構(碳件 CNC/碳管) | §1/§2 結構列 | Phase 0 試探性 RFQ 已發(數量分級 2/10/50/200) | 回收量價曲線,餵 §4 路線 3 開模決策 |
 | 其餘全部 | 航電、感測、噴灑、充電器等 | 未詢價 | Phase 1 啟動後分批 RFQ,依交期欄長短排序 |
 
