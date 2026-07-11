@@ -1,0 +1,49 @@
+name: cloud-smoke
+
+on:
+  pull_request:
+    paths:
+      - "cloud/**"
+      - "tools/publish_fake_telemetry.py"
+      - "interfaces/**"
+      - ".github/workflows/cloud-smoke.yml"
+
+jobs:
+  compose-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: cloud/deploy/compose
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 起雲端最小棧(等待 healthcheck)
+        run: docker compose up -d --build --wait --wait-timeout 180
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: 打 10 筆假遙測
+        working-directory: .
+        run: |
+          pip install paho-mqtt protobuf
+          pip install -e interfaces/proto/gen/python
+          python tools/publish_fake_telemetry.py --drone-id ci-1 --rate 5 --count 10
+
+      - name: 斷言遙測落庫
+        run: |
+          sleep 3
+          COUNT=$(docker compose exec -T timescaledb \
+            psql -U drone -d drone -tAc "SELECT count(*) FROM telemetry WHERE drone_id='ci-1'")
+          echo "telemetry rows: ${COUNT}"
+          test "${COUNT}" -ge 1
+
+      - name: 失敗時傾印容器日誌
+        if: failure()
+        run: docker compose logs --tail 200
+
+      - name: 收攤
+        if: always()
+        run: docker compose down -v
