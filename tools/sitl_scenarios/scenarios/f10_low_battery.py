@@ -45,6 +45,7 @@ from sitl_scenarios.runner import (
     ScenarioConfig,
     ScenarioError,
     ScenarioResult,
+    arm_with_retry,
     connect,
     logline,
     make_clock,
@@ -218,7 +219,7 @@ async def run(cfg: ScenarioConfig) -> ScenarioResult:
     watch = _Watch(clock, cfg.container)
     ptask = asyncio.create_task(_poller(cfg.container, watch))
     try:
-        await drone.action.arm()
+        await arm_with_retry(drone)
         await drone.mission.start_mission()
         logline(clock(), "已 arm + start_mission(方形 ×2,20 m,5 m/s)")
 

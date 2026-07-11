@@ -127,6 +127,26 @@ async def connect(cfg: ScenarioConfig, timeout_s: float = 60.0) -> System:
     return drone
 
 
+async def arm_with_retry(drone: System, attempts: int = 8, delay_s: float = 5.0) -> None:
+    """arm 並對 COMMAND_DENIED 重試(慢 runner 上 SITL 就緒晚於固定等待的常見情況)。
+
+    2026-07-11 nightly 實錄:f10/f11 在較慢的 hosted runner 上 arm 立即被拒,
+    且例外未被接住導致行程懸掛吃滿外層 timeout(exit 124)——就緒與快速失敗都在此收斂。
+    超過 attempts 仍被拒 → 升級 ScenarioError(main 會立刻 RESULT: FAIL)。
+    """
+    from mavsdk.action import ActionError
+
+    for i in range(1, attempts + 1):
+        try:
+            await drone.action.arm()
+            return
+        except ActionError as e:
+            if i == attempts:
+                raise ScenarioError(f"arm 連續 {attempts} 次被拒:{e}") from e
+            logline(0.0, f"arm 被拒({e}),{delay_s:.0f}s 後重試({i}/{attempts})")
+            await asyncio.sleep(delay_s)
+
+
 async def wait_position_ready(drone: System) -> None:
     """等待全球定位 + home 就緒(複用 mission_exec.executor.wait_position_ready)。"""
     try:

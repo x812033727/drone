@@ -40,6 +40,7 @@ from sitl_scenarios.runner import (
     ScenarioConfig,
     ScenarioError,
     ScenarioResult,
+    arm_with_retry,
     connect,
     logline,
     make_clock,
@@ -87,7 +88,7 @@ async def run(cfg: ScenarioConfig) -> ScenarioResult:
     rec.start()
     try:
         await drone.action.set_takeoff_altitude(TAKEOFF_ALT_M)
-        await drone.action.arm()
+        await arm_with_retry(drone)
         await drone.action.takeoff()
         deadline = clock() + 90
         while clock() < deadline:

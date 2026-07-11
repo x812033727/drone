@@ -41,6 +41,7 @@ from sitl_scenarios.runner import (
     ScenarioConfig,
     ScenarioError,
     ScenarioResult,
+    arm_with_retry,
     connect,
     logline,
     make_clock,
@@ -125,7 +126,7 @@ async def run(cfg: ScenarioConfig) -> ScenarioResult:
     rec.start()
     watch.start()
     try:
-        await drone.action.arm()
+        await arm_with_retry(drone)
         await drone.mission.start_mission()
         logline(clock(), "已 arm + start_mission(4 航點方形,30 m,5 m/s)")
 
