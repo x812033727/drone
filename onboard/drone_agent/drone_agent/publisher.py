@@ -1,9 +1,15 @@
 """遙測快照組包與 MQTT 上報迴圈。
 
-snapshot() / is_stale() 是純函式,與 I/O 分離、可單測;
+snapshot() / is_stale() / flight_event() 是純函式,與 I/O 分離、可單測;
 publish_loop() 每 1/rate 秒取一次快照,以 proto3 JSON mapping 發佈到
 `fleet/{drone_id}/telemetry`(QoS 1)。MQTT 斷線自動重連;重連期間的
 遙測直接丟棄,Phase 0 不做補傳。
+
+飛行事件:watch_armed 偵測到 armed 邊緣時把 (armed, unix_time_ms) 排入
+state.pending_events;publish_loop 共用同一 MQTT 連線,每輪把佇列全數
+以 FlightEvent 發佈到 `fleet/{drone_id}/events`(QoS 1)。事件不受斷流
+跳發影響(armed 邊緣本身就是流有更新的證據);發佈失敗(斷線)時事件
+留在佇列,重連後補發 —— 語意 at-least-once,消費端需容忍重複。
 
 斷流保護:MAVSDK 遙測流可能在飛控鏈路中斷後靜默(不結束、不拋錯),
 若照常發布會變成「時間戳全新、內容凍結」的殭屍遙測,掩蓋墜機/失聯。
@@ -16,8 +22,9 @@ import logging
 import time
 
 import aiomqtt
-from drone.v1 import telemetry_pb2
+from drone.v1 import events_pb2, telemetry_pb2
 from google.protobuf.json_format import MessageToJson
+from google.protobuf.message import Message
 
 from drone_agent.state import TelemetryState
 
@@ -38,6 +45,10 @@ _FIELDS = (
     "battery_v",
     "battery_pct",
     "health_all_ok",
+    "satellites",
+    "gps_fix_type",
+    "hdop",
+    "vertical_speed_ms",
 )
 
 
@@ -77,7 +88,18 @@ def snapshot(
     return msg
 
 
-def _to_json(msg: telemetry_pb2.TelemetrySummary) -> str:
+def flight_event(drone_id: str, armed: bool, unix_time_ms: int) -> events_pb2.FlightEvent:
+    """把一筆 armed 邊緣(state.pending_events 的元素)組成 FlightEvent。"""
+    return events_pb2.FlightEvent(
+        drone_id=drone_id,
+        unix_time_ms=unix_time_ms,
+        event=(
+            events_pb2.FlightEvent.EVENT_ARMED if armed else events_pb2.FlightEvent.EVENT_DISARMED
+        ),
+    )
+
+
+def _to_json(msg: Message) -> str:
     """proto3 JSON mapping,單行、保留 proto 欄位名、預設值也輸出(除錯友善)。"""
     return MessageToJson(
         msg,
@@ -101,6 +123,7 @@ async def publish_loop(
     避免以舊快照配新時間戳的殭屍遙測掩蓋失聯;恢復後自動續傳。
     """
     topic = f"fleet/{drone_id}/telemetry"
+    events_topic = f"fleet/{drone_id}/events"
     interval = 1.0 / rate
     was_stale = False  # 跨 MQTT 重連保留,log 只在狀態轉換時各記一次
     while True:
@@ -120,6 +143,20 @@ async def publish_loop(
                     if not stale:
                         payload = _to_json(snapshot(state, drone_id))
                         await client.publish(topic, payload=payload, qos=1)
+                    # 飛行事件:每輪清空佇列(不受斷流跳發影響——armed 邊緣
+                    # 本身就是流有更新的證據)。先發佈成功才 popleft:發佈
+                    # 中途斷線時事件留在佇列,重連後補發(at-least-once)
+                    while state.pending_events:
+                        armed_val, event_ms = state.pending_events[0]
+                        event = flight_event(drone_id, armed_val, event_ms)
+                        await client.publish(events_topic, payload=_to_json(event), qos=1)
+                        state.pending_events.popleft()
+                        logger.info(
+                            "已發布飛行事件 %s(%d)至 %s",
+                            events_pb2.FlightEvent.Event.Name(event.event),
+                            event_ms,
+                            events_topic,
+                        )
                     await asyncio.sleep(interval)
         except aiomqtt.MqttError as exc:
             logger.warning("MQTT 斷線:%s;%.0f 秒後重連(期間遙測丟棄)", exc, RECONNECT_DELAY_S)

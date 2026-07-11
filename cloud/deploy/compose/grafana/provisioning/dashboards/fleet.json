@@ -141,7 +141,7 @@
         {
           "refId": "A",
           "format": "table",
-          "rawSql": "SELECT DISTINCT ON (drone_id) drone_id, time AS 最後回報, EXTRACT(EPOCH FROM (now() - time))::int AS 距今秒, flight_mode, armed, battery_v, battery_pct, health_all_ok FROM telemetry ORDER BY drone_id, time DESC"
+          "rawSql": "SELECT DISTINCT ON (drone_id) drone_id, time AS 最後回報, EXTRACT(EPOCH FROM (now() - time))::int AS 距今秒, flight_mode, armed, battery_v, battery_pct, health_all_ok, satellites, gps_fix_type FROM telemetry ORDER BY drone_id, time DESC"
         }
       ],
       "fieldConfig": {
@@ -207,6 +207,28 @@
           "refId": "A",
           "format": "table",
           "rawSql": "SELECT time, drone_id, mission_id, current_item, total_items, state FROM mission_progress WHERE $__timeFilter(time) ORDER BY time DESC LIMIT 100"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "type": "table",
+      "title": "飛行事件",
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 28
+      },
+      "datasource": {
+        "type": "postgres",
+        "uid": "drone-tsdb"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "rawSql": "SELECT time, drone_id, event FROM flight_events ORDER BY time DESC LIMIT 50"
         }
       ]
     }

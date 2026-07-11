@@ -14,7 +14,12 @@ CREATE TABLE telemetry (
     armed           boolean,
     battery_v       real,
     battery_pct     real,
-    health_all_ok   boolean
+    health_all_ok   boolean,
+    -- v0.3.0 新增:GPS 品質與垂直速度
+    satellites        integer,
+    gps_fix_type      text,
+    hdop              real,
+    vertical_speed_ms real
 );
 SELECT create_hypertable('telemetry', 'time');
 CREATE INDEX ON telemetry (drone_id, time DESC);
@@ -29,3 +34,12 @@ CREATE TABLE mission_progress (
     state        text
 );
 CREATE INDEX ON mission_progress (drone_id, time DESC);
+
+-- 對 interfaces/proto/drone/v1/events.proto 的 FlightEvent(v0.3.0)
+-- 主題 fleet/{drone_id}/events 為 QoS 1 at-least-once,重複投遞落庫多列無害
+CREATE TABLE flight_events (
+    time     timestamptz NOT NULL,
+    drone_id text        NOT NULL,
+    event    text
+);
+CREATE INDEX ON flight_events (drone_id, time DESC);

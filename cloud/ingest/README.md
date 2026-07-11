@@ -2,7 +2,7 @@
 
 > **定位**:Phase 0 雛形(Python,~100 行)。Phase 1 由 Go 裝置閘道(mTLS、裝置註冊,見 [cloud/README.md](../README.md))取代;wire format 是 [interfaces/proto](../../interfaces/README.md) 契約,語言汰換不影響機上端。
 
-訂閱 `fleet/+/telemetry` 與 `fleet/+/mission/progress`(proto3 JSON),解回 proto 後寫入 TimescaleDB。壞 payload 記 log 丟棄;MQTT 斷線自動重連。
+訂閱 `fleet/+/telemetry`、`fleet/+/mission/progress` 與 `fleet/+/events`(proto3 JSON),解回 proto 後寫入 TimescaleDB(telemetry / mission_progress / flight_events 表)。壞 payload 記 log 丟棄;MQTT 斷線自動重連。
 
 ## 跑法
 

@@ -8,7 +8,8 @@ snapshot() 可直接逐欄映射。
 
 import math
 import time
-from dataclasses import dataclass
+from collections import deque
+from dataclasses import dataclass, field
 
 from mavsdk import System
 
@@ -20,6 +21,11 @@ class TelemetryState:
     last_update_monotonic / last_update_wall 由 touch() 維護:任一流每次
     更新欄位後呼叫,分別記單調時鐘(供斷流判定,不受系統校時影響)與
     wall-clock(供 unix_time_ms 表達真正的取樣時間)。
+
+    pending_events:armed 流邊緣(False→True / True→False)產生的待發
+    飛行事件佇列,元素為 (armed, unix_time_ms);由 publisher 發佈迴圈取出
+    組成 FlightEvent 上報 fleet/{id}/events(QoS 1)。啟動後收到的第一筆
+    armed 值只是初始狀態,不算邊緣、不產生事件。
     """
 
     lat_deg: float | None = None
@@ -32,8 +38,13 @@ class TelemetryState:
     battery_v: float | None = None
     battery_pct: float | None = None
     health_all_ok: bool | None = None
+    satellites: int | None = None
+    gps_fix_type: str | None = None
+    hdop: float | None = None
+    vertical_speed_ms: float | None = None
     last_update_monotonic: float | None = None
     last_update_wall: float | None = None
+    pending_events: deque = field(default_factory=deque)
 
     def touch(self) -> None:
         """記錄「最後一次任一流更新」的時間;每個 watch_* 更新欄位後呼叫。"""
@@ -59,6 +70,8 @@ async def watch_velocity(drone: System, state: TelemetryState) -> None:
     async for vel in drone.telemetry.velocity_ned():
         # 地速 = NED 水平分量合成(不含垂直速度)
         state.ground_speed_ms = math.hypot(vel.north_m_s, vel.east_m_s)
+        # 垂直速度:契約定義向上為正,NED 的 down 分量反號
+        state.vertical_speed_ms = -vel.down_m_s
         state.touch()
 
 
@@ -70,7 +83,25 @@ async def watch_flight_mode(drone: System, state: TelemetryState) -> None:
 
 async def watch_armed(drone: System, state: TelemetryState) -> None:
     async for armed in drone.telemetry.armed():
+        prev = state.armed
         state.armed = armed
+        state.touch()
+        # 邊緣偵測:啟動後第一筆(prev is None)只是初始狀態,不算邊緣
+        if prev is not None and prev != armed:
+            state.pending_events.append((armed, int(state.last_update_wall * 1000)))
+
+
+async def watch_gps_info(drone: System, state: TelemetryState) -> None:
+    async for gps in drone.telemetry.gps_info():
+        state.satellites = gps.num_satellites
+        # MAVSDK FixType enum 名(如 "FIX_3D"、"RTK_FIXED"),契約以字串傳輸
+        state.gps_fix_type = gps.fix_type.name
+        state.touch()
+
+
+async def watch_raw_gps(drone: System, state: TelemetryState) -> None:
+    async for raw in drone.telemetry.raw_gps():
+        state.hdop = raw.hdop
         state.touch()
 
 
@@ -105,4 +136,6 @@ WATCHERS = (
     watch_armed,
     watch_battery,
     watch_health,
+    watch_gps_info,
+    watch_raw_gps,
 )

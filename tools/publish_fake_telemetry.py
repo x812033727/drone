@@ -44,6 +44,11 @@ def make_summary(drone_id: str, tick: int) -> telemetry_pb2.TelemetrySummary:
         battery_v=16.4 - 0.01 * tick,
         battery_pct=max(0.0, 100.0 - 0.2 * tick),
         health_all_ok=True,
+        # v0.3.0 新欄:GPS 品質與垂直速度
+        satellites=14,
+        gps_fix_type="FIX_3D",
+        hdop=0.8,
+        vertical_speed_ms=1.5 * math.cos(angle / 3),  # 隨 rel_alt_m 起伏的小幅升降
     )
 
 

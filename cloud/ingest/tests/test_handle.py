@@ -89,3 +89,22 @@ def test_db_oserror_does_not_propagate():
     pool = _StubPool(exc=ConnectionResetError("db gone"))
     _run(pool, "fleet/dev-1/telemetry", GOOD_TELEMETRY)
     assert len(pool.calls) == 1
+
+
+GOOD_EVENT = b'{"drone_id": "dev-1", "unix_time_ms": "1783147200000", "event": "EVENT_ARMED"}'
+
+
+def test_good_event_inserts():
+    pool = _StubPool()
+    _run(pool, "fleet/dev-1/events", GOOD_EVENT)
+    assert len(pool.calls) == 1
+    assert pool.calls[0][0] == main.EVENT_SQL
+    assert pool.calls[0][1][1:] == ("dev-1", "EVENT_ARMED")
+
+
+def test_event_numeric_enum_out_of_range_dropped():
+    # proto3 開放 enum:Parse 接受未知數字 99,Event.Name(99) 才炸 ValueError
+    pool = _StubPool()
+    payload = b'{"drone_id": "dev-1", "unix_time_ms": "1783147200000", "event": 99}'
+    _run(pool, "fleet/dev-1/events", payload)
+    assert pool.calls == []

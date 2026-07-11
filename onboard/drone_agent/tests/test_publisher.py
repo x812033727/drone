@@ -1,9 +1,11 @@
-"""snapshot() / is_stale() 純函式單元測試:不需 SITL,也不需 MQTT broker。"""
+"""snapshot() / is_stale() / flight_event() 純函式與 armed 邊緣偵測單元測試:
+不需 SITL,也不需 MQTT broker。"""
 
 import time
 
 import pytest
-from drone_agent.publisher import _to_json, is_stale, snapshot
+from drone.v1 import events_pb2
+from drone_agent.publisher import _to_json, flight_event, is_stale, snapshot
 from drone_agent.state import TelemetryState
 
 
@@ -19,6 +21,10 @@ def full_state() -> TelemetryState:
         battery_v=22.8,
         battery_pct=87.5,
         health_all_ok=True,
+        satellites=14,
+        gps_fix_type="FIX_3D",
+        hdop=0.8,
+        vertical_speed_ms=-1.2,
     )
 
 
@@ -38,6 +44,10 @@ def test_snapshot_maps_all_fields() -> None:
     assert msg.battery_v == pytest.approx(22.8)
     assert msg.battery_pct == pytest.approx(87.5)
     assert msg.health_all_ok is True
+    assert msg.satellites == 14
+    assert msg.gps_fix_type == "FIX_3D"
+    assert msg.hdop == pytest.approx(0.8)
+    assert msg.vertical_speed_ms == pytest.approx(-1.2)
 
 
 def test_snapshot_empty_state_uses_proto_defaults() -> None:
@@ -55,6 +65,10 @@ def test_snapshot_empty_state_uses_proto_defaults() -> None:
     assert msg.battery_v == 0.0
     assert msg.battery_pct == 0.0
     assert msg.health_all_ok is False
+    assert msg.satellites == 0
+    assert msg.gps_fix_type == ""
+    assert msg.hdop == 0.0
+    assert msg.vertical_speed_ms == 0.0
 
 
 def test_snapshot_default_time_is_now_when_never_touched() -> None:
@@ -141,3 +155,27 @@ def test_to_json_single_line_with_proto_field_names_and_defaults() -> None:
     assert '"unix_time_ms": "1"' in payload  # int64 依 proto3 JSON mapping 輸出為字串
     assert '"flight_mode": ""' in payload
     assert '"armed": false' in payload
+
+
+def test_flight_event_armed_mapping() -> None:
+    event = flight_event("dev-1", armed=True, unix_time_ms=1_752_000_000_000)
+
+    assert event.drone_id == "dev-1"
+    assert event.unix_time_ms == 1_752_000_000_000
+    assert event.event == events_pb2.FlightEvent.EVENT_ARMED
+
+
+def test_flight_event_disarmed_mapping() -> None:
+    event = flight_event("dev-1", armed=False, unix_time_ms=2)
+
+    assert event.event == events_pb2.FlightEvent.EVENT_DISARMED
+
+
+def test_flight_event_json_wire_format() -> None:
+    """線上格式:單行 JSON、snake_case 欄位名、enum 以名稱輸出。"""
+    payload = _to_json(flight_event("dev-1", armed=True, unix_time_ms=1))
+
+    assert "\n" not in payload
+    assert '"drone_id": "dev-1"' in payload
+    assert '"unix_time_ms": "1"' in payload  # int64 依 proto3 JSON mapping 輸出為字串
+    assert '"event": "EVENT_ARMED"' in payload
