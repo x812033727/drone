@@ -1,5 +1,7 @@
 # 10-1 系統架構
 
+> rev 2 · 2026-07。拓撲與匯流排結論不變;本版於 §2 加系統級功耗預算表(數字單一事實來源在各子系統文件)、§4 加酬載介面連接器列、新增 §5 介面契約索引。
+
 ## 1. 全系統方塊圖
 
 兩個平台共用同一套航電拓撲(AC-1),差異只在動力規模與酬載。
@@ -88,6 +90,21 @@ flowchart LR
 - PMU 量測母線電壓/電流,提供 PX4 電量估算;PB-1 版含預充電路(大電容 ESC 突波)與接觸器急停
 - 酬載電源獨立限流,酬載短路不影響飛行系統
 
+### 系統級功耗預算(rev A/EVT 實測後更新)
+
+本表僅系統彙總;各數字的細目與單一事實來源在對應子系統文件(飛控細目在 [flight-controller.md §4](flight-controller.md)),與 [propulsion §4](propulsion.md)「航電 ~50 W」同口徑。
+
+| 負載 | 預算 | 細目來源 |
+|------|------|----------|
+| Jetson Orin NX 16GB | ~25 W(峰值) | 20-software 機載應用側寫 |
+| 飛控 FC-H7(含板上感測) | ~5 W(峰值口徑) | flight-controller §4.1 功耗預算表 |
+| 數傳空中端 | ~8 W | communication.md |
+| 5G RM520N-GL | ~6 W | communication.md |
+| Remote ID | ~1 W | — |
+| 避障感測(雙目/ToF/毫米波) | ~5 W | sensors-and-payload.md |
+| **航電合計(不含酬載)** | **~50 W** | = propulsion §4 續航計算的航電項 |
+| 相機/雲台(酬載 12V,獨立限流) | 10–15 W 預算 | [payload-interface.md](../30-structure/payload-interface.md) |
+
 ## 3. 資料流(任務執行時)
 
 | 資料 | 路徑 | 頻率/頻寬 |
@@ -109,4 +126,15 @@ flowchart LR
 | GNSS 天線 | 單天線 RTK | 雙天線 RTK(定向,抗磁干擾) |
 | 避障 | 前/下雙目 + 上 ToF | 前雙目 + 上/下毫米波 + 仿地雷達 |
 | 酬載介面 | 下掛單點快拆 | 腹部大型快拆(藥箱/貨箱互換) |
+| 酬載介面連接器 | QR-S | QR-L(選型與 pinout 見 [payload-interface.md](../30-structure/payload-interface.md),此處不重複) |
 | 額外安全 | — | 降落傘艙(物流構型)、急停接觸器 |
+
+## 5. 介面契約索引
+
+跨端(機上/地面站/雲端)協議的單一事實來源在 [interfaces/](../../interfaces/README.md),契約先行、獨立版本化,本節僅索引:
+
+| 契約 | 內容 | 位置 |
+|------|------|------|
+| MAVLink dialect | 酬載狀態、噴灑遙測、電池詳情(私有 message ID 24150–24199 級) | `interfaces/mavlink/` |
+| Protobuf schema | 機-雲遙測與指令(MQTT/gRPC) | `interfaces/proto/` |
+| 酬載描述檔 schema | QR-S/QR-L EEPROM 內容定義 | `interfaces/payload/` |
