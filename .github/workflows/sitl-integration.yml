@@ -10,7 +10,17 @@ name: sitl-integration
 
 on:
   schedule:
-    - cron: "30 18 * * *" # UTC 18:30 = 台北 02:30
+    # UTC 18:43 = 台北 02:43。
+    # 排程觸發觀察紀錄(S25):原 cron 為 `30 18 * * *`,兩晚皆未觸發——
+    # - 07-10 18:30 UTC slot:workflow 於 07-10 19:34 UTC 才上 main,未涵蓋(預期內);
+    # - 07-11 18:30 UTC slot(第一個有效 slot):輪詢至 18:51 UTC,
+    #   `gh run list --event schedule` 仍零筆,21 分鐘未觸發已超出常見延遲。
+    # 緩解:改 `43 18 * * *`。GitHub 文件明載 schedule 為 best-effort,
+    # 高負載時點會延遲甚至丟棄,整點/半點(:00/:30)是最熱門分鐘,官方建議
+    # 錯開;新 workflow / 低活躍 repo 更常見長延遲。另注意 repo 60 天無
+    # commit 會自動停用排程(本 repo 活躍,非此因)。
+    # 若明晚(台北 02:43)仍未觸發,考慮改用外部排程器打 workflow_dispatch。
+    - cron: "43 18 * * *"
   workflow_dispatch:
 
 jobs:
@@ -137,3 +147,30 @@ jobs:
         # run_smoke.sh 內建:UDP 8888/14550 埠占檢查、px4-s8-*/ros2-s8-*
         # 容器命名、trap 清理、失敗傾印 agent/SITL log。
         run: ./onboard/ros2_ws/run_smoke.sh
+
+  # VT-OPS-03 端到端演示(S25):派遣 → 飛行 → 遙測落庫 → ULog 自動回收
+  # 出報告,全鏈由 tools/e2e_demo.sh 承載(= 軟體版 F19 的可重複載體,
+  # 02-verification-validation.md RTM 有註記)。腳本內建 compose/SITL/agent
+  # 啟停、trap 清理、失敗傾印與 psql 斷言;結論行 E2E RESULT: PASS/FAIL。
+  # 同前述 job:nightly 觀察,不擋 PR。
+  e2e-demo:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: 安裝依賴(派遣端 + agent + mission_exec + 契約生成碼)
+        run: |
+          pip install -r tools/requirements.txt
+          pip install -r onboard/drone_agent/requirements.txt
+          pip install -e onboard/mission_exec
+          pip install -e interfaces/proto/gen/python
+
+      - name: 端到端演示(compose + SITL + agent + dispatch + 落庫斷言)
+        # CI runner 埠乾淨,全部用腳本預設(offboard 14540 / gRPC 50051 /
+        # compose 預設埠);本地執行請改用隔離埠,見腳本開頭註解。
+        run: ./tools/e2e_demo.sh

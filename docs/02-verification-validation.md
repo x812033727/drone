@@ -28,8 +28,8 @@
 |------|------|-----------|------|--------------|
 | REQ-NAV-01 | VT-NAV-01 | L4:RTK 實飛對測量標記(Phase 0 粗驗 = F15) | 0→1 | 水平 ±10 cm(Phase 1 用全站儀級基準) |
 | REQ-NAV-02 | VT-NAV-02 | L1 場景 + L3 繫留 + L4(遮蔽劣化 = F12) | 0→1 | 降級順序正確、傾角 ≤ 30° |
-| REQ-NAV-03 | VT-NAV-03 | L1 + L4(F01/F05/F06/F07) | 0 | 續飛點誤差 ≤ 5 m |
-| REQ-NAV-04 | VT-NAV-04 | L1 全場景 + L4(F08–F11) | 0 | 各觸發行為與 [03-safety 失效保護矩陣](03-safety-analysis.md) 一致 |
+| REQ-NAV-03 | VT-NAV-03 | L1(F05/F06/F07 SITL 場景已入 nightly,`tools/sitl_scenarios`)+ L4(F01/F05/F06/F07) | 0 | 續飛點誤差 ≤ 5 m |
+| REQ-NAV-04 | VT-NAV-04 | L1 全場景(F08–F12 SITL 場景已入 nightly,`tools/sitl_scenarios`)+ L4(F08–F11) | 0 | 各觸發行為與 [03-safety 失效保護矩陣](03-safety-analysis.md) 一致 |
 | REQ-NAV-05 | VT-NAV-05 | L3 繫留關單軸 + L4 開闊場(propulsion §9) | 2 | 姿態峰值 < 30° 受控落地 |
 | REQ-NAV-06 | VT-NAV-06 | L1 SITL 圖資載入回歸 + L4 場地演示 | 1 | 三區圖資包載入且驗章通過、任務規劃期拒絕禁航區航點、圖資逾期 > 30 天起飛前告警觸發 |
 | REQ-COM-01 | VT-COM-01 | L4 距離梯度實測(1/2/4/8 km) | 1 | 8 km 封包成功率 ≥ 99% |
@@ -37,12 +37,12 @@
 | REQ-COM-03 | VT-COM-03 | L2 端到端延遲儀測 + L4 | 1 | < 250 / 500 ms |
 | REQ-COM-04 | VT-COM-04 | L2 協議一致性(ASTM F3411) | 3 | 認證實驗室報告 |
 | REQ-SAF-01 | VT-SAF-01 | L2 逐感測器注錯 + L1 投票邏輯回歸 | 1 | 單感測器失效零影響 |
-| REQ-SAF-02 | VT-SAF-02 | L2 寫入中斷電 ×20 | 0→1 | 已寫入資料零丟失(F 架次全程 ULog 為佐證);事故調查欄位齊備性檢核(對 [firmware §6](20-software/firmware.md) 記錄內容最小集逐欄比對) |
+| REQ-SAF-02 | VT-SAF-02 | L2 寫入中斷電 ×20(SITL 近似治具:`tools/ulog_powercut_test.sh`,手動跑;實機斷電治具屬飛測週次 / L2 台架項) | 0→1 | 已寫入資料零丟失(F 架次全程 ULog 為佐證);事故調查欄位齊備性檢核(對 [firmware §6](20-software/firmware.md) 記錄內容最小集逐欄比對) |
 | REQ-SAF-03 | VT-SAF-03 | L2 BMS 功能 + 委外濫用測試(UN38.3 前置) | 1 | 見 propulsion §9 電池濫用列 |
 | REQ-SAF-04 | VT-SAF-04 | L5 機隊統計(Phase 2 試點 500 h) | 2 | MTBF ≥ 300 h(口徑見 §7) |
 | REQ-OPS-01 | VT-OPS-01 | 秒表實測 ×10 人次 | 1 | 中位數達標 |
 | REQ-OPS-02 | VT-OPS-02 | 維修演練(拆換四大件) | 1 | 每件 < 30 min |
-| REQ-OPS-03 | VT-OPS-03 | 端到端演示(Phase 0 雛形 = F19/F20) | 0→2 | 派遣→飛行→日誌上傳全自動 |
+| REQ-OPS-03 | VT-OPS-03 | 端到端演示(Phase 0 雛形 = F19/F20;軟體鏈 SITL 承載:`tools/e2e_demo.sh`,nightly `e2e-demo` job) | 0→2 | 派遣→飛行→日誌上傳全自動 |
 
 ### 場景(MAP/SEC/AGR/LOG/ENV)
 

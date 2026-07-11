@@ -20,10 +20,10 @@ import paho.mqtt.client as mqtt
 from google.protobuf.json_format import MessageToJson
 
 try:
-    from drone.v1 import sensors_pb2, telemetry_pb2
+    from drone.v1 import events_pb2, mission_pb2, sensors_pb2, telemetry_pb2
 except ImportError:  # 開發便利:未安裝 drone-proto 時直接用 repo 內生成碼
     sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "interfaces/proto/gen/python"))
-    from drone.v1 import sensors_pb2, telemetry_pb2
+    from drone.v1 import events_pb2, mission_pb2, sensors_pb2, telemetry_pb2
 
 CENTER_LAT, CENTER_LON = 25.0330, 121.5654  # 台北
 RADIUS_DEG = 0.002  # 約 200 m
@@ -103,6 +103,33 @@ def publish_sensor_samples(client: mqtt.Client, drone_id: str) -> None:
     print(f"已各發布 1 筆 sensors 樣本至 fleet/{drone_id}/sensors/{{{','.join(samples)}}}")
 
 
+def publish_mission_events(client: mqtt.Client, drone_id: str) -> None:
+    """發 1 筆 MissionProgress + 1 筆 FlightEvent(S25,QoS 1)。
+
+    覆蓋 ingest 另兩條訂閱(fleet/{id}/mission/progress、fleet/{id}/events)
+    的落庫路徑;線上編碼同機上端(proto3 JSON,Parse 端 camelCase/欄位名皆收)。
+    """
+    now_ms = int(time.time() * 1000)
+    progress = mission_pb2.MissionProgress(
+        mission_id="fake-mission-1",
+        drone_id=drone_id,
+        current_item=4,
+        total_items=4,
+        state=mission_pb2.MissionProgress.STATE_COMPLETED,
+        unix_time_ms=now_ms,
+    )
+    event = events_pb2.FlightEvent(
+        drone_id=drone_id,
+        unix_time_ms=now_ms,
+        event=events_pb2.FlightEvent.EVENT_ARMED,
+    )
+    for subtopic, msg in (("mission/progress", progress), ("events", event)):
+        client.publish(
+            f"fleet/{drone_id}/{subtopic}", MessageToJson(msg, indent=None), qos=1
+        ).wait_for_publish(timeout=5)
+    print(f"已各發布 1 筆至 fleet/{drone_id}/{{mission/progress,events}}")
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--drone-id", default="dev-1")
@@ -115,6 +142,12 @@ def main() -> None:
         action="store_true",
         help="額外對 fleet/{id}/sensors/attitude|gps|local_position 各發 1 筆(v0.4.0,QoS 0)",
     )
+    ap.add_argument(
+        "--with-mission-events",
+        action="store_true",
+        help="額外對 fleet/{id}/mission/progress 與 fleet/{id}/events 各發 1 筆假資料"
+        "(S25,QoS 1;覆蓋 ingest 全部四條訂閱)",
+    )
     args = ap.parse_args()
 
     client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, client_id=f"fake-{args.drone_id}")
@@ -126,6 +159,8 @@ def main() -> None:
     try:
         if args.with_sensors:
             publish_sensor_samples(client, args.drone_id)
+        if args.with_mission_events:
+            publish_mission_events(client, args.drone_id)
         while args.count <= 0 or tick < args.count:
             payload = MessageToJson(make_summary(args.drone_id, tick))
             client.publish(topic, payload, qos=1).wait_for_publish(timeout=5)
