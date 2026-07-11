@@ -20,6 +20,12 @@ REPORT_SCRIPT = Path(
 #: 報告輸出的摘要標頭;沒有它代表 ulog_report 崩潰(如非法 ULog)
 REPORT_MARKER = "=== ULog 摘要"
 
+#: ulog_report 異常規則區段標頭(tools/ulog_report.py:有異常時印此行後逐條「  - 」列出)
+ALERTS_MARKER = "⚠ 異常提示:"
+
+#: 異常條目前綴(ulog_report 逐條輸出格式)
+ALERT_ITEM_PREFIX = "  - "
+
 #: flight_logs.report_excerpt 只留前 500 字(全文在 .report.txt)
 EXCERPT_LEN = 500
 
@@ -39,6 +45,26 @@ def parse_report_output(stdout: str, stderr: str, returncode: int | None) -> tup
     if not ok and not text.strip():
         text = f"(ulog_report 無輸出,exit {returncode})\n"
     return ok, text
+
+
+def parse_alerts(report_text: str) -> str:
+    """自報告全文解析異常規則條目(ulog_report 的「⚠ 異常提示:」區段)。
+
+    回傳逐條(去前綴)以換行相接的字串;無異常區段或區段為空回傳空字串。
+    落庫時空字串轉 NULL(看板 alerts 欄「有值紅底」的判準是非空)。
+    """
+    alerts: list[str] = []
+    collecting = False
+    for line in report_text.splitlines():
+        if line.strip() == ALERTS_MARKER.strip():
+            collecting = True
+            continue
+        if collecting:
+            if line.startswith(ALERT_ITEM_PREFIX):
+                alerts.append(line[len(ALERT_ITEM_PREFIX):].strip())
+            else:
+                break  # 區段結束(ulog_report 逐條連續輸出,遇非條目行即收尾)
+    return "\n".join(alerts)
 
 
 def excerpt(report_text: str, limit: int = EXCERPT_LEN) -> str:

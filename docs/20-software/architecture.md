@@ -59,7 +59,7 @@ flowchart TB
 
 - **Monorepo 分治**:`firmware/`(PX4 fork)、`onboard/`(ROS 2 workspace)、`gcs/`、`cloud/`、`hardware/`、`docs/`
 - 介面契約先行:MAVLink 自訂訊息與 Protobuf schema 獨立版本化(`interfaces/` 目錄),機上/地面/雲端三方 codegen
-- 每台機有硬體相容性矩陣:韌體版 × 機載版 × GCS 版 × 酬載韌體版,OTA 時強制檢查
+- 每台機有硬體相容性矩陣:韌體版 × 機載版 × GCS 版 × 酬載韌體版,OTA 時強制檢查(資料模型與檢查時點見 [ota.md §5](ota.md))
 - 模擬優先:SITL(Gazebo)跑通全任務流程才上實機;CI 內含 SITL 回歸(見 firmware.md)
 
 ## 5. 資安基線(商用必要)

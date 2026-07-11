@@ -250,9 +250,43 @@
         {
           "refId": "A",
           "format": "table",
-          "rawSql": "SELECT time, drone_id, filename, size_bytes, report_ok FROM flight_logs ORDER BY time DESC LIMIT 20"
+          "rawSql": "SELECT time, drone_id, filename, size_bytes, report_ok, alerts FROM flight_logs ORDER BY time DESC LIMIT 20"
         }
-      ]
+      ],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "alerts"
+            },
+            "properties": [
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-background"
+                }
+              },
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "regex",
+                    "options": {
+                      "pattern": ".*\\S.*",
+                      "result": {
+                        "color": "red",
+                        "index": 0
+                      }
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
     }
   ]
 }

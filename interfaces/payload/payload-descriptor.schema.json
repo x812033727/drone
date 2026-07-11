@@ -1,0 +1,70 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://drone.example/interfaces/payload/payload-descriptor.schema.json",
+  "title": "PayloadDescriptor",
+  "description": "快拆酬載(QR-S/QR-L)EEPROM 描述檔——佔位草稿,欄位未定案(Phase 1 啟用條件見 README.md)。EEPROM 實存緊湊二進位編碼,本 schema 用於工具鏈 JSON 形式。",
+  "type": "object",
+  "required": ["schema_version", "payload_type", "model", "serial", "power", "mass"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "description": "描述檔 schema 版本(SemVer;version 規則見 README.md)",
+      "pattern": "^\\d+\\.\\d+\\.\\d+$"
+    },
+    "payload_type": {
+      "type": "string",
+      "description": "酬載類型(與 mavlink DRONE_PAYLOAD_TYPE enum 對齊)",
+      "enum": ["gimbal_eo", "gimbal_dual", "sprayer", "cargo"]
+    },
+    "model": { "type": "string", "description": "型號(廠內料號)", "maxLength": 32 },
+    "serial": { "type": "string", "description": "酬載序號(出廠燒錄,凍結區)", "maxLength": 32 },
+    "hw_rev": { "type": "string", "description": "硬體版次(如 revA)", "maxLength": 8 },
+    "fw_version": {
+      "type": "string",
+      "description": "酬載韌體版(可寫區,OTA 後更新;入 ota.md §5 相容性矩陣 payload 維度)",
+      "pattern": "^\\d+\\.\\d+\\.\\d+$"
+    },
+    "interface": {
+      "type": "string",
+      "description": "快拆介面規格",
+      "enum": ["QR-S", "QR-L"]
+    },
+    "power": {
+      "type": "object",
+      "description": "供電需求宣告(機上供電預算檢查用)",
+      "required": ["voltage_v", "peak_current_a"],
+      "additionalProperties": false,
+      "properties": {
+        "voltage_v": { "type": "number", "description": "工作電壓(V)" },
+        "peak_current_a": { "type": "number", "description": "峰值電流(A)" },
+        "avg_current_a": { "type": "number", "description": "平均電流(A)" }
+      }
+    },
+    "mass": {
+      "type": "object",
+      "description": "質量特性(飛控質量/重心修正用)",
+      "required": ["mass_kg"],
+      "additionalProperties": false,
+      "properties": {
+        "mass_kg": { "type": "number", "description": "質量(kg)" },
+        "cg_offset_m": {
+          "type": "array",
+          "description": "重心偏移 [x, y, z](m,機體座標,相對掛載面)",
+          "items": { "type": "number" },
+          "minItems": 3,
+          "maxItems": 3
+        }
+      }
+    },
+    "comms": {
+      "type": "object",
+      "description": "通訊資源宣告",
+      "additionalProperties": false,
+      "properties": {
+        "dronecan_node_id": { "type": "integer", "minimum": 1, "maximum": 127 },
+        "rtsp_stream": { "type": "boolean", "description": "是否提供 RTSP 影像流(Ethernet)" }
+      }
+    }
+  }
+}

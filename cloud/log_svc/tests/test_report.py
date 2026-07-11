@@ -7,7 +7,7 @@ import asyncio
 from pathlib import Path
 
 from log_svc import report as report_mod
-from log_svc.report import excerpt, parse_report_output, run_report
+from log_svc.report import excerpt, parse_alerts, parse_report_output, run_report
 
 
 def test_parse_ok_exit0() -> None:
@@ -37,6 +37,39 @@ def test_parse_no_output_at_all() -> None:
 def test_excerpt_truncates_to_500() -> None:
     assert excerpt("x" * 900) == "x" * 500
     assert excerpt("短文") == "短文"
+
+
+def test_parse_alerts_extracts_items() -> None:
+    """異常區段逐條解析(去「  - 」前綴),對 tools/ulog_report.py 實際輸出格式。"""
+    text = (
+        "=== ULog 摘要:x.ulg ===\n"
+        "記錄長度:12.3 分鐘\n"
+        "振動指標(高頻 RMS):35.2 m/s²\n"
+        "\n"
+        "⚠ 異常提示:\n"
+        "  - 振動 35.2 m/s² 超過 30.0,檢查槳平衡、馬達軸承、隔震\n"
+        "  - GPS 3D fix 佔比低於 95%,檢查天線佈局或干擾\n"
+    )
+    alerts = parse_alerts(text)
+    assert alerts.splitlines() == [
+        "振動 35.2 m/s² 超過 30.0,檢查槳平衡、馬達軸承、隔震",
+        "GPS 3D fix 佔比低於 95%,檢查天線佈局或干擾",
+    ]
+
+
+def test_parse_alerts_no_warnings_is_empty() -> None:
+    assert parse_alerts("=== ULog 摘要:x.ulg ===\n✓ 未觸發異常規則\n") == ""
+
+
+def test_parse_alerts_crash_text_is_empty() -> None:
+    """崩潰輸出(無異常區段)不誤判為異常條目。"""
+    assert parse_alerts("Traceback ...\nValueError: bad header\n") == ""
+
+
+def test_parse_alerts_stops_at_stderr_appendix() -> None:
+    """區段以第一個非條目行收尾:stderr 附錄不會被吃進 alerts。"""
+    text = "⚠ 異常提示:\n  - 條目一\n--- stderr ---\n  - 假條目(stderr 內)\n"
+    assert parse_alerts(text) == "條目一"
 
 
 def _write_fake_report(tmp_path: Path, body: str) -> Path:
