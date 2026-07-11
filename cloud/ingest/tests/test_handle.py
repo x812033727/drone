@@ -1,0 +1,91 @@
+"""handle() 的防護測試:壞 payload 與 DB 例外都不得讓例外冒出(服務不能因此 crash)。
+
+pool 用 stub,不需真 DB;三種壞 payload 都是對抗驗證中實測會炸的案例:
+1. mission state 給數字 enum 99 → State.Name() ValueError
+2. unixTimeMs 超大 int64 → fromtimestamp "year out of range"
+3. 非 UTF-8 bytes → UnicodeDecodeError
+"""
+
+import asyncio
+
+import asyncpg
+from ingest import main
+
+
+class _Topic:
+    def __init__(self, value: str) -> None:
+        self.value = value
+
+
+class _Message:
+    """最小 aiomqtt.Message 替身:handle() 只用 topic.value 與 payload。"""
+
+    def __init__(self, topic: str, payload: bytes) -> None:
+        self.topic = _Topic(topic)
+        self.payload = payload
+
+
+class _StubPool:
+    def __init__(self, exc: Exception | None = None) -> None:
+        self.exc = exc
+        self.calls: list[tuple] = []
+
+    async def execute(self, sql: str, *args) -> None:
+        self.calls.append((sql, args))
+        if self.exc is not None:
+            raise self.exc
+
+
+def _run(pool, topic: str, payload: bytes) -> None:
+    asyncio.run(main.handle(pool, _Message(topic, payload)))
+
+
+GOOD_TELEMETRY = b'{"droneId": "dev-1", "unixTimeMs": "1783147200000", "latDeg": 25.0}'
+
+
+def test_good_telemetry_inserts():
+    pool = _StubPool()
+    _run(pool, "fleet/dev-1/telemetry", GOOD_TELEMETRY)
+    assert len(pool.calls) == 1
+    assert pool.calls[0][0] == main.TELEMETRY_SQL
+
+
+def test_numeric_enum_out_of_range_dropped():
+    # proto3 開放 enum:Parse 接受未知數字 99,State.Name(99) 才炸 ValueError
+    pool = _StubPool()
+    payload = b'{"missionId": "m-1", "droneId": "dev-1", "state": 99, "unixTimeMs": "1783147200"}'
+    _run(pool, "fleet/dev-1/mission/progress", payload)
+    assert pool.calls == []
+
+
+def test_huge_timestamp_dropped():
+    # int64 上限 → datetime.fromtimestamp "year out of range"
+    pool = _StubPool()
+    payload = b'{"droneId": "dev-1", "unixTimeMs": "9223372036854775807"}'
+    _run(pool, "fleet/dev-1/telemetry", payload)
+    assert pool.calls == []
+
+
+def test_non_utf8_payload_dropped():
+    pool = _StubPool()
+    _run(pool, "fleet/dev-1/telemetry", b"\xff\xfe\xfd\x00\x01")
+    assert pool.calls == []
+
+
+def test_unknown_topic_skipped():
+    pool = _StubPool()
+    _run(pool, "fleet/dev-1/other", GOOD_TELEMETRY)
+    assert pool.calls == []
+
+
+def test_db_error_does_not_propagate():
+    # DB 例外(如連線斷、約束違反)記錄後丟棄該筆,不得冒出 handle()
+    pool = _StubPool(exc=asyncpg.PostgresError("boom"))
+    _run(pool, "fleet/dev-1/telemetry", GOOD_TELEMETRY)
+    assert len(pool.calls) == 1  # 有嘗試寫入,但例外被吞掉
+
+
+def test_db_oserror_does_not_propagate():
+    pool = _StubPool(exc=ConnectionResetError("db gone"))
+    _run(pool, "fleet/dev-1/telemetry", GOOD_TELEMETRY)
+    assert len(pool.calls) == 1
