@@ -32,6 +32,10 @@ MISSION_SQL = (
     f"INSERT INTO mission_progress ({', '.join(decode.MISSION_COLUMNS)}) "
     f"VALUES ({', '.join(f'${i + 1}' for i in range(len(decode.MISSION_COLUMNS)))})"
 )
+EVENT_SQL = (
+    f"INSERT INTO flight_events ({', '.join(decode.EVENT_COLUMNS)}) "
+    f"VALUES ({', '.join(f'${i + 1}' for i in range(len(decode.EVENT_COLUMNS)))})"
+)
 
 
 async def handle(pool: asyncpg.Pool, message: aiomqtt.Message) -> None:
@@ -40,6 +44,8 @@ async def handle(pool: asyncpg.Pool, message: aiomqtt.Message) -> None:
         sql, to_row = TELEMETRY_SQL, decode.telemetry_row
     elif topic.endswith("/mission/progress"):
         sql, to_row = MISSION_SQL, decode.mission_row
+    elif topic.endswith("/events"):
+        sql, to_row = EVENT_SQL, decode.event_row
     else:
         log.warning("未知主題,略過:%s", topic)
         return
@@ -97,6 +103,7 @@ async def run() -> None:
             ) as client:
                 await client.subscribe("fleet/+/telemetry", qos=1)
                 await client.subscribe("fleet/+/mission/progress", qos=1)
+                await client.subscribe("fleet/+/events", qos=1)
                 log.info("已連上 MQTT %s:%s,開始收訊", MQTT_HOST, MQTT_PORT)
                 async for message in client.messages:
                     await handle(pool, message)

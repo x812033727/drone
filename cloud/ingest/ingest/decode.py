@@ -6,7 +6,7 @@
 
 from datetime import datetime, timezone
 
-from drone.v1 import mission_pb2, telemetry_pb2
+from drone.v1 import events_pb2, mission_pb2, telemetry_pb2
 from google.protobuf import json_format
 
 TELEMETRY_COLUMNS = (
@@ -22,6 +22,16 @@ TELEMETRY_COLUMNS = (
     "battery_v",
     "battery_pct",
     "health_all_ok",
+    "satellites",
+    "gps_fix_type",
+    "hdop",
+    "vertical_speed_ms",
+)
+
+EVENT_COLUMNS = (
+    "time",
+    "drone_id",
+    "event",
 )
 
 MISSION_COLUMNS = (
@@ -54,6 +64,20 @@ def telemetry_row(payload: bytes | str) -> tuple:
         msg.battery_v,
         msg.battery_pct,
         msg.health_all_ok,
+        msg.satellites,
+        msg.gps_fix_type,
+        msg.hdop,
+        msg.vertical_speed_ms,
+    )
+
+
+def event_row(payload: bytes | str) -> tuple:
+    """fleet/{id}/events 的 JSON payload → flight_events 表 row(依 EVENT_COLUMNS 順序)。"""
+    msg = json_format.Parse(payload, events_pb2.FlightEvent())
+    return (
+        _ms_to_dt(msg.unix_time_ms),
+        msg.drone_id,
+        events_pb2.FlightEvent.Event.Name(msg.event),
     )
 
 

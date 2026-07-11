@@ -1,7 +1,10 @@
-// 機-雲遙測契約 v0.1.0
+// 機-雲遙測契約 v0.3.0
 //
 // 傳輸:MQTT 主題 `fleet/{drone_id}/telemetry`,1 Hz,QoS 1。
 // 編碼:Phase 0 使用 proto3 JSON mapping(除錯友善);Phase 1 切換 binary。
+//
+// v0.3.0(純增量,proto3 向後相容):TelemetrySummary 新增 GPS 品質欄
+// (satellites / gps_fix_type / hdop)與垂直速度 vertical_speed_ms。
 syntax = "proto3";
 
 package drone.v1;
@@ -33,4 +36,12 @@ message TelemetrySummary {
   float battery_pct = 11;
   // 健康總評:MAVSDK health 各項(可解鎖/定位/校準)全部通過為 true。
   bool health_all_ok = 12;
+  // 可視衛星數(MAVSDK telemetry.gps_info().num_satellites)。
+  int32 satellites = 13;
+  // GPS 定位型態,MAVSDK FixType enum 名(如 "FIX_3D"、"RTK_FIXED")。
+  string gps_fix_type = 14;
+  // 水平精度因子 HDOP(MAVSDK telemetry.raw_gps().hdop)。
+  float hdop = 15;
+  // 垂直速度,公尺/秒,向上為正(= -velocity_ned.down)。
+  float vertical_speed_ms = 16;
 }

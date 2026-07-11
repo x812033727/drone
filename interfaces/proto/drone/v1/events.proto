@@ -1,0 +1,30 @@
+// 機-雲飛行事件契約 v0.3.0
+//
+// 傳輸:MQTT 主題 `fleet/{drone_id}/events`(事件觸發,QoS 1)。
+// 編碼:Phase 0 使用 proto3 JSON mapping;Phase 1 切換 binary。
+//
+// 機上 drone-agent 於 armed 遙測流的邊緣(False→True / True→False)發布;
+// QoS 1 為 at-least-once,消費端需容忍重複投遞。
+// 消費者:S20 ULog 回收(以 DISARMED 觸發)、雲端看板(飛行事件表)。
+syntax = "proto3";
+
+package drone.v1;
+
+// 單一飛行事件(armed 狀態邊緣觸發)。
+message FlightEvent {
+  // 事件種類。
+  enum Event {
+    EVENT_UNSPECIFIED = 0;
+    // 解鎖(armed False→True)。
+    EVENT_ARMED = 1;
+    // 上鎖(armed True→False)。
+    EVENT_DISARMED = 2;
+  }
+
+  // 機隊內唯一機身識別碼(同 MQTT 主題中的 {drone_id})。
+  string drone_id = 1;
+  // 事件時間,Unix epoch 毫秒(UTC)。
+  int64 unix_time_ms = 2;
+  // 事件種類。
+  Event event = 3;
+}
