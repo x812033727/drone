@@ -64,8 +64,6 @@ flowchart TB
 
 ## 5. 資安基線(商用必要)
 
-- 機-雲:mTLS(裝置憑證,出廠燒錄)、WireGuard 隧道
-- MAVLink 2 message signing(數傳鏈路)
-- OTA:signed images(飛控 + Jetson A/B 分區),回滾機制
-- 日誌與影像:靜態加密(客戶資料自主權是我們的賣點)
-- 供應鏈:SBOM 產出,為歐盟 CRA(Cyber Resilience Act)與美國市場預作準備
+- 機-雲 mTLS + WireGuard、MAVLink 2 signing、OTA 簽章(A/B 分區 + 回滾)
+- 靜態加密(日誌/影像,客戶資料自主權賣點)、SBOM(歐盟 CRA 與美國市場前置)
+- 威脅模型、PKI、合規對應與分階段落地,詳見 [security.md](security.md)
