@@ -53,7 +53,7 @@
 | TPS3823-33 | 電壓監控 + 外部獨立看門狗 | SOT-23-5 | STM6824(同功能級) | 低 | ✓ |
 | LTC4415 | 5V 雙路理想二極體 ORing | MSOP-16 | TPS2121(電源多工器,需改 layout) | 低 | ✓ |
 
-- 全表 IC 納入 NDAA/出口管制檢核表(`hardware/docs/` 維護;供應鏈總表文件規劃於 50-project/supply-chain,**規劃中**)
+- 全表 IC 納入 NDAA/出口管制檢核表(`hardware/docs/` 維護;檢核時點制度見 [50-project/supply-chain.md §3](../50-project/supply-chain.md))
 - ADIS16470(戰術級 IMU)列為認證階段(Phase 3)升級候選,以 IMU 子板外掛評估,不動核心板 layout
 
 ## 4. 電源架構
@@ -150,7 +150,7 @@
 
 - STM32H753 有長期供貨承諾(ST 10-year longevity),但仍鎖第二來源封裝相容方案(§3 替代料欄)
 - IMU 為單一來源風險件 → 核心板預留 BMI088 與 ICM-45686 雙 footprint,韌體以 device tree 切換
-- 所有關鍵 IC 建立 NDAA/出口管制檢核表(美國市場前置);全案供應鏈風險總表另立 50-project/supply-chain(**規劃中**,D10)
+- 所有關鍵 IC 建立 NDAA/出口管制檢核表(美國市場前置);全案供應鏈風險總表見 [50-project/supply-chain.md §2](../50-project/supply-chain.md)
 
 ## 11. 版本紀錄
 
