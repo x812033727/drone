@@ -102,12 +102,19 @@ def logline(t: float, msg: str) -> None:
     print(f"[{t:7.1f}s] {msg}", flush=True)
 
 
+def ne_offset_m(
+    lat0: float, lon0: float, lat: float, lon: float
+) -> tuple[float, float]:
+    """(lat, lon) 相對 (lat0, lon0) 的北/東平面近似偏移(公尺;S24 覆蓋斷言用)。"""
+    k = math.pi / 180.0
+    east = (lon - lon0) * k * math.cos((lat0 + lat) * 0.5 * k) * 6371000.0
+    north = (lat - lat0) * k * 6371000.0
+    return north, east
+
+
 def dist_m(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     """兩經緯度點的近距離平面近似(公尺);百餘公尺尺度誤差可忽略。"""
-    k = math.pi / 180.0
-    x = (lon2 - lon1) * k * math.cos((lat1 + lat2) * 0.5 * k) * 6371000.0
-    y = (lat2 - lat1) * k * 6371000.0
-    return math.hypot(x, y)
+    return math.hypot(*ne_offset_m(lat1, lon1, lat2, lon2))
 
 
 async def wait_connected(drone: System) -> None:
@@ -238,6 +245,11 @@ class Recorder:
         self.dist_home = 0.0
         self.max_dist_home = 0.0
         self.rel_alt = 0.0
+        # home 相對北/東偏移極值(公尺;S24 F05 網格覆蓋斷言用,home=None 時不更新)
+        self.north_min = 0.0
+        self.north_max = 0.0
+        self.east_min = 0.0
+        self.east_max = 0.0
         self._tasks: list[asyncio.Task] = []
 
     @property
@@ -248,7 +260,12 @@ class Recorder:
         async for p in self._drone.telemetry.position():
             self.rel_alt = p.relative_altitude_m
             if self.home is not None:
-                d = dist_m(self.home[0], self.home[1], p.latitude_deg, p.longitude_deg)
+                n, e = ne_offset_m(self.home[0], self.home[1], p.latitude_deg, p.longitude_deg)
+                self.north_min = min(self.north_min, n)
+                self.north_max = max(self.north_max, n)
+                self.east_min = min(self.east_min, e)
+                self.east_max = max(self.east_max, e)
+                d = math.hypot(n, e)
                 self.dist_home = d
                 self.max_dist_home = max(self.max_dist_home, d)
 

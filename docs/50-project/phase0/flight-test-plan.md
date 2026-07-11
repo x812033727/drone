@@ -28,10 +28,10 @@
 
 | # | 目標 | 前置 | 剖面 | 通過準則 |
 |---|------|------|------|----------|
-| F05 | 測繪網格航線 | F04;SITL 預跑 | QGC Survey 產生 200×200 m 網格、70% 旁向重疊參數、50 m 高 | 航線全程速度誤差 ≤ 1 m/s;轉彎不掉高 > 2 m |
-| F06 | 巡邏走廊航線 | F04;SITL 預跑 | Corridor 航線 ≥ 800 m、含 2 個高度變化 | 全航點完成;高度轉換平順無超調 > 3 m |
-| F07 | 任務中斷續飛 | F05 | 網格飛一半 → 操手切 Position 暫停 → 重入 Mission | 從中斷航段續飛(不重頭);續飛點誤差 ≤ 5 m |
-| F08 | RTH 全流程 | F05 | 任務中段以 RC 開關觸發 RTL | 爬升至 `RTL_RETURN_ALT` → 直線返航 → 降落偏差 ≤ 1 m |
+| F05 | 測繪網格航線 | F04;SITL 腳本已備(`tools/sitl_scenarios` f05) | QGC Survey 產生 200×200 m 網格、70% 旁向重疊參數、50 m 高 | 航線全程速度誤差 ≤ 1 m/s;轉彎不掉高 > 2 m |
+| F06 | 巡邏走廊航線 | F04;SITL 腳本已備(`tools/sitl_scenarios` f06) | Corridor 航線 ≥ 800 m、含 2 個高度變化 | 全航點完成;高度轉換平順無超調 > 3 m |
+| F07 | 任務中斷續飛 | F05;SITL 腳本已備(`tools/sitl_scenarios` f07) | 網格飛一半 → 操手切 Position 暫停 → 重入 Mission | 從中斷航段續飛(不重頭);續飛點誤差 ≤ 5 m |
+| F08 | RTH 全流程 | F05;SITL 腳本已備(`tools/sitl_scenarios` f08) | 任務中段以 RC 開關觸發 RTL | 爬升至 `RTL_RETURN_ALT` → 直線返航 → 降落偏差 ≤ 1 m |
 
 ### 失效保護(F09–F12,W12–W13;全部先 SITL 預跑)
 

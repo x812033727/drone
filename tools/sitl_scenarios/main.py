@@ -1,4 +1,4 @@
-"""sitl_scenarios CLI:對 PX4 SITL 跑 F09–F12 失效保護回歸場景。
+"""sitl_scenarios CLI:對 PX4 SITL 跑 F05–F08 自動任務 + F09–F12 失效保護回歸場景。
 
 用法(於 tools/ 目錄下,SITL 容器已啟動且 EKF/GPS lock):
     python -m sitl_scenarios --scenario f10 --url udpin://0.0.0.0:14540 --container px4-sitl
@@ -18,6 +18,10 @@ import traceback
 from sitl_scenarios.runner import ScenarioConfig, ScenarioError, print_result
 
 SCENARIO_MODULES = {
+    "f05": "sitl_scenarios.scenarios.f05_survey_grid",
+    "f06": "sitl_scenarios.scenarios.f06_corridor",
+    "f07": "sitl_scenarios.scenarios.f07_pause_resume",
+    "f08": "sitl_scenarios.scenarios.f08_rth_midway",
     "f09": "sitl_scenarios.scenarios.f09_link_loss",
     "f10": "sitl_scenarios.scenarios.f10_low_battery",
     "f11": "sitl_scenarios.scenarios.f11_geofence",

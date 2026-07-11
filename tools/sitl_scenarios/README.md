@@ -1,10 +1,11 @@
-# sitl_scenarios — 失效保護 SITL 場景回歸(F09–F12)
+# sitl_scenarios — SITL 場景回歸(F05–F12:自動任務 + 失效保護)
 
 對 PX4 v1.15.4 SITL(`jonasvautherin/px4-gazebo-headless:1.15.4`,classic Gazebo iris)
-自動跑 [flight-test-plan](../../docs/50-project/phase0/flight-test-plan.md) F09–F12 的
-失效保護場景,注入失效並以遙測斷言行為,輸出 `RESULT: PASS/FAIL` 與模式轉換序列。
-是 [03-safety-analysis §4 失效保護矩陣](../../docs/03-safety-analysis.md) 與
-[sitl-setup.md §5](../../docs/50-project/phase0/sitl-setup.md) 注入表的可執行版;
+自動跑 [flight-test-plan](../../docs/50-project/phase0/flight-test-plan.md) F05–F08 的
+自動任務場景(S24:網格/走廊/暫停續飛/RTH,航線由 `mission_exec.patterns` 自產)
+與 F09–F12 的失效保護場景(注入失效並以遙測斷言行為),輸出 `RESULT: PASS/FAIL`
+與模式轉換序列。F09–F12 是 [03-safety-analysis §4 失效保護矩陣](../../docs/03-safety-analysis.md)
+與 [sitl-setup.md §5](../../docs/50-project/phase0/sitl-setup.md) 注入表的可執行版;
 CI 由 `.github/workflows/sitl-integration.yml` 的 `failsafe-scenarios` job nightly 執行。
 
 > 此映像用 classic gazebo iris(非 gz_x500):失效保護行為與機型無關,僅驗
@@ -32,7 +33,10 @@ docker rm -f px4-sitl
 - `--container`:**F10 必要**(docker exec 跑 px4-listener 輪詢與 px4-param 調 drain)、
   **F09 必要**(docker inspect 取容器 IP 做被動觀測的源 IP 過濾;亦可改給 `--source-ip`)。
 - `--grpc-port`(預設 50600):mavsdk_server gRPC 埠;多 agent / 多場景並行時錯開。
-- `--all` 依序跑四場景:場景會改參數、放電、觸發失效保護,**每場景之間請重啟
+- `f07` 需本機 docker:場景自帶專屬高位埠 mosquitto 容器(名稱/埠含 PID,結束自動清);
+  該場景本身不連 MAVSDK,由 `mission_exec.main` 子行程獨占 14540 並 spawn
+  mavsdk_server(gRPC 預設 50051),同機並行他用時注意相撞。
+- `--all` 依序跑八場景:場景會改參數、放電、觸發失效保護、殘留任務,**每場景之間請重啟
   SITL 容器**(CI 即每場景獨立容器);單容器連跑僅供開發便利,不保證狀態乾淨。
 - 多實例並行時 host 14540 會相撞:改埠要在容器內 sed **build 副本**
   `/root/Firmware/build/px4_sitl_default/etc/init.d-posix/px4-rc.mavlink` 的
@@ -52,12 +56,16 @@ docker rm -f px4-sitl
 
 | 場景 | 對應架次 / 矩陣列 | 注入法 | 通過準則(實測基準) |
 |------|------------------|--------|----------------------|
+| `f05` 測繪網格 | F05「測繪網格航線」 | `patterns.survey_grid` 160×120 m、行距 40 m、30 m 高(4 行 8 航點)經 `mission_exec.executor.run_mission`(機上同路徑)執行 | STATE_COMPLETED;current_item 走滿(逐點無跳點);遙測北/東極值覆蓋網格範圍(容差 15 m);速度/掉高量測屬實機 ULog 項 |
+| `f06` 巡邏走廊 | F06「巡邏走廊航線」 | `patterns.corridor` 正東 500 m 三段 20/35/25 m(6 航點;計畫 ≥800 m 縮跑,行為語義不變) | STATE_COMPLETED;rel_alt 依序達到 20→35→25 m(各 ±3 m);超調量測屬實機 ULog 項 |
+| `f07` 暫停續飛 | F07「任務中斷續飛」 | 自帶專屬高位埠 mosquitto,子行程跑 `mission_exec.main --mqtt-host`(f05 縮小版 4 航點),飛行中經 `fleet/{id}/cmd/mission_ctrl` 發 PAUSE/RESUME(S23 通道代理操手切 Position) | 30 s 內 STATE_PAUSED;進度凍結 ≥8 s;RESUME 後自斷點續飛(不重頭)至 STATE_COMPLETED、exit 0 |
+| `f08` RTH 全流程 | F08「RTH 全流程」 | 6 航點網格,`RTL_RETURN_ALT=50`,mission_progress current≥2 時 `action.return_to_launch()`(代理 RC 開關) | 20 s 內 RETURN_TO_LAUNCH;先爬升至 50 m 方向(≥45 m);180 s 內落地自動 disarm;落點離 home ≤5 m(實機準則 ≤1 m) |
 | `f09` 失聯保護 | F09「失聯 RTL」/ 矩陣「RC 失聯」列 | **datalink/GCS 失聯代理**:`NAV_DLL_ACT=2`、`COM_DL_LOSS_T=3`,kill 自 spawn 的 mavsdk_server(= 唯一 GCS 心跳源);被動 pymavlink 觀測 14550(依容器源 IP 過濾) | 注入前 AUTO_MISSION+IN_AIR;kill 後 30 s 內 AUTO_RTL(實測 +10.4/+11.2 s,經 AUTO_LOITER 過渡);RTL 前維持 IN_AIR |
 | `f10` 低電量三級 | F10「低電量分級」/ 矩陣低電量三列 | `COM_LOW_BAT_ACT=3` + 門檻 0.20/0.10/0.05 + `BAT1_V_LOAD_DROP=0`(SITL 限定)後 `SIM_BAT_MIN_PCT=0`+`SIM_BAT_DRAIN=90`;CRITICAL 瞬間放慢 drain 至 240 避免 5 s Hold 吞掉 RTL | LOW/CRITICAL/EMERGENCY 依序;LOW 僅警告留 MISSION;CRITICAL→AUTO_RTL(允許 LOITER Hold 過渡);EMERGENCY→AUTO_LAND;落地自動 disarm |
 | `f11` GeoFence | F11「GeoFence 觸發」 | 150 m circle inclusion 圍欄 + `GF_ACTION=3`、`GF_PREDICT=1`;起飛 30 m 後 offboard 北向 8 m/s 逼近邊界(任務航點放界外飛不起來,見下) | RETURN_TO_LAUNCH 觸發;觸發點離 home > 90 m(實測 128.8 m,預測煞停在邊界內);全程不穿越邊界 > 10 m(實測零穿越) |
 | `f12` GPS 失效 | F12「GPS 劣化降級」 | `SYS_FAILURE_EN=1` 後任務中 `failure.inject(SENSOR_GPS, OFF, 0)` | 注入後 8 s 內 NO_GPS、15 s 內 flight_mode→**LAND(就地降落)**、25 s 內 global_position_ok=False、150 s 內落地自動 disarm |
 
-四場景經探測皆判定 **feasible**,故無 NotImplementedError 模組;若日後某場景被判
+F09–F12 四場景經探測皆判定 **feasible**,故無 NotImplementedError 模組;若日後某場景被判
 不可行,依套件慣例仍建模組並 `raise NotImplementedError(原因)`,CLI 會誠實輸出
 `RESULT: NOT-IMPLEMENTED`。
 
@@ -86,15 +94,15 @@ docker rm -f px4-sitl
 
 ```
 sitl_scenarios/
-├── main.py / __main__.py   # CLI:python -m sitl_scenarios --scenario f09|f10|f11|f12 | --all
+├── main.py / __main__.py   # CLI:python -m sitl_scenarios --scenario f05..f12 | --all
 ├── runner.py               # 共用骨架:連線/任務/遙測記錄(連線與任務段 import mission_exec 複用,S11 起不再抄碼,見檔頭)
 ├── checks.py               # 斷言純函式(無 mavsdk 依賴,單元可測)
-├── scenarios/f09..f12*.py  # 各場景:docstring 含注入法、通過準則、與文件差異
+├── scenarios/f05..f12*.py  # 各場景:docstring 含注入法、通過準則、與文件差異
 └── tests/test_checks.py    # 斷言邏輯單元測試(不需 SITL)
 ```
 
 ## CI
 
 `.github/workflows/sitl-integration.yml` 的 `failsafe-scenarios` job:與 `mission-sitl`
-同 nightly 排程(不擋 PR),matrix 四場景各自獨立 runner VM + 獨立 SITL 容器,
+同 nightly 排程(不擋 PR),matrix 八場景(f05–f12)各自獨立 runner VM + 獨立 SITL 容器,
 斷言 log 內 `RESULT: PASS`;失敗傾印容器 log。

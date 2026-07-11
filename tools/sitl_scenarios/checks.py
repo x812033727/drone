@@ -1,4 +1,5 @@
-"""場景斷言純函式:模式序列判定、注入延遲、圍欄穿越、低電量三級序列。
+"""場景斷言純函式:模式序列判定、注入延遲、圍欄穿越、低電量三級序列、
+任務覆蓋/高度序列/進度凍結(S24:F05–F08)。
 
 刻意不依賴 mavsdk / SITL,可直接單元測試(tests/test_checks.py)。
 事件模型:list[tuple[float, str]] = (相對秒, 名稱) 的「轉換」序列,時間遞增。
@@ -115,3 +116,54 @@ def evaluate_battery_ladder(
         )
     )
     return checks
+
+
+# ---- S24:F05–F08 任務場景斷言 -------------------------------------------------
+
+
+def span_covered(
+    obs_min: float, obs_max: float, want_min: float, want_max: float, tol_m: float
+) -> bool:
+    """觀測極值 [obs_min, obs_max] 是否覆蓋目標範圍 [want_min, want_max](容差 tol_m)。
+
+    F05 軌跡覆蓋近似:遙測位置換算 home 相對北/東座標後,極值需觸及網格範圍
+    兩端(內縮 tol_m 容許 fly-through 切角與遙測取樣粒度)。
+    """
+    return obs_min <= want_min + tol_m and obs_max >= want_max - tol_m
+
+
+def items_all_visited(items: list[int], upto: int) -> bool:
+    """IN_PROGRESS 觀測到的 current_item 是否涵蓋 1..upto 每個索引(F05 走滿判定)。
+
+    MAVSDK mission_progress 的 current 為 0-based 進行中航點索引:觀測到 k 即代表
+    0..k-1 已完成;搭配 COMPLETED 事件即「全航點完成且逐點推進、無跳點」。
+    """
+    return set(range(1, upto + 1)) <= set(items)
+
+
+AltSample = tuple[float, float]
+
+
+def alts_reached_in_order(
+    samples: list[AltSample], targets: list[float], tol_m: float
+) -> bool:
+    """高度取樣序列是否「依序」各自達到 targets(±tol_m;F06 各段高度轉換判定)。
+
+    子序列語意(同 modes_in_order):每個 target 各自消耗取樣點,允許中間過渡值;
+    samples = (相對秒, rel_alt_m),時間遞增。
+    """
+    it = iter(samples)
+    return all(any(abs(alt - want) <= tol_m for _, alt in it) for want in targets)
+
+
+def progress_frozen(
+    item_events: list[tuple[float, int]], t_start: float, t_end: float, baseline_item: int
+) -> bool:
+    """[t_start, t_end] 窗口內是否無任何 current_item 超過 baseline 的推進事件。
+
+    F07 暫停凍結判定:STATE_PAUSED 之後、RESUME 之前,IN_PROGRESS 事件的
+    current_item 不得超過暫停當下的斷點(飛控 Hold 靜止,任務不推進)。
+    """
+    return all(
+        not (t_start <= t <= t_end and item > baseline_item) for t, item in item_events
+    )
