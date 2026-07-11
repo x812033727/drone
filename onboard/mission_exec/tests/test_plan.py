@@ -1,6 +1,7 @@
 """plan.load_plan 的解析與驗證測試。"""
 
 import pytest
+
 from mission_exec.plan import load_plan
 
 VALID = """
