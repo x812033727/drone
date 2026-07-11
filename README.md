@@ -48,6 +48,8 @@
 - [開發時程與里程碑(Phase 0–3)](docs/50-project/roadmap.md)
 - [預算估算](docs/50-project/budget.md)
 - [團隊組成](docs/50-project/team.md)
+- [Phase 0 詳細執行計畫](docs/50-project/phase0/README.md)
+- [Phase 0 採購計畫](docs/50-project/phase0/procurement.md)
 
 ## Repo 結構
 

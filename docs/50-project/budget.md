@@ -9,7 +9,7 @@
 | 項目 | 金額 |
 |------|------|
 | 人力(3 人 × 3 個月,創始工程團隊) | 1.8 M |
-| 開發機兩套(X500+Pixhawk 6X+Orin+RTK+數傳) | 0.6 M |
+| 開發機兩套(X500+Pixhawk 6X+Orin+RTK+數傳)(採購明細見 [phase0/procurement.md](phase0/procurement.md)) | 0.6 M |
 | 工作場地/工具/雜項 | 0.5 M |
 | 招募與顧問 | 0.6 M |
 
