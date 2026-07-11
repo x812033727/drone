@@ -180,3 +180,45 @@ def test_mqtt_progress_cb_swallows_publish_errors(capsys):
     )
     asyncio.run(cb(progress))  # 不應拋出
     assert "[進度]" in capsys.readouterr().out
+
+
+def test_arm_with_retry_succeeds_after_denials():
+    import types
+
+    from mavsdk.action import ActionError
+
+    from mission_exec import executor
+
+    calls = {"n": 0}
+
+    class FakeAction:
+        async def arm(self):
+            calls["n"] += 1
+            if calls["n"] <= 2:
+                raise ActionError(
+                    types.SimpleNamespace(result=None, result_str="COMMAND_DENIED"), "arm()"
+                )
+
+    drone = types.SimpleNamespace(action=FakeAction())
+    executor.ARM_RETRY_DELAY_S = 0.01
+    asyncio.run(executor._arm_with_retry(drone))
+    assert calls["n"] == 3
+
+
+def test_arm_with_retry_exhausted_reraises_action_error():
+    import types
+
+    import pytest
+    from mavsdk.action import ActionError
+
+    from mission_exec import executor
+
+    class FakeAction:
+        async def arm(self):
+            raise ActionError(
+                types.SimpleNamespace(result=None, result_str="COMMAND_DENIED"), "arm()"
+            )
+
+    executor.ARM_RETRY_DELAY_S = 0.01
+    with pytest.raises(ActionError):
+        asyncio.run(executor._arm_with_retry(types.SimpleNamespace(action=FakeAction())))

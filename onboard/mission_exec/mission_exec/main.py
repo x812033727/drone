@@ -17,6 +17,7 @@
 
 import argparse
 import asyncio
+import os
 import logging
 import sys
 
@@ -122,6 +123,18 @@ async def _run(args: argparse.Namespace) -> None:
         await _execute(_make_progress_cb(None, args.drone_id))
 
 
+def _hard_exit(code: int) -> None:
+    """失敗路徑保證立即退出。
+
+    2026-07-11 nightly 實錄:STATE_FAILED 已發、sys.exit(1) 已呼叫,但 mavsdk/grpc
+    的非 daemon 背景執行緒拖住直譯器關閉,行程懸掛吃滿外層 timeout(exit 124)。
+    成功路徑歷史上正常退出,僅失敗分支用 os._exit 硬退出(先 flush 輸出)。
+    """
+    sys.stdout.flush()
+    sys.stderr.flush()
+    os._exit(code)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--mission", required=True, help="任務檔路徑(MissionPlan proto3 JSON)")
@@ -165,10 +178,10 @@ def main() -> None:
         sys.exit(2)
     except MissionExecError as e:
         print(f"{e}", file=sys.stderr)
-        sys.exit(1)
+        _hard_exit(1)
     except KeyboardInterrupt:
         print("\n中斷執行", file=sys.stderr)
-        sys.exit(130)
+        _hard_exit(130)
 
 
 if __name__ == "__main__":
