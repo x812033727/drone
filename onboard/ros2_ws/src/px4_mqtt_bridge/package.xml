@@ -1,0 +1,18 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>px4_mqtt_bridge</name>
+  <version>0.1.0</version>
+  <description>DDS→MQTT 高頻感測器橋(Phase 0 S22):
+    訂 /fmu/out/vehicle_attitude|vehicle_gps_position|vehicle_local_position,
+    latest-sample 節流後以 proto3 JSON 發布 fleet/{id}/sensors/*(QoS 0)。</description>
+  <maintainer email="x812033727@gmail.com">drone onboard</maintainer>
+  <license>Proprietary</license>
+
+  <exec_depend>rclpy</exec_depend>
+  <exec_depend>px4_msgs</exec_depend>
+
+  <export>
+    <build_type>ament_python</build_type>
+  </export>
+</package>

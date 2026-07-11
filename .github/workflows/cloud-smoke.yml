@@ -25,12 +25,12 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: 打 10 筆假遙測
+      - name: 打 10 筆假遙測 + sensors 三主題各 1 筆(S22)
         working-directory: .
         run: |
           pip install paho-mqtt protobuf
           pip install -e interfaces/proto/gen/python
-          python tools/publish_fake_telemetry.py --drone-id ci-1 --rate 5 --count 10
+          python tools/publish_fake_telemetry.py --drone-id ci-1 --rate 5 --count 10 --with-sensors
 
       - name: 斷言遙測落庫
         run: |
@@ -39,6 +39,15 @@ jobs:
             psql -U drone -d drone -tAc "SELECT count(*) FROM telemetry WHERE drone_id='ci-1'")
           echo "telemetry rows: ${COUNT}"
           test "${COUNT}" -ge 1
+
+      - name: 斷言 sensors 三表落庫(S22 高頻流,QoS 0)
+        run: |
+          for table in sensor_attitude sensor_gps sensor_local_position; do
+            COUNT=$(docker compose exec -T timescaledb \
+              psql -U drone -d drone -tAc "SELECT count(*) FROM ${table} WHERE drone_id='ci-1'")
+            echo "${table} rows: ${COUNT}"
+            test "${COUNT}" -ge 1
+          done
 
       - name: 斷言 log-svc 收檔落庫(假檔非合法 ULog → report_ok=false 也是有效斷言)
         run: |

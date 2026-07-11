@@ -23,7 +23,8 @@ python3 -m grpc_tools.protoc \
   --pyi_out="${OUT}" \
   drone/v1/telemetry.proto \
   drone/v1/mission.proto \
-  drone/v1/events.proto
+  drone/v1/events.proto \
+  drone/v1/sensors.proto
 
 # 串好 package,讓 `from drone.v1 import telemetry_pb2` 可用
 touch "${OUT}/drone/__init__.py" "${OUT}/drone/v1/__init__.py"

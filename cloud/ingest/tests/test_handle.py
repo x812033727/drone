@@ -108,3 +108,48 @@ def test_event_numeric_enum_out_of_range_dropped():
     payload = b'{"drone_id": "dev-1", "unix_time_ms": "1783147200000", "event": 99}'
     _run(pool, "fleet/dev-1/events", payload)
     assert pool.calls == []
+
+
+# ---- v0.4.0 sensors 主題路由(取末兩段查表)----
+
+GOOD_ATTITUDE = (
+    b'{"drone_id": "dev-1", "unix_time_ms": "1783147200000",'
+    b' "px4_timestamp_us": "123", "q": [1.0, 0.0, 0.0, 0.0]}'
+)
+
+
+def test_sensor_attitude_routes():
+    pool = _StubPool()
+    _run(pool, "fleet/dev-1/sensors/attitude", GOOD_ATTITUDE)
+    assert len(pool.calls) == 1
+    assert pool.calls[0][0] == main.SENSOR_ATTITUDE_SQL
+
+
+def test_sensor_gps_routes():
+    pool = _StubPool()
+    payload = b'{"drone_id": "dev-1", "unix_time_ms": "1783147200000", "fix_type": "FIX_TYPE_3D"}'
+    _run(pool, "fleet/dev-1/sensors/gps", payload)
+    assert len(pool.calls) == 1
+    assert pool.calls[0][0] == main.SENSOR_GPS_SQL
+
+
+def test_sensor_local_position_routes():
+    pool = _StubPool()
+    payload = b'{"drone_id": "dev-1", "unix_time_ms": "1783147200000", "x": 1.0}'
+    _run(pool, "fleet/dev-1/sensors/local_position", payload)
+    assert len(pool.calls) == 1
+    assert pool.calls[0][0] == main.SENSOR_LOCAL_POSITION_SQL
+
+
+def test_sensor_attitude_bad_quaternion_dropped():
+    # q 非 4 元素:decode raise → 記錄後丟棄,不得嘗試寫入
+    pool = _StubPool()
+    payload = b'{"drone_id": "dev-1", "unix_time_ms": "1783147200000", "q": [1.0]}'
+    _run(pool, "fleet/dev-1/sensors/attitude", payload)
+    assert pool.calls == []
+
+
+def test_unknown_sensor_subtopic_skipped():
+    pool = _StubPool()
+    _run(pool, "fleet/dev-1/sensors/baro", GOOD_ATTITUDE)
+    assert pool.calls == []

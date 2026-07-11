@@ -3,9 +3,9 @@
 > 規劃依據:[onboard/README.md](../README.md)、
 > [docs/20-software/companion-computer.md](../../docs/20-software/companion-computer.md)
 
-Phase 0 第二批 S8 交付:**容器化 ROS 2 環境 + PX4 uXRCE-DDS 橋接煙霧(SITL 實測通過)**。
-host 不需安裝 ROS——開發與驗證全在 docker 內。Phase 1 功能 package
-(obstacle_guard 等)刻意不在此批,見文末決策記錄。
+Phase 0 交付:**容器化 ROS 2 環境 + PX4 uXRCE-DDS 橋接煙霧(S8,SITL 實測通過)
++ DDS→MQTT 高頻感測器橋(S22)**。host 不需安裝 ROS——開發與驗證全在 docker 內。
+Phase 1 功能 package(obstacle_guard 等)刻意不在此批,見文末決策記錄。
 
 ## 現有內容
 
@@ -13,12 +13,34 @@ host 不需安裝 ROS——開發與驗證全在 docker 內。Phase 1 功能 pac
 ros2_ws/
 ├── docker/
 │   ├── Dockerfile              # ros:humble + Micro XRCE-DDS Agent(source)+ px4_msgs(release/1.15)
+│   │                           #   + drone-proto 生成碼 + paho-mqtt(S22;build context = repo 根)
 │   ├── Dockerfile.px4-sitl-dds # 自建 PX4 v1.15.4 SITL(SIH 免 Gazebo,含 uxrce_dds_client)
+│   ├── mosquitto_smoke.conf    # bridge 煙霧專用 broker 設定(TCP 41883,僅本機)
 │   └── entrypoint.sh           # source ROS 2 與 workspace
 ├── src/
-│   └── bridge_smoke/           # 最小煙霧 package:訂 /fmu/out/* 收滿 N 筆判 PASS
-└── run_smoke.sh                # 一鍵煙霧(SITL + agent + listener,自動清理)
+│   ├── bridge_smoke/           # 最小煙霧 package:訂 /fmu/out/* 收滿 N 筆判 PASS
+│   └── px4_mqtt_bridge/        # S22:訂 /fmu/out/* → 節流 5 Hz → MQTT fleet/{id}/sensors/*(QoS 0)
+└── run_smoke.sh                # 一鍵煙霧(SITL + agent + listener + MQTT 橋,自動清理)
 ```
+
+### px4_mqtt_bridge(S22 DDS→MQTT 高頻橋)
+
+訂 `/fmu/out/vehicle_attitude`、`/fmu/out/vehicle_gps_position`(型別
+`px4_msgs/SensorGps`,對 PX4 v1.15.4 dds_topics.yaml 查證)、
+`/fmu/out/vehicle_local_position`,回呼只存最新樣本,timer(預設 5 Hz)
+flush 時「自上次外發後有新樣本」的 topic 才發——來源斷流橋即沉默,
+不外發殭屍資料。線上格式 = proto3 JSON(`preserving_proto_field_name`,
+契約 [interfaces/proto/drone/v1/sensors.proto](../../interfaces/proto/drone/v1/sensors.proto)),
+MQTT **QoS 0** 容失(高頻流重傳只會堆延遲;與 1 Hz 摘要 QoS 1 區隔)。
+
+```bash
+docker exec <ros2容器> /ros2_entrypoint.sh ros2 run px4_mqtt_bridge bridge \
+  --drone-id dev-1 --mqtt-host 127.0.0.1 --mqtt-port 1883 --rate 5
+```
+
+刻意不做(Phase 1):全 topic 橋接、rosbag 錄放、backpressure/斷線補傳、
+時鐘對齊(PPS/PTP;`px4_timestamp_us` 原樣保留 PX4 boot-time 值)、
+binary 編碼、Grafana 新面板。
 
 ### 版本鎖定(勿隨意升)
 
@@ -35,12 +57,15 @@ ros2_ws/
 ./run_smoke.sh
 ```
 
-流程:build 兩顆 image(首次各約 10 分,之後有 docker 快取)→ 起 ROS 2 容器
-(`--network host`,agent 於 UDP 8888 待命)→ 起自建 PX4 SITL(SIH 免
-Gazebo;uxrce_dds_client 自動連 127.0.0.1:8888)→ 輪詢 px4 進程就緒 →
-容器內跑 listener 收滿 10 筆 `/fmu/out/vehicle_status` 判 PASS → 清理全部
-容器。UDP 8888/14550 被占會直接報錯退出。可調:`SMOKE_COUNT`、
-`SMOKE_TIMEOUT`、`SITL_UP_TIMEOUT` 環境變數。
+流程:build 兩顆 image(首次各約 10 分,之後有 docker 快取;ROS 2 image 的
+build context 是 **repo 根**,因需 COPY `interfaces/proto/gen/python`)→
+起 ROS 2 容器(`--network host`,agent 於 UDP 8888 待命)→ 起自建 PX4 SITL
+(SIH 免 Gazebo;uxrce_dds_client 自動連 127.0.0.1:8888)→ 輪詢 px4 進程就緒 →
+容器內跑 listener 收滿 10 筆 `/fmu/out/vehicle_status` 判 PASS →
+**S22 bridge 階段**:起 mosquitto(TCP 41883)→ 背景起 px4_mqtt_bridge →
+`mosquitto_sub -t 'fleet/+/sensors/#'` 收滿 15 筆判 PASS → 清理全部容器。
+UDP 8888/14550、TCP 41883 被占會直接報錯退出。可調:`SMOKE_COUNT`、
+`SMOKE_TIMEOUT`、`SITL_UP_TIMEOUT`、`BRIDGE_COUNT`、`BRIDGE_TIMEOUT` 環境變數。
 
 手動逐步驗證(原生環境、不走 docker)見
 [docs/50-project/phase0/sitl-setup.md §6](../../docs/50-project/phase0/sitl-setup.md)。
@@ -61,7 +86,8 @@ rclpy 預設(Reliable)會**一筆都收不到**且無錯誤訊息。所有訂 `/
 
 ```
 ros2_ws/src/
-├── bridge_smoke/       # ✅ Phase 0:uXRCE-DDS 鏈路煙霧(本批交付)
+├── bridge_smoke/       # ✅ Phase 0:uXRCE-DDS 鏈路煙霧(S8 交付)
+├── px4_mqtt_bridge/    # ✅ Phase 0:DDS→MQTT 高頻感測器橋(S22 交付)
 ├── obstacle_guard/     # 避障:減速/剎停(Phase 1)、繞行(Phase 2)
 ├── precision_land/     # 視覺標靶精準降落(AprilTag)
 ├── mission_exec/       # 任務狀態機(現雛形在 onboard/mission_exec,之後遷入或橋接)

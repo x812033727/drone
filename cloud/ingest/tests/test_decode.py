@@ -1,6 +1,7 @@
 from datetime import datetime, timezone
 
-from drone.v1 import events_pb2, mission_pb2, telemetry_pb2
+import pytest
+from drone.v1 import events_pb2, mission_pb2, sensors_pb2, telemetry_pb2
 from google.protobuf.json_format import MessageToJson
 from ingest import decode
 
@@ -87,3 +88,67 @@ def test_event_disarmed_snake_case_payload():
     payload = '{"drone_id": "dev-2", "unix_time_ms": "1783147203000", "event": "EVENT_DISARMED"}'
     row = decode.event_row(payload)
     assert row[1:] == ("dev-2", "EVENT_DISARMED")
+
+
+# ---- v0.4.0 高頻感測器流(sensors.proto,S22)----
+
+
+def test_sensor_attitude_roundtrip():
+    msg = sensors_pb2.SensorAttitude(
+        drone_id="dev-1",
+        unix_time_ms=1783147204000,
+        px4_timestamp_us=123456789,
+        q=[1.0, 0.0, 0.0, 0.0],
+    )
+    row = decode.sensor_attitude_row(MessageToJson(msg))
+    assert len(row) == len(decode.SENSOR_ATTITUDE_COLUMNS)
+    assert row[0] == datetime.fromtimestamp(1783147204.0, tz=timezone.utc)
+    assert row[1] == "dev-1"
+    assert row[2] == 123456789
+    assert row[3:] == (1.0, 0.0, 0.0, 0.0)
+
+
+def test_sensor_attitude_bad_quaternion_rejected():
+    # q 非 4 元素 = 壞 payload,必須 raise(handle() 記錄後丟棄,不落庫半筆)
+    msg = sensors_pb2.SensorAttitude(drone_id="dev-1", unix_time_ms=1783147204000, q=[1.0, 0.0])
+    with pytest.raises(ValueError):
+        decode.sensor_attitude_row(MessageToJson(msg))
+
+
+def test_sensor_gps_roundtrip():
+    # 機上實際線上格式(preserving_proto_field_name):snake_case + int64 字串
+    payload = (
+        '{"drone_id": "dev-1", "unix_time_ms": "1783147205000",'
+        ' "px4_timestamp_us": "9876543", "latitude_deg": 25.033, "longitude_deg": 121.565,'
+        ' "altitude_msl_m": 105.2, "satellites_used": 14, "hdop": 0.8, "vdop": 1.1,'
+        ' "fix_type": "FIX_TYPE_3D"}'
+    )
+    row = decode.sensor_gps_row(payload)
+    assert len(row) == len(decode.SENSOR_GPS_COLUMNS)
+    assert row[0] == datetime.fromtimestamp(1783147205.0, tz=timezone.utc)
+    assert row[1:3] == ("dev-1", 9876543)
+    assert abs(row[3] - 25.033) < 1e-9
+    assert abs(row[4] - 121.565) < 1e-9
+    assert abs(row[5] - 105.2) < 1e-4
+    assert row[6] == 14
+    assert row[9] == "FIX_TYPE_3D"
+
+
+def test_sensor_local_position_roundtrip():
+    msg = sensors_pb2.SensorLocalPosition(
+        drone_id="dev-1",
+        unix_time_ms=1783147206000,
+        px4_timestamp_us=13579,
+        x=1.5,
+        y=-2.5,
+        z=-30.0,
+        vx=0.5,
+        vy=-0.25,
+        vz=0.125,
+        heading=1.5,
+    )
+    row = decode.sensor_local_position_row(MessageToJson(msg))
+    assert len(row) == len(decode.SENSOR_LOCAL_POSITION_COLUMNS)
+    assert row[0] == datetime.fromtimestamp(1783147206.0, tz=timezone.utc)
+    assert row[1:3] == ("dev-1", 13579)
+    assert row[3:] == (1.5, -2.5, -30.0, 0.5, -0.25, 0.125, 1.5)
