@@ -22,6 +22,8 @@ Fork **PX4 v1.15(或當時最新 stable)**,客製範圍刻意最小化:
 
 ## 3. 調參與飛測流程(每機型)
 
+> 飛測架次與通過準則統一由 [02-verification-validation.md](../02-verification-validation.md) 的 RTM 管理(Phase 0 載體為 F01–F20);本節維護韌體側流程。
+
 1. **SITL**:Gazebo 模型(慣量/推力由實測填入)先驗證任務邏輯
 2. **HITL/台架**:FC-H7 接實體 ESC 於推力台,驗證輸出鏈路
 3. **繫留懸停**:安全繩下首飛,rate loop → attitude → position 逐環整定(PID + 濾波器以 log FFT 定 notch)
