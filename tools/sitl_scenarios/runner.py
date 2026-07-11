@@ -1,12 +1,13 @@
 """共用骨架:連 SITL、方形 demo 任務、遙測記錄、PASS/FAIL 結果輸出。
 
-複用來源(S7 規格:盡量複用 onboard/mission_exec;該目錄非可安裝套件、無法跨樹
-import,故抄最小必要段並在此註明):
-- wait_connected()/connect():改寫自 onboard/mission_exec/mission_exec/main.py::_connect
-- wait_position_ready():抄自 onboard/mission_exec/mission_exec/executor.py::_wait_position_ready
-- SQUARE_CORNERS:取自 onboard/mission_exec/missions/demo_square.json 的四個角點
-- square_mission_items():欄位慣例對齊 onboard/mission_exec/mission_exec/translate.py
-  ::to_mission_item(speed<=0 → NaN、不停點 fly-through、相機/雲台欄位 NaN/NONE)
+複用來源(S11 起 mission_exec 為可安裝套件 `pip install -e onboard/mission_exec`,
+直接 import,不再抄碼;本檔僅保留場景專屬邏輯與錯誤域轉換):
+- wait_connected():mission_exec.main.wait_connected(RuntimeError → ScenarioError)
+- wait_position_ready():mission_exec.executor.wait_position_ready(同上轉換)
+- SQUARE_CORNERS:mission_exec.plan.load_plan 載自 onboard/mission_exec/missions/
+  demo_square.json(editable 安裝下由套件位置反解 repo 內路徑)
+- square_mission_items():組 drone.v1 Waypoint 後走 mission_exec.translate
+  .to_mission_items(speed<=0 → NaN、不停點 fly-through、相機/雲台欄位 NaN/NONE)
 """
 
 import asyncio
@@ -14,19 +15,23 @@ import math
 import subprocess
 import time
 from dataclasses import dataclass, field
+from pathlib import Path
 
+import mission_exec
+from drone.v1 import mission_pb2
 from mavsdk import System
 from mavsdk.mission import MissionItem, MissionPlan
+from mission_exec.executor import wait_position_ready as _me_wait_position_ready
+from mission_exec.main import wait_connected as _me_wait_connected
+from mission_exec.plan import load_plan
+from mission_exec.translate import to_mission_items
 
-_NAN = float("nan")
+#: 示範任務檔(mission_exec 套件旁的 missions/;需 editable 安裝 = repo 樹在場)
+_DEMO_SQUARE_JSON = Path(mission_exec.__file__).resolve().parents[1] / "missions/demo_square.json"
 
-#: demo_square.json 的四個角點(SITL Zurich 家點附近,邊長約 100 m)
-SQUARE_CORNERS = [
-    (47.398642, 8.545594),
-    (47.398642, 8.546920),
-    (47.397742, 8.546920),
-    (47.397742, 8.545594),
-]
+#: demo_square.json 的四個角點(SITL Zurich 家點附近,邊長約 100 m);
+#: 單一事實來源在任務檔,經 load_plan 載入(格式/範圍驗證一併生效)
+SQUARE_CORNERS = [(wp.lat_deg, wp.lon_deg) for wp in load_plan(_DEMO_SQUARE_JSON).waypoints]
 
 #: 容器內 PX4 build 工具目錄(px4-param / px4-listener;F10 docker exec 用)
 PX4_BIN_DIR = "/root/Firmware/build/px4_sitl_default/bin"
@@ -106,11 +111,11 @@ def dist_m(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
 
 
 async def wait_connected(drone: System) -> None:
-    """等待 core.connection_state 連上(改寫自 mission_exec.main._connect)。"""
-    async for state in drone.core.connection_state():
-        if state.is_connected:
-            return
-    raise ScenarioError("連線串流結束仍未連上飛行器")
+    """等待 core.connection_state 連上(複用 mission_exec.main.wait_connected)。"""
+    try:
+        await _me_wait_connected(drone)
+    except RuntimeError as e:
+        raise ScenarioError(str(e)) from e
 
 
 async def connect(cfg: ScenarioConfig, timeout_s: float = 60.0) -> System:
@@ -123,38 +128,29 @@ async def connect(cfg: ScenarioConfig, timeout_s: float = 60.0) -> System:
 
 
 async def wait_position_ready(drone: System) -> None:
-    """等待全球定位 + home 就緒(抄自 mission_exec.executor._wait_position_ready)。"""
-    async for health in drone.telemetry.health():
-        if health.is_global_position_ok and health.is_home_position_ok:
-            return
-    raise ScenarioError("健康狀態串流在定位就緒前結束(鏈路中斷?)")
+    """等待全球定位 + home 就緒(複用 mission_exec.executor.wait_position_ready)。"""
+    try:
+        await _me_wait_position_ready(drone)
+    except RuntimeError as e:
+        raise ScenarioError(str(e)) from e
 
 
 def square_mission_items(
     alt_m: float = 20.0, speed_ms: float = 5.0, loops: int = 1
 ) -> list[MissionItem]:
-    """方形任務航點(座標取自 demo_square.json;欄位慣例對齊 translate.to_mission_item)。"""
-    items = []
-    for lat, lon in SQUARE_CORNERS * loops:
-        items.append(
-            MissionItem(
-                latitude_deg=lat,
-                longitude_deg=lon,
-                relative_altitude_m=alt_m,
-                speed_m_s=speed_ms if speed_ms > 0.0 else _NAN,
-                is_fly_through=True,
-                gimbal_pitch_deg=_NAN,
-                gimbal_yaw_deg=_NAN,
-                camera_action=MissionItem.CameraAction.NONE,
-                loiter_time_s=_NAN,
-                camera_photo_interval_s=_NAN,
-                acceptance_radius_m=_NAN,
-                yaw_deg=_NAN,
-                camera_photo_distance_m=_NAN,
-                vehicle_action=MissionItem.VehicleAction.NONE,
-            )
-        )
-    return items
+    """方形任務航點(座標取自 demo_square.json;轉譯複用 mission_exec.translate)。
+
+    hold_s 固定 0(不停點 fly-through);speed_ms <= 0 → 飛控預設(NaN),
+    相機/雲台欄位 NaN/NONE——均由 to_mission_items 的單一實作保證。
+    """
+    plan = mission_pb2.MissionPlan(
+        mission_id="sitl-square",
+        waypoints=[
+            mission_pb2.Waypoint(lat_deg=lat, lon_deg=lon, rel_alt_m=alt_m, speed_ms=speed_ms)
+            for lat, lon in SQUARE_CORNERS * loops
+        ],
+    )
+    return to_mission_items(plan)
 
 
 async def upload_square(

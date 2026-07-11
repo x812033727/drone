@@ -41,12 +41,14 @@ class MissionProgress(_message.Message):
         STATE_IN_PROGRESS: _ClassVar[MissionProgress.State]
         STATE_COMPLETED: _ClassVar[MissionProgress.State]
         STATE_FAILED: _ClassVar[MissionProgress.State]
+        STATE_PAUSED: _ClassVar[MissionProgress.State]
     STATE_UNSPECIFIED: MissionProgress.State
     STATE_RECEIVED: MissionProgress.State
     STATE_UPLOADED: MissionProgress.State
     STATE_IN_PROGRESS: MissionProgress.State
     STATE_COMPLETED: MissionProgress.State
     STATE_FAILED: MissionProgress.State
+    STATE_PAUSED: MissionProgress.State
     MISSION_ID_FIELD_NUMBER: _ClassVar[int]
     DRONE_ID_FIELD_NUMBER: _ClassVar[int]
     CURRENT_ITEM_FIELD_NUMBER: _ClassVar[int]
@@ -60,3 +62,23 @@ class MissionProgress(_message.Message):
     state: MissionProgress.State
     unix_time_ms: int
     def __init__(self, mission_id: _Optional[str] = ..., drone_id: _Optional[str] = ..., current_item: _Optional[int] = ..., total_items: _Optional[int] = ..., state: _Optional[_Union[MissionProgress.State, str]] = ..., unix_time_ms: _Optional[int] = ...) -> None: ...
+
+class MissionCommand(_message.Message):
+    __slots__ = ("mission_id", "command", "unix_time_ms")
+    class Command(int, metaclass=_enum_type_wrapper.EnumTypeWrapper):
+        __slots__ = ()
+        COMMAND_UNSPECIFIED: _ClassVar[MissionCommand.Command]
+        COMMAND_PAUSE: _ClassVar[MissionCommand.Command]
+        COMMAND_RESUME: _ClassVar[MissionCommand.Command]
+        COMMAND_ABORT: _ClassVar[MissionCommand.Command]
+    COMMAND_UNSPECIFIED: MissionCommand.Command
+    COMMAND_PAUSE: MissionCommand.Command
+    COMMAND_RESUME: MissionCommand.Command
+    COMMAND_ABORT: MissionCommand.Command
+    MISSION_ID_FIELD_NUMBER: _ClassVar[int]
+    COMMAND_FIELD_NUMBER: _ClassVar[int]
+    UNIX_TIME_MS_FIELD_NUMBER: _ClassVar[int]
+    mission_id: str
+    command: MissionCommand.Command
+    unix_time_ms: int
+    def __init__(self, mission_id: _Optional[str] = ..., command: _Optional[_Union[MissionCommand.Command, str]] = ..., unix_time_ms: _Optional[int] = ...) -> None: ...
