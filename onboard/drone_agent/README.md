@@ -21,6 +21,8 @@ drone_agent/
 │                   #   touch() 記錄取樣時間;armed 邊緣排入 pending_events
 ├── publisher.py    # snapshot()/is_stale()/flight_event() 純函式 + publish_loop()
 │                   #   (MQTT 斷線自動重連、遙測斷流暫停上報、飛行事件上報)
+├── log_uploader.py # S20 ULog 自動回收:disarm 觸發下載最新日誌並上傳 log-svc
+│                   #   (選配 --log-svc-url;互斥/逾時/失敗即放棄)
 ├── command.py      # cmd/mission 訂閱 + mission_exec 子程序管理(重複投遞去重、
 │                   #   單一任務互斥、逾時 kill、輸出收進 log、非零結束補發 FAILED)
 └── main.py         # CLI 進入點
@@ -56,7 +58,9 @@ CLI 參數:`--url`(MAVSDK 連線字串,預設 `udpin://0.0.0.0:14540`)、
 `--stale-timeout`(遙測斷流判定秒數,預設 5)、
 `--mavsdk-address`(`host:port`,連既有 mavsdk_server,見下)、
 `--enable-cmd` / `--no-enable-cmd`(雲端派遣,**預設開**,見下)、
-`--cmd-timeout`(任務子程序逾時秒數,預設 900)。
+`--cmd-timeout`(任務子程序逾時秒數,預設 900)、
+`--log-svc-url`(ULog 自動回收,**預設關**,見下)、
+`--log-download-timeout`(ULog 下載逾時秒數,預設 300)。
 
 ### 同機多程序(共用 mavsdk_server)
 
@@ -152,6 +156,27 @@ Phase 1 起 mTLS + 裝置憑證 + 主題 ACL 才對外。
 Hold/RTL)再決定。同理,`COMPLETED` 於**最後一個航點完成時**即發出,RTL
 返航段不屬任務進度——此時互斥已釋放,新任務可被接受,操作者需自行留意
 返航中的機體。
+
+## ULog 自動回收(S20 閉環,選配)
+
+`--log-svc-url`(如 `http://localhost:8090`)啟用;**未給則整個功能停用**
+(預設關,Phase 0 選配)。上鎖(DISARMED 邊緣)自動把最新飛行日誌收回雲端:
+
+```
+disarm → LogFiles.get_entries()(取 date 最新)→ MAVLink 下載到暫存
+       → POST multipart {--log-svc-url}/api/v1/logs/{drone_id}(httpx)
+       → log-svc 存檔 + 背景 ulog_report + 摘要落 flight_logs → Grafana「飛行日誌」
+```
+
+雲端側見 [cloud/log_svc/README.md](../../cloud/log_svc/README.md)。行為約定
+(細節見 [drone_agent/log_uploader.py](drone_agent/log_uploader.py)):
+
+- **全程獨立 task,絕不阻塞遙測**:disarm 回呼只 `create_task` 就返回。
+- **單一回收互斥**:上傳進行中再次 disarm 忽略並記 log(不排隊)。
+- **下載逾時**:MAVLink 下載加總逾 `--log-download-timeout`(預設 300 秒)
+  放棄並記 log——SITL 日誌小,實機大檔經數傳可能極慢,視鏈路調大。
+- **失敗即放棄**:下載/上傳失敗記 log 後放棄,**無重試佇列**(Phase 0;
+  日誌仍留在飛控 SD 卡,可事後以 `tools/flight_ops/archive_flight.py` 人工歸檔)。
 
 ## 行為約定
 

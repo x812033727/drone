@@ -231,6 +231,28 @@
           "rawSql": "SELECT time, drone_id, event FROM flight_events ORDER BY time DESC LIMIT 50"
         }
       ]
+    },
+    {
+      "id": 7,
+      "type": "table",
+      "title": "飛行日誌(ULog 回收)",
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 36
+      },
+      "datasource": {
+        "type": "postgres",
+        "uid": "drone-tsdb"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "rawSql": "SELECT time, drone_id, filename, size_bytes, report_ok FROM flight_logs ORDER BY time DESC LIMIT 20"
+        }
+      ]
     }
   ]
 }

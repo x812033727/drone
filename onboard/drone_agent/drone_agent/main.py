@@ -24,6 +24,7 @@ import sys
 from mavsdk import System
 
 from drone_agent.command import DEFAULT_MISSION_TIMEOUT_S, command_loop
+from drone_agent.log_uploader import DEFAULT_DOWNLOAD_TIMEOUT_S, LogUploader
 from drone_agent.publisher import STALE_TIMEOUT_S, publish_loop
 from drone_agent.state import WATCHERS, TelemetryState
 
@@ -58,6 +59,15 @@ async def run(args: argparse.Namespace) -> None:
         if conn.is_connected:
             logger.info("已連上飛行器")
             break
+
+    if args.log_svc_url:
+        # S20 ULog 自動回收(選配,預設關):disarm 邊緣觸發下載+上傳,
+        # 全程獨立 task 不阻塞遙測,細節見 log_uploader.py
+        uploader = LogUploader(
+            drone, args.drone_id, args.log_svc_url, args.log_download_timeout
+        )
+        state.disarm_callback = uploader.trigger
+        logger.info("ULog 自動回收已啟用:disarm 後上傳至 %s", args.log_svc_url)
 
     # 全部訂閱協程 + 發佈迴圈(+ cmd 訂閱)並行;MQTT 斷線重連由各迴圈自理,
     # 任一 MAVSDK 訂閱異常結束則整體結束(交給 systemd 重啟,Phase 0 策略)
@@ -127,6 +137,19 @@ def main() -> None:
         type=float,
         default=DEFAULT_MISSION_TIMEOUT_S,
         help=f"任務子程序逾時秒數,超過即 kill 並補發 FAILED(預設 {DEFAULT_MISSION_TIMEOUT_S:.0f})",
+    )
+    parser.add_argument(
+        "--log-svc-url",
+        default=None,
+        help="log-svc 基底 URL(如 http://localhost:8090):disarm 後自動下載最新 ULog "
+        "並上傳(S20 閉環)。未給則整個功能停用(預設關,Phase 0 選配)",
+    )
+    parser.add_argument(
+        "--log-download-timeout",
+        type=float,
+        default=DEFAULT_DOWNLOAD_TIMEOUT_S,
+        help="ULog MAVLink 下載加總逾時秒數,逾時放棄本次回收"
+        f"(預設 {DEFAULT_DOWNLOAD_TIMEOUT_S:.0f};實機大檔經數傳慢,視鏈路調大)",
     )
     args = parser.parse_args()
 

@@ -6,12 +6,16 @@
 snapshot() 可直接逐欄映射。
 """
 
+import logging
 import math
 import time
 from collections import deque
+from collections.abc import Callable
 from dataclasses import dataclass, field
 
 from mavsdk import System
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -26,6 +30,10 @@ class TelemetryState:
     飛行事件佇列,元素為 (armed, unix_time_ms);由 publisher 發佈迴圈取出
     組成 FlightEvent 上報 fleet/{id}/events(QoS 1)。啟動後收到的第一筆
     armed 值只是初始狀態,不算邊緣、不產生事件。
+
+    disarm_callback:True→False 邊緣(上鎖)時同步呼叫的回呼(None=不掛)。
+    S20 的 ULog 自動回收由 main 組裝時掛 LogUploader.trigger;回呼本身
+    必須非阻塞(trigger 只 create_task 就返回),不得拖慢遙測訂閱迴圈。
     """
 
     lat_deg: float | None = None
@@ -45,6 +53,7 @@ class TelemetryState:
     last_update_monotonic: float | None = None
     last_update_wall: float | None = None
     pending_events: deque = field(default_factory=deque)
+    disarm_callback: Callable[[], None] | None = None
 
     def touch(self) -> None:
         """記錄「最後一次任一流更新」的時間;每個 watch_* 更新欄位後呼叫。"""
@@ -89,6 +98,13 @@ async def watch_armed(drone: System, state: TelemetryState) -> None:
         # 邊緣偵測:啟動後第一筆(prev is None)只是初始狀態,不算邊緣
         if prev is not None and prev != armed:
             state.pending_events.append((armed, int(state.last_update_wall * 1000)))
+            # 上鎖邊緣(True→False)另觸發 disarm 回呼(S20 ULog 自動回收);
+            # 回呼必須非阻塞,例外不得炸掉遙測訂閱迴圈
+            if not armed and state.disarm_callback is not None:
+                try:
+                    state.disarm_callback()
+                except Exception:
+                    logger.exception("disarm 回呼失敗(忽略,不影響遙測)")
 
 
 async def watch_gps_info(drone: System, state: TelemetryState) -> None:
