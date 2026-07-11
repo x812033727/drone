@@ -6,7 +6,7 @@
 
 from datetime import datetime, timezone
 
-from drone.v1 import events_pb2, mission_pb2, telemetry_pb2
+from drone.v1 import events_pb2, mission_pb2, sensors_pb2, telemetry_pb2
 from google.protobuf import json_format
 
 TELEMETRY_COLUMNS = (
@@ -41,6 +41,43 @@ MISSION_COLUMNS = (
     "current_item",
     "total_items",
     "state",
+)
+
+# v0.4.0 高頻感測器流(fleet/{id}/sensors/*,QoS 0)
+SENSOR_ATTITUDE_COLUMNS = (
+    "time",
+    "drone_id",
+    "px4_timestamp_us",
+    "q_w",
+    "q_x",
+    "q_y",
+    "q_z",
+)
+
+SENSOR_GPS_COLUMNS = (
+    "time",
+    "drone_id",
+    "px4_timestamp_us",
+    "latitude_deg",
+    "longitude_deg",
+    "altitude_msl_m",
+    "satellites_used",
+    "hdop",
+    "vdop",
+    "fix_type",
+)
+
+SENSOR_LOCAL_POSITION_COLUMNS = (
+    "time",
+    "drone_id",
+    "px4_timestamp_us",
+    "x",
+    "y",
+    "z",
+    "vx",
+    "vy",
+    "vz",
+    "heading",
 )
 
 
@@ -91,4 +128,56 @@ def mission_row(payload: bytes | str) -> tuple:
         msg.current_item,
         msg.total_items,
         mission_pb2.MissionProgress.State.Name(msg.state),
+    )
+
+
+def sensor_attitude_row(payload: bytes | str) -> tuple:
+    """fleet/{id}/sensors/attitude 的 JSON payload → sensor_attitude 表 row。"""
+    msg = json_format.Parse(payload, sensors_pb2.SensorAttitude())
+    q = list(msg.q)
+    if len(q) != 4:
+        # 契約:q 為 Hamilton (w,x,y,z) 4 元素;缺元素視同壞 payload 丟棄
+        raise ValueError(f"q 需為 4 元素四元數,收到 {len(q)} 元素")
+    return (
+        _ms_to_dt(msg.unix_time_ms),
+        msg.drone_id,
+        msg.px4_timestamp_us,
+        q[0],
+        q[1],
+        q[2],
+        q[3],
+    )
+
+
+def sensor_gps_row(payload: bytes | str) -> tuple:
+    """fleet/{id}/sensors/gps 的 JSON payload → sensor_gps 表 row。"""
+    msg = json_format.Parse(payload, sensors_pb2.SensorGps())
+    return (
+        _ms_to_dt(msg.unix_time_ms),
+        msg.drone_id,
+        msg.px4_timestamp_us,
+        msg.latitude_deg,
+        msg.longitude_deg,
+        msg.altitude_msl_m,
+        msg.satellites_used,
+        msg.hdop,
+        msg.vdop,
+        msg.fix_type,
+    )
+
+
+def sensor_local_position_row(payload: bytes | str) -> tuple:
+    """fleet/{id}/sensors/local_position 的 JSON payload → sensor_local_position 表 row。"""
+    msg = json_format.Parse(payload, sensors_pb2.SensorLocalPosition())
+    return (
+        _ms_to_dt(msg.unix_time_ms),
+        msg.drone_id,
+        msg.px4_timestamp_us,
+        msg.x,
+        msg.y,
+        msg.z,
+        msg.vx,
+        msg.vy,
+        msg.vz,
+        msg.heading,
     )

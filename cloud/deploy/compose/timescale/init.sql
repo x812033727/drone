@@ -44,6 +44,53 @@ CREATE TABLE flight_events (
 );
 CREATE INDEX ON flight_events (drone_id, time DESC);
 
+-- 對 interfaces/proto/drone/v1/sensors.proto 的高頻感測器流(v0.4.0,S22)
+-- 主題 fleet/{drone_id}/sensors/*,5 Hz 預設,QoS 0 容失;
+-- px4_timestamp_us 是 PX4 boot-time 起算微秒(非 epoch),原樣保留供機內時序分析
+CREATE TABLE sensor_attitude (
+    time             timestamptz NOT NULL,
+    drone_id         text        NOT NULL,
+    px4_timestamp_us bigint,
+    -- 四元數,Hamilton 慣例 (w, x, y, z),FRD 機體系 → NED 地理系
+    q_w real,
+    q_x real,
+    q_y real,
+    q_z real
+);
+SELECT create_hypertable('sensor_attitude', 'time');
+CREATE INDEX ON sensor_attitude (drone_id, time DESC);
+
+CREATE TABLE sensor_gps (
+    time             timestamptz NOT NULL,
+    drone_id         text        NOT NULL,
+    px4_timestamp_us bigint,
+    latitude_deg     double precision,
+    longitude_deg    double precision,
+    altitude_msl_m   real,
+    satellites_used  integer,
+    hdop             real,
+    vdop             real,
+    fix_type         text
+);
+SELECT create_hypertable('sensor_gps', 'time');
+CREATE INDEX ON sensor_gps (drone_id, time DESC);
+
+CREATE TABLE sensor_local_position (
+    time             timestamptz NOT NULL,
+    drone_id         text        NOT NULL,
+    px4_timestamp_us bigint,
+    -- NED 地理系:x 北 / y 東 / z 下(負值 = 起始點上方);heading 弧度 -PI..+PI
+    x       real,
+    y       real,
+    z       real,
+    vx      real,
+    vy      real,
+    vz      real,
+    heading real
+);
+SELECT create_hypertable('sensor_local_position', 'time');
+CREATE INDEX ON sensor_local_position (drone_id, time DESC);
+
 -- log-svc 的 ULog 回收摘要(S20;一般表,量小不需 hypertable)
 -- 檔案本體在 named volume ulog-archive(/data/ulog/{drone_id}/),
 -- 報告全文在同名 .report.txt;此表只留看板/查詢用摘要

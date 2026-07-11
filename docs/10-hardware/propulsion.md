@@ -112,7 +112,7 @@
   - **變更即重測**:電芯(含替代芯)、BMS、pack 結構或材料任一變更,pack 廠須提交變更影響評估並重新判定 UN38.3 報告有效性,必要時重測——PCN(變更通知)義務見 [supply-chain §4](../50-project/supply-chain.md)
   - **標籤與銘板**:pack 外殼預留 **Class 9 鋰電池標記位、Wh 額定標示、序號/型號銘板位**(標記尺寸與圖樣依 IATA DGR 現行版,**尺寸規則需查證**;2026-07 查核,送件前以最新版覆核);歐盟市場另有電池法規 (EU) 2023/1542 標示義務(CE、分類回收標誌等,納 Phase 3 認證包;2026-07 查核,送件前以最新版覆核)
   - **BMS 運輸模式 [S]**:支援運輸模式——主動放電至 **SoC ≤ 30% 並鎖定**(禁止放電輸出與充電,解除需 GCS/維護工具指令),對應空運鋰電池 SoC 限制口徑(IATA DGR;2026-07 查核,送件前以最新版覆核)
-  - **送測時點**:**替代電芯定案前不送測**——送測時點 = pack 廠 **W10 回價複核通過、電芯組態凍結後**(§7.3 定案 12S2P 能量型/基線 LG M58T 之複核);BAT-A/BAT-B 為兩個 pack 型號、**兩型兩案**送測(費用量級見 [certification-roadmap §5](../40-regulatory/certification-roadmap.md),NRE 已列 [bom §3](bom.md) 認證前置測試 0.6M);取得 Test Summary 由 Phase 1 VT-SAF-03 追蹤(roadmap §4 兩段勾法)
+  - **送測時點**:**替代電芯定案前不送測**——送測時點 = pack 廠 **W10 回價複核通過、電芯組態凍結後**(§7.3 定案 12S2P 能量型/基線 LG M58T 之複核);BAT-A/BAT-B 為兩個 pack 型號、**兩型兩案**送測(費用量級見 [certification-roadmap §5](../40-regulatory/certification-roadmap.md),NRE 已列 [bom §3](bom.md) 認證前置測試 0.6M);取得 Test Summary 由 Phase 1 VT-SAF-03 追蹤(certification-roadmap §4 兩段勾法)
 - **✅ 已定案(2026-07-11)**:rev 2 首要待決項(12S3P P45B 裸芯 ~2.4 kg vs ≤ 2.1 kg 機械上限衝突)以 **12S2P 能量型** 定案關閉;選項矩陣、重量/能量/倍率三軸計算、定案理由與待驗證清單見 **§7.3**;§3 重量預算表電池列已回寫;RFQ 回價(W10)以本定案為準複核
 
 ### 7.2 PB-1 高倍率電池(BAT-B)簡表

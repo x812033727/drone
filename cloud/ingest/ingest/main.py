@@ -24,31 +24,43 @@ PG_CONNECT_RETRY_S = 2
 PG_COMMAND_TIMEOUT_S = 10  # DB black-hole 防護:單一指令逾時
 MQTT_MAX_QUEUED_IN = 10_000  # 入站佇列上限,滿了丟新訊息,避免 DB 慢時記憶體無限成長
 
-TELEMETRY_SQL = (
-    f"INSERT INTO telemetry ({', '.join(decode.TELEMETRY_COLUMNS)}) "
-    f"VALUES ({', '.join(f'${i + 1}' for i in range(len(decode.TELEMETRY_COLUMNS)))})"
+def _insert_sql(table: str, columns: tuple[str, ...]) -> str:
+    return (
+        f"INSERT INTO {table} ({', '.join(columns)}) "
+        f"VALUES ({', '.join(f'${i + 1}' for i in range(len(columns)))})"
+    )
+
+
+TELEMETRY_SQL = _insert_sql("telemetry", decode.TELEMETRY_COLUMNS)
+MISSION_SQL = _insert_sql("mission_progress", decode.MISSION_COLUMNS)
+EVENT_SQL = _insert_sql("flight_events", decode.EVENT_COLUMNS)
+SENSOR_ATTITUDE_SQL = _insert_sql("sensor_attitude", decode.SENSOR_ATTITUDE_COLUMNS)
+SENSOR_GPS_SQL = _insert_sql("sensor_gps", decode.SENSOR_GPS_COLUMNS)
+SENSOR_LOCAL_POSITION_SQL = _insert_sql(
+    "sensor_local_position", decode.SENSOR_LOCAL_POSITION_COLUMNS
 )
-MISSION_SQL = (
-    f"INSERT INTO mission_progress ({', '.join(decode.MISSION_COLUMNS)}) "
-    f"VALUES ({', '.join(f'${i + 1}' for i in range(len(decode.MISSION_COLUMNS)))})"
-)
-EVENT_SQL = (
-    f"INSERT INTO flight_events ({', '.join(decode.EVENT_COLUMNS)}) "
-    f"VALUES ({', '.join(f'${i + 1}' for i in range(len(decode.EVENT_COLUMNS)))})"
-)
+
+# 主題路由:取主題「末兩段」查表,查不到再退回末一段(涵蓋既有主題,行為不變)。
+# 末一段:fleet/{id}/telemetry、fleet/{id}/events(末兩段含 {id},查不到)
+# 末兩段:fleet/{id}/mission/progress、fleet/{id}/sensors/*(v0.4.0 高頻流)
+ROUTES: dict[str, tuple[str, object]] = {
+    "telemetry": (TELEMETRY_SQL, decode.telemetry_row),
+    "events": (EVENT_SQL, decode.event_row),
+    "mission/progress": (MISSION_SQL, decode.mission_row),
+    "sensors/attitude": (SENSOR_ATTITUDE_SQL, decode.sensor_attitude_row),
+    "sensors/gps": (SENSOR_GPS_SQL, decode.sensor_gps_row),
+    "sensors/local_position": (SENSOR_LOCAL_POSITION_SQL, decode.sensor_local_position_row),
+}
 
 
 async def handle(pool: asyncpg.Pool, message: aiomqtt.Message) -> None:
     topic = message.topic.value
-    if topic.endswith("/telemetry"):
-        sql, to_row = TELEMETRY_SQL, decode.telemetry_row
-    elif topic.endswith("/mission/progress"):
-        sql, to_row = MISSION_SQL, decode.mission_row
-    elif topic.endswith("/events"):
-        sql, to_row = EVENT_SQL, decode.event_row
-    else:
+    parts = topic.split("/")
+    route = ROUTES.get("/".join(parts[-2:])) or ROUTES.get(parts[-1])
+    if route is None:
         log.warning("未知主題,略過:%s", topic)
         return
+    sql, to_row = route
 
     try:
         payload = bytes(message.payload)
@@ -104,6 +116,8 @@ async def run() -> None:
                 await client.subscribe("fleet/+/telemetry", qos=1)
                 await client.subscribe("fleet/+/mission/progress", qos=1)
                 await client.subscribe("fleet/+/events", qos=1)
+                # v0.4.0 高頻感測器流:QoS 0 容失(與 1 Hz 摘要 QoS 1 區隔)
+                await client.subscribe("fleet/+/sensors/+", qos=0)
                 log.info("已連上 MQTT %s:%s,開始收訊", MQTT_HOST, MQTT_PORT)
                 async for message in client.messages:
                     await handle(pool, message)
