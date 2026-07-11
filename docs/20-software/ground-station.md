@@ -8,6 +8,7 @@
 | Phase 2+ | **自研 GCS**:遙控器 Android App + Web 指揮中心(共用核心) | QGC 對「行業工作流」(測繪分區、農噴地塊、巡邏排程)客製成本高;自研才能做出產品差異 |
 
 > QGC 為 Apache 2.0 / GPLv3 雙授權——商用 fork 需注意:以 Apache 2.0 部分為基礎或保持 GPL 合規(App 開源不影響硬體/雲端閉源)。自研 GCS 則無此限制。
+> 客製深度(stock 預設檔 / 官方 custom-build 模板 / 深 fork)的完整評估、授權合規路徑與 Phase 1 逐項判級,見 [gcs-qgc-evaluation.md](gcs-qgc-evaluation.md)——結論:Phase 1 用 custom-build 模板即可,不做深 fork。
 
 ## 2. 自研 GCS 架構(Phase 2)
 
