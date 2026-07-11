@@ -1,0 +1,36 @@
+<?xml version="1.0"?>
+<!--
+  drone_custom.xml — 自訂 MAVLink dialect(佔位骨架,Phase 1 啟用條件見 README.md)
+
+  message ID 私有區段:24150-24199(interfaces/README 規則 3)
+  分配表(用過的 ID 永不回收):
+    24150  PAYLOAD_STATUS   酬載狀態(草稿,未釋出)
+    24151  SPRAY_TELEMETRY  噴灑遙測(預留,PB-1)
+    24152  BATTERY_DETAIL   電池詳情(預留,SMBus 全欄位)
+    24153-24199  未分配
+-->
+<mavlink>
+  <include>common.xml</include>
+  <version>0</version>
+  <dialect>1</dialect>
+  <enums>
+    <!-- 佔位:酬載類型 enum(QR-S/QR-L 掛載模組,對 interfaces/payload 描述檔) -->
+    <enum name="DRONE_PAYLOAD_TYPE">
+      <description>酬載類型(草稿;與 payload 描述檔 payload_type 欄位對齊)</description>
+      <entry value="0" name="DRONE_PAYLOAD_TYPE_NONE"><description>未掛載</description></entry>
+      <entry value="1" name="DRONE_PAYLOAD_TYPE_GIMBAL_EO"><description>可見光雲台</description></entry>
+      <entry value="2" name="DRONE_PAYLOAD_TYPE_GIMBAL_DUAL"><description>雙光雲台(EO+IR)</description></entry>
+      <entry value="3" name="DRONE_PAYLOAD_TYPE_SPRAYER"><description>噴灑系統(PB-1)</description></entry>
+      <entry value="4" name="DRONE_PAYLOAD_TYPE_CARGO"><description>貨箱(PB-1)</description></entry>
+    </enum>
+  </enums>
+  <messages>
+    <!-- 佔位草稿:欄位未定案,釋出前需一輪評審(README「Phase 1 啟用條件」2) -->
+    <message id="24150" name="PAYLOAD_STATUS">
+      <description>酬載狀態摘要(1 Hz;草稿)</description>
+      <field type="uint8_t" name="payload_type" enum="DRONE_PAYLOAD_TYPE">酬載類型</field>
+      <field type="uint8_t" name="health">健康狀態(0=OK,非 0=故障碼,碼表待定)</field>
+      <field type="uint8_t" name="mode">酬載工作模式(依酬載類型解讀,待定)</field>
+    </message>
+  </messages>
+</mavlink>

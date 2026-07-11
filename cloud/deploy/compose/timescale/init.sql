@@ -100,6 +100,7 @@ CREATE TABLE flight_logs (
     filename       text        NOT NULL,
     size_bytes     bigint      NOT NULL,
     report_ok      boolean     NOT NULL,   -- ulog_report 是否產出可用報告(失敗照落庫)
-    report_excerpt text                    -- 報告前 500 字(全文在 .report.txt)
+    report_excerpt text,                   -- 報告前 500 字(全文在 .report.txt)
+    alerts         text                    -- 異常規則條目(「⚠ 異常提示」逐條換行相接;無異常 NULL)
 );
 CREATE INDEX ON flight_logs (drone_id, time DESC);

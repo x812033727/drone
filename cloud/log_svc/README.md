@@ -12,8 +12,13 @@ log-svc「ULog 自動上傳與解析」。FastAPI + uvicorn,隨
 drone-agent(disarm 觸發)→ POST /api/v1/logs/{drone_id}(multipart)
   → 存 /data/ulog/{drone_id}/{UTC 時戳}_{原檔名}(named volume ulog-archive)
   → 背景 subprocess 跑 tools/ulog_report.py → 全文存同名 .report.txt
-  → 摘要落 DB 表 flight_logs(report_ok + 前 500 字)→ Grafana「飛行日誌」面板
+  → 摘要落 DB 表 flight_logs(report_ok + 前 500 字 + 異常規則條目 alerts)
+  → Grafana「飛行日誌」面板(alerts 有值紅底)
 ```
+
+alerts 欄 = ulog_report「⚠ 異常提示」區段逐條解析(振動超標、電壓低垂、
+GPS 品質),是 cloud-fleet.md §3「異常規則自動開維保單」的 Phase 0 雛形:
+先落庫上看板,開單流程屬 Phase 1。
 
 ## API
 
