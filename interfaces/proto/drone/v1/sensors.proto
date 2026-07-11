@@ -1,0 +1,80 @@
+// 機-雲高頻感測器流契約 v0.4.0(S22 DDS→MQTT 橋)
+//
+// 傳輸:MQTT 主題 `fleet/{drone_id}/sensors/attitude|gps|local_position`,
+// 預設 5 Hz,**QoS 0**(容失;與 1 Hz 摘要 fleet/{id}/telemetry 的 QoS 1 區隔——
+// 高頻流丟一筆下一筆馬上到,重傳只會堆積延遲)。
+// 編碼:Phase 0 使用 proto3 JSON mapping;Phase 1 切換 binary。
+//
+// 來源:PX4 uXRCE-DDS /fmu/out/* topic(px4_msgs release/1.15 訊息定義),
+// 由 onboard/ros2_ws/src/px4_mqtt_bridge 以 latest-sample 節流後外發。
+// 共通欄位:
+// - unix_time_ms:橋收樣當下 wall clock(Unix epoch 毫秒,UTC)
+// - px4_timestamp_us:PX4 原始 timestamp(boot-time 起算微秒,**非** epoch);
+//   原樣保留供機內時序分析,Phase 1 PPS/PTP 時鐘對齊前勿與 wall clock 混算
+syntax = "proto3";
+
+package drone.v1;
+
+// 機體姿態四元數(源:/fmu/out/vehicle_attitude,px4_msgs/VehicleAttitude)。
+message SensorAttitude {
+  // 機隊內唯一機身識別碼(同 MQTT 主題中的 {drone_id})。
+  string drone_id = 1;
+  // 橋收樣時間,Unix epoch 毫秒(UTC)。
+  int64 unix_time_ms = 2;
+  // PX4 原始 timestamp,boot-time 起算微秒(非 epoch)。
+  int64 px4_timestamp_us = 3;
+  // 四元數,Hamilton 慣例,順序 (w, x, y, z),FRD 機體系 → NED 地理系;
+  // 照 PX4 原樣傳遞(4 元素),契約不做有損轉換(歐拉角由消費端自算)。
+  repeated float q = 4;
+}
+
+// GPS 定位(源:/fmu/out/vehicle_gps_position,px4_msgs/SensorGps;
+// 欄位名對 px4_msgs release/1.15 SensorGps.msg 核對)。
+message SensorGps {
+  // 機隊內唯一機身識別碼(同 MQTT 主題中的 {drone_id})。
+  string drone_id = 1;
+  // 橋收樣時間,Unix epoch 毫秒(UTC)。
+  int64 unix_time_ms = 2;
+  // PX4 原始 timestamp,boot-time 起算微秒(非 epoch)。
+  int64 px4_timestamp_us = 3;
+  // 緯度,度(WGS84)。
+  double latitude_deg = 4;
+  // 經度,度(WGS84)。
+  double longitude_deg = 5;
+  // MSL 海拔,公尺。
+  float altitude_msl_m = 6;
+  // 解算使用衛星數(PX4 satellites_used)。
+  int32 satellites_used = 7;
+  // 水平精度因子 HDOP。
+  float hdop = 8;
+  // 垂直精度因子 VDOP。
+  float vdop = 9;
+  // 定位型態,PX4 SensorGps FIX_TYPE_* 常數名(如 "FIX_TYPE_3D"、
+  // "FIX_TYPE_RTK_FIXED";未知數值傳 "FIX_TYPE_{n}")。
+  string fix_type = 10;
+}
+
+// 本地位置與速度,NED 地理系(源:/fmu/out/vehicle_local_position,
+// px4_msgs/VehicleLocalPosition)。
+message SensorLocalPosition {
+  // 機隊內唯一機身識別碼(同 MQTT 主題中的 {drone_id})。
+  string drone_id = 1;
+  // 橋收樣時間,Unix epoch 毫秒(UTC)。
+  int64 unix_time_ms = 2;
+  // PX4 原始 timestamp,boot-time 起算微秒(非 epoch)。
+  int64 px4_timestamp_us = 3;
+  // 北向位置,公尺(NED)。
+  float x = 4;
+  // 東向位置,公尺(NED)。
+  float y = 5;
+  // 下向位置,公尺(NED,負值 = 在起始點上方)。
+  float z = 6;
+  // 北向速度,公尺/秒。
+  float vx = 7;
+  // 東向速度,公尺/秒。
+  float vy = 8;
+  // 下向速度,公尺/秒。
+  float vz = 9;
+  // 航向角(Euler yaw,相對 NED),弧度,-PI..+PI。
+  float heading = 10;
+}

@@ -1,6 +1,8 @@
 # onboard/ros2_ws 容器化開發/煙霧環境 —— host 不裝 ROS,一切在容器內。
-# build context 為 onboard/ros2_ws(見 run_smoke.sh):
-#   docker build -t drone-ros2-smoke:s8 -f docker/Dockerfile .
+# build context 為 **repo 根**(S22 起,照 cloud/ingest 先例:
+# px4_mqtt_bridge 需要 COPY interfaces/proto/gen/python 的契約生成碼):
+#   docker build -t drone-ros2-smoke:s8 -f onboard/ros2_ws/docker/Dockerfile <repo根>
+# RUN 層指令不變 → px4_msgs / agent 的 docker 快取語義不受 context 搬家影響。
 #
 # base 選 ros:humble(= ros-base,已含 colcon/cmake/gcc,無 GUI):
 # 煙霧與後續 headless package 只需 rclpy + 訊息生成;osrf/ros:humble-desktop
@@ -48,13 +50,39 @@ RUN git clone --depth 1 -b release/1.15 https://github.com/PX4/px4_msgs.git src/
     && source /opt/ros/humble/setup.bash \
     && colcon build --packages-select px4_msgs
 
-# --- bridge_smoke(build 進 image,而非掛載編譯)---
+# --- 機-雲契約生成碼 + MQTT client(S22,px4_mqtt_bridge 用)---
+# paho-mqtt 釘版(對齊 venv 實測版);protobuf 版本約束沿 gen/python
+# 的 pyproject(>=5.26,<8),由安裝 drone-proto 時 pip 解出。
+# 裝到系統 python(ros:humble 的 rclpy 也在系統 python,不能開 venv 隔離)。
+COPY interfaces/proto/gen/python /opt/drone-proto
+# 兩個陷阱(實測):
+# 1. apt 的 pip 22.0.2 對 PEP 621([project] 表)的 PEP 517 建置會產出
+#    UNKNOWN-0.0.0 空包(無 drone module、**無錯誤**)→ 必須先升 pip
+#    (升到 /usr/local,26.x 實測正確產出 drone-proto-0.4.0),
+#    並在裝完後以 import 驗證裝對。
+# 2. **不可** pip 升級系統 setuptools:/usr/local 的新 setuptools 會撞
+#    apt 舊 packaging(canonicalize_version TypeError),後續 colcon build
+#    全滅(實測);只升 pip 不動 setuptools,colcon 用的系統件保持 59.6 原狀。
+# 另:清掉 host 端 pip install -e 可能殘留進 COPY 的 build/ 與 *.egg-info,
+# 避免 stale metadata 干擾建置。
+RUN apt-get update && apt-get install -y --no-install-recommends python3-pip \
+    && rm -rf /var/lib/apt/lists/* \
+    && pip3 install --no-cache-dir --upgrade pip \
+    && rm -rf /opt/drone-proto/build /opt/drone-proto/*.egg-info \
+    && pip3 install --no-cache-dir paho-mqtt==2.1.0 /opt/drone-proto \
+    && python3 -c "from drone.v1 import sensors_pb2; import paho.mqtt" \
+    && python3 -c "import setuptools; v = setuptools.__version__; assert v.startswith('59.'), f'系統 setuptools 被升到 {v},colcon build 會壞(見上方註解)'"
+
+# --- 自家 package(build 進 image,而非掛載編譯)---
 # 選「build 進 image」:煙霧目標是可重現的一鍵驗證,單一 image 自帶全部產物,
 # CI 與本機行為一致、無 host 路徑/權限問題。開發迭代時仍可
 # `docker run -v $PWD/src:/ros2_ws/src ... colcon build` 掛載重編,兩者不互斥。
-COPY src/bridge_smoke src/bridge_smoke
+COPY onboard/ros2_ws/src/bridge_smoke src/bridge_smoke
 RUN source /opt/ros/humble/setup.bash && colcon build --packages-select bridge_smoke
 
-COPY docker/entrypoint.sh /ros2_entrypoint.sh
+COPY onboard/ros2_ws/src/px4_mqtt_bridge src/px4_mqtt_bridge
+RUN source /opt/ros/humble/setup.bash && colcon build --packages-select px4_mqtt_bridge
+
+COPY onboard/ros2_ws/docker/entrypoint.sh /ros2_entrypoint.sh
 ENTRYPOINT ["/ros2_entrypoint.sh"]
 CMD ["bash"]

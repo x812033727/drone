@@ -114,9 +114,10 @@ jobs:
         if: always()
         run: docker rm -f px4-failsafe || true
 
-  # uXRCE-DDS 煙霧(S8):PX4 SITL(自建 SIH image)→ Micro XRCE-DDS Agent
-  # → ROS 2 topic。直接跑 onboard/ros2_ws/run_smoke.sh(與本地同一條路徑:
-  # build 兩顆 image + agent + SITL + listener + 清理)。
+  # uXRCE-DDS 煙霧(S8)+ DDS→MQTT 橋煙霧(S22):PX4 SITL(自建 SIH image)
+  # → Micro XRCE-DDS Agent → ROS 2 topic → px4_mqtt_bridge → mosquitto。
+  # 直接跑 onboard/ros2_ws/run_smoke.sh(與本地同一條路徑:
+  # build 兩顆 image + agent + SITL + listener + bridge/mosquitto_sub + 清理)。
   # 注意:不用 gazebo-headless image——其 1.15.x 系列不含 uxrce_dds_client
   # (詳 onboard/ros2_ws/docker/Dockerfile.px4-sitl-dds 註解)。
   # 納入 nightly 的理由:agent/px4_msgs/PX4 皆無現成二進位可用,只能 source

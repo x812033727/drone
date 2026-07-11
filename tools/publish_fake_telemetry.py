@@ -20,10 +20,10 @@ import paho.mqtt.client as mqtt
 from google.protobuf.json_format import MessageToJson
 
 try:
-    from drone.v1 import telemetry_pb2
+    from drone.v1 import sensors_pb2, telemetry_pb2
 except ImportError:  # 開發便利:未安裝 drone-proto 時直接用 repo 內生成碼
     sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "interfaces/proto/gen/python"))
-    from drone.v1 import telemetry_pb2
+    from drone.v1 import sensors_pb2, telemetry_pb2
 
 CENTER_LAT, CENTER_LON = 25.0330, 121.5654  # 台北
 RADIUS_DEG = 0.002  # 約 200 m
@@ -52,6 +52,57 @@ def make_summary(drone_id: str, tick: int) -> telemetry_pb2.TelemetrySummary:
     )
 
 
+def publish_sensor_samples(client: mqtt.Client, drone_id: str) -> None:
+    """v0.4.0 高頻感測器流(sensors.proto)各打一筆到 fleet/{id}/sensors/*(QoS 0)。
+
+    線上編碼對齊 px4_mqtt_bridge:preserving_proto_field_name + 全欄位輸出。
+    """
+    now_ms = int(time.time() * 1000)
+    samples = {
+        "attitude": sensors_pb2.SensorAttitude(
+            drone_id=drone_id,
+            unix_time_ms=now_ms,
+            px4_timestamp_us=12_345_678,
+            q=[1.0, 0.0, 0.0, 0.0],
+        ),
+        "gps": sensors_pb2.SensorGps(
+            drone_id=drone_id,
+            unix_time_ms=now_ms,
+            px4_timestamp_us=12_345_678,
+            latitude_deg=CENTER_LAT,
+            longitude_deg=CENTER_LON,
+            altitude_msl_m=105.0,
+            satellites_used=14,
+            hdop=0.8,
+            vdop=1.1,
+            fix_type="FIX_TYPE_3D",
+        ),
+        "local_position": sensors_pb2.SensorLocalPosition(
+            drone_id=drone_id,
+            unix_time_ms=now_ms,
+            px4_timestamp_us=12_345_678,
+            x=1.0,
+            y=2.0,
+            z=-30.0,
+            vx=0.1,
+            vy=0.2,
+            vz=-0.3,
+            heading=1.57,
+        ),
+    }
+    for subtopic, msg in samples.items():
+        payload = MessageToJson(
+            msg,
+            preserving_proto_field_name=True,
+            always_print_fields_with_no_presence=True,
+            indent=None,
+        )
+        client.publish(f"fleet/{drone_id}/sensors/{subtopic}", payload, qos=0).wait_for_publish(
+            timeout=5
+        )
+    print(f"已各發布 1 筆 sensors 樣本至 fleet/{drone_id}/sensors/{{{','.join(samples)}}}")
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--drone-id", default="dev-1")
@@ -59,6 +110,11 @@ def main() -> None:
     ap.add_argument("--mqtt-port", type=int, default=1883)
     ap.add_argument("--rate", type=float, default=1.0, help="每秒發布次數")
     ap.add_argument("--count", type=int, default=0, help="發布 N 筆後結束(0 = 不停)")
+    ap.add_argument(
+        "--with-sensors",
+        action="store_true",
+        help="額外對 fleet/{id}/sensors/attitude|gps|local_position 各發 1 筆(v0.4.0,QoS 0)",
+    )
     args = ap.parse_args()
 
     client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, client_id=f"fake-{args.drone_id}")
@@ -68,6 +124,8 @@ def main() -> None:
 
     tick = 0
     try:
+        if args.with_sensors:
+            publish_sensor_samples(client, args.drone_id)
         while args.count <= 0 or tick < args.count:
             payload = MessageToJson(make_summary(args.drone_id, tick))
             client.publish(topic, payload, qos=1).wait_for_publish(timeout=5)
