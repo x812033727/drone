@@ -61,9 +61,11 @@ jobs:
         if: always()
         run: docker rm -f px4-sitl || true
 
-  # 失效保護場景回歸(S7):F09–F12,承載 docs/03-safety-analysis.md §4 矩陣與
-  # flight-test-plan F09–F12 的 SITL 預跑。matrix 每場景一個獨立 runner VM +
-  # 獨立 SITL 容器(場景會改參數/放電/觸發失效保護,不可共用容器)。
+  # 場景回歸:F05–F08 自動任務(S24)+ F09–F12 失效保護(S7),承載
+  # flight-test-plan F05–F12 的 SITL 預跑(F09–F12 另對應 docs/03-safety-analysis.md
+  # §4 矩陣)。matrix 每場景一個獨立 runner VM + 獨立 SITL 容器(場景會改參數/
+  # 放電/觸發失效保護,兩趟間殘留任務也會汙染,不可共用容器)。
+  # f07 場景自帶專屬高位埠 mosquitto 容器(場景內起與清)。
   # 同 mission-sitl:nightly 觀察,不擋 PR。
   failsafe-scenarios:
     runs-on: ubuntu-latest
@@ -71,7 +73,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        scenario: [f09, f10, f11, f12]
+        scenario: [f05, f06, f07, f08, f09, f10, f11, f12]
     steps:
       - uses: actions/checkout@v4
 

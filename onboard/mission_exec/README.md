@@ -38,6 +38,20 @@
 
 相機/雲台欄位 Phase 0 不使用(`CameraAction.NONE` / `VehicleAction.NONE` / NaN)。
 
+## 航線產生器(S24:`mission_exec.patterns`)
+
+純函式產生 `MissionPlan`(供 F05/F06 任務檔與 `tools/sitl_scenarios` f05–f08 預跑;
+經緯度平移用平面近似,百公尺級誤差可忽略;產出皆過 `plan.validate_plan`):
+
+- `survey_grid(center_lat, center_lon, width_m, height_m, spacing_m, alt_m, speed_ms)`:
+  蛇行測繪網格——東西向航線、南→北堆疊,行距 = `spacing_m`
+  (航線數 = ⌊height/spacing⌋+1,置中;每行 2 航點,偶數行向東、奇數行向西)。
+- `corridor(start_lat, start_lon, heading_deg, length_m, leg_alts, speed_ms)`:
+  直線走廊分段——沿 heading 均分 `len(leg_alts)` 段,每段一個高度
+  (段首+段尾同高度 → 平飛段、段界垂直轉換;heading 0 = 正北、90 = 正東)。
+
+兩者皆可用 keyword `mission_id=` 覆寫自動命名;`rtl_after_last` 由呼叫端自行設定。
+
 ## 跑法
 
 ```bash

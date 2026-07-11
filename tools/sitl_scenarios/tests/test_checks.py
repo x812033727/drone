@@ -1,13 +1,18 @@
-"""checks.py 純函式單元測試:模式序列判定、延遲、圍欄門檻、低電量三級序列。"""
+"""checks.py 純函式單元測試:模式序列判定、延遲、圍欄門檻、低電量三級序列、
+S24 任務場景斷言(覆蓋/走滿/高度序列/進度凍結)。"""
 
 from sitl_scenarios.checks import (
+    alts_reached_in_order,
     crossed_boundary,
     evaluate_battery_ladder,
     first_mode_time,
+    items_all_visited,
     latency_to_mode,
     mode_at,
     modes_in_order,
+    progress_frozen,
     reached_within,
+    span_covered,
 )
 
 # ---- modes_in_order ----------------------------------------------------------
@@ -205,3 +210,47 @@ def test_arm_with_retry_exhausted_raises_scenario_error():
 
     with pytest.raises(ScenarioError):
         asyncio.run(arm_with_retry(FakeDrone(), attempts=3, delay_s=0.01))
+
+
+# ---- S24:span_covered / items_all_visited / alts_reached_in_order / progress_frozen
+
+
+def test_span_covered_exact_and_with_tolerance():
+    assert span_covered(-60.0, 60.0, -60.0, 60.0, 0.0)
+    # 內縮 tol 內仍算覆蓋(fly-through 切角)
+    assert span_covered(-48.0, 47.0, -60.0, 60.0, 15.0)
+    assert not span_covered(-40.0, 60.0, -60.0, 60.0, 15.0)  # 南端差 20 m > tol
+    assert not span_covered(-60.0, 30.0, -60.0, 60.0, 15.0)
+
+
+def test_items_all_visited():
+    assert items_all_visited([0, 1, 2, 3, 4], 4)
+    assert items_all_visited([1, 3, 2, 4, 1], 4)  # 順序無關、重複無害
+    assert not items_all_visited([1, 2, 4], 4)  # 跳過 3
+    assert items_all_visited([], 0)  # 空範圍恆真
+
+
+def test_alts_reached_in_order():
+    # F06:20 → 35 → 25(±3 m),中間過渡值允許
+    samples = [(0, 2.0), (5, 19.1), (10, 20.4), (15, 28.0), (20, 34.2), (25, 35.1),
+               (30, 30.0), (35, 25.8), (40, 24.9)]
+    assert alts_reached_in_order(samples, [20.0, 35.0, 25.0], 3.0)
+    # 缺中段 35:直接 20 → 25 不算
+    samples_no_mid = [(0, 20.0), (10, 22.0), (20, 25.0)]
+    assert not alts_reached_in_order(samples_no_mid, [20.0, 35.0, 25.0], 3.0)
+
+
+def test_alts_reached_in_order_consumes_sequentially():
+    # 一個取樣點不可同時滿足兩個 target(iterator 消耗語意)
+    assert not alts_reached_in_order([(0, 20.0)], [20.0, 20.0], 3.0)
+    assert alts_reached_in_order([(0, 20.0), (1, 20.5)], [20.0, 20.0], 3.0)
+
+
+def test_progress_frozen():
+    items = [(10.0, 1), (20.0, 2), (60.0, 3)]
+    # 凍結窗 [25, 55]:無事件 → 凍結
+    assert progress_frozen(items, 25.0, 55.0, baseline_item=2)
+    # 窗內出現超過斷點的推進 → 未凍結
+    assert not progress_frozen(items, 25.0, 60.0, baseline_item=2)
+    # 窗內重發同斷點(QoS 1 dup)不算推進
+    assert progress_frozen([(30.0, 2)], 25.0, 55.0, baseline_item=2)
