@@ -4,9 +4,15 @@
     # PX4 SITL(預設 offboard 埠 14540,自動 spawn mavsdk_server)
     python -m mission_exec.main --mission missions/demo_square.json --drone-id dev-1
 
-    # 進度事件同時上 MQTT(主題 fleet/{drone_id}/mission/progress,QoS 1)
+    # 進度事件同時上 MQTT(主題 fleet/{drone_id}/mission/progress,QoS 1);
+    # 同時訂閱 fleet/{drone_id}/cmd/mission_ctrl 接收 PAUSE/RESUME/ABORT
+    # (S23;無 --mqtt-host 時控制通道自然停用)
     python -m mission_exec.main --mission missions/demo_square.json \
         --drone-id dev-1 --mqtt-host localhost
+
+    # 斷點續飛:上傳後自航點 2 開始(搭配進度事件裡的 current_item 記錄斷點)
+    python -m mission_exec.main --mission missions/demo_square.json \
+        --drone-id dev-1 --resume 2
 
     # 連既有 mavsdk_server(例如與 drone_agent 同機併跑時顯式共用)
     python -m mission_exec.main --mission missions/demo_square.json \
@@ -64,6 +70,36 @@ def _make_progress_cb(mqtt_client, drone_id: str):
     return progress_cb
 
 
+def _make_ctrl_listener(client, ctrl_topic: str, queue: "asyncio.Queue"):
+    """回傳控制通道監聽 coroutine:訂閱訊息 → 解析 MissionCommand → 入佇列。
+
+    壞 payload 只記 WARNING 後略過;串流中斷(broker 斷線)log 後結束——
+    控制通道為 best-effort,永不中斷任務本體(與進度發布同語意)。
+    mission_id / 命令合法性驗證在 executor(單一事實來源),此處只做 Parse 級把關。
+    """
+
+    async def listen() -> None:
+        try:
+            async for message in client.messages:
+                if not message.topic.matches(ctrl_topic):
+                    continue
+                cmd = mission_pb2.MissionCommand()
+                try:
+                    json_format.Parse(bytes(message.payload), cmd)
+                except json_format.ParseError:
+                    _LOG.warning("忽略非法 mission_ctrl payload(非 MissionCommand JSON)",
+                                 exc_info=True)
+                    continue
+                await queue.put(cmd)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            _LOG.warning("mission_ctrl 訂閱中斷(broker 斷線?),控制通道停用,任務照常繼續",
+                         exc_info=True)
+
+    return listen
+
+
 def _parse_server_address(value: str) -> tuple[str, int] | None:
     """解析 --mavsdk-address 的 host:port;空字串 = 不使用(spawn 內建 server)。"""
     if not value:
@@ -104,7 +140,7 @@ async def _run(args: argparse.Namespace) -> None:
     print(f"已載入任務 {plan.mission_id}({len(plan.waypoints)} 個航點)", flush=True)
     drone = await _connect(args.url, args.mavsdk_server)
 
-    async def _execute(progress_cb) -> None:
+    async def _execute(progress_cb, ctrl_queue=None) -> None:
         await run_mission(
             drone,
             plan,
@@ -112,13 +148,25 @@ async def _run(args: argparse.Namespace) -> None:
             progress_cb,
             health_timeout_s=args.health_timeout,
             progress_stall_s=args.stall_timeout,
+            ctrl_queue=ctrl_queue,
+            resume_from=args.resume,
         )
 
     if args.mqtt_host:
         import aiomqtt
 
         async with aiomqtt.Client(args.mqtt_host, port=args.mqtt_port) as client:
-            await _execute(_make_progress_cb(client, args.drone_id))
+            # 控制通道(S23):同一條 MQTT 連線訂 mission_ctrl,監聽任務餵佇列;
+            # 無 --mqtt-host 時自然停用(ctrl_queue=None)
+            ctrl_topic = f"fleet/{args.drone_id}/cmd/mission_ctrl"
+            await client.subscribe(ctrl_topic, qos=1)
+            print(f"控制通道已訂閱:{ctrl_topic}", flush=True)
+            ctrl_queue: asyncio.Queue = asyncio.Queue()
+            listener = asyncio.create_task(_make_ctrl_listener(client, ctrl_topic, ctrl_queue)())
+            try:
+                await _execute(_make_progress_cb(client, args.drone_id), ctrl_queue)
+            finally:
+                listener.cancel()
     else:
         await _execute(_make_progress_cb(None, args.drone_id))
 
@@ -154,6 +202,13 @@ def main() -> None:
     parser.add_argument("--mqtt-port", type=int, default=1883, help="MQTT broker 埠(預設 1883)")
     parser.add_argument("--drone-id", default="dev-1", help="機身識別碼(MQTT 主題用)")
     parser.add_argument(
+        "--resume",
+        type=int,
+        default=0,
+        help="斷點續飛:上傳後自航點 N(0-based)開始執行"
+        "(set_current_mission_item;預設 0 = 從頭)",
+    )
+    parser.add_argument(
         "--health-timeout",
         type=float,
         default=DEFAULT_HEALTH_TIMEOUT_S,
@@ -167,6 +222,8 @@ def main() -> None:
         f"(預設 {DEFAULT_PROGRESS_STALL_S:g};針對「無事件」而非「未完成」)",
     )
     args = parser.parse_args()
+    if args.resume < 0:
+        parser.error(f"--resume 需為非負整數(收到 {args.resume})")
     try:
         args.mavsdk_server = _parse_server_address(args.mavsdk_address)
     except ValueError as e:

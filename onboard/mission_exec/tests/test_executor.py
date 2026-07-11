@@ -69,6 +69,12 @@ class _FakeMission:
     async def start_mission(self):
         self._drone.calls.append(("start", None))
 
+    async def pause_mission(self):
+        self._drone.calls.append(("pause", None))
+
+    async def set_current_mission_item(self, index):
+        self._drone.calls.append(("set_current", index))
+
     def mission_progress(self):
         return self._drone.progress_gen()
 
@@ -87,6 +93,9 @@ class _FakeAction:
 
     async def arm(self):
         self._drone.calls.append(("arm", None))
+
+    async def return_to_launch(self):
+        self._drone.calls.append(("rtl", None))
 
 
 class FakeDrone:
@@ -222,3 +231,206 @@ def test_arm_with_retry_exhausted_reraises_action_error():
     executor.ARM_RETRY_DELAY_S = 0.01
     with pytest.raises(ActionError):
         asyncio.run(executor._arm_with_retry(types.SimpleNamespace(action=FakeAction())))
+
+
+# ---------------------------------------------------------------------------
+# S23:MissionCommand PAUSE/RESUME/ABORT 機上執行
+# ---------------------------------------------------------------------------
+
+C = mission_pb2.MissionCommand
+
+
+def _cmd(command, mission_id: str = "t-exec") -> mission_pb2.MissionCommand:
+    return C(mission_id=mission_id, command=command, unix_time_ms=1)
+
+
+def test_pause_resume_cycle():
+    """S23:PAUSE → pause_mission + STATE_PAUSED;RESUME → start_mission 續飛;
+    暫停中重複 PAUSE 忽略(QoS 1 dup)。"""
+
+    async def scenario():
+        resumed = asyncio.Event()
+
+        async def gen():
+            yield _Progress(0, 2)
+            await resumed.wait()
+            yield _Progress(1, 2)
+            yield _Progress(2, 2)
+
+        drone = FakeDrone(progress_gen=gen)
+        orig_start = drone.mission.start_mission
+
+        async def start_mission():
+            await orig_start()
+            if drone.calls.count(("start", None)) >= 2:  # 第 2 次 start = RESUME
+                resumed.set()
+
+        drone.mission.start_mission = start_mission
+        queue: asyncio.Queue = asyncio.Queue()
+        states: list = []
+
+        async def cb(progress: mission_pb2.MissionProgress) -> None:
+            states.append(progress.state)
+            if progress.state == S.STATE_PAUSED:
+                await queue.put(_cmd(C.COMMAND_RESUME))
+
+        await queue.put(_cmd(C.COMMAND_PAUSE))
+        await queue.put(_cmd(C.COMMAND_PAUSE))  # dup:暫停中第二個 PAUSE 應忽略
+        await run_mission(drone, _plan(2), "d1", cb, ctrl_queue=queue)
+        return drone, states
+
+    drone, states = asyncio.run(scenario())
+    assert drone.calls.count(("pause", None)) == 1  # dup PAUSE 被忽略
+    assert drone.calls.count(("start", None)) == 2  # 首次 start + RESUME
+    assert S.STATE_PAUSED in states
+    idx = states.index(S.STATE_PAUSED)
+    assert S.STATE_IN_PROGRESS in states[idx:]  # RESUME 後回 IN_PROGRESS
+    assert states[-1] == S.STATE_COMPLETED
+
+
+def test_abort_sends_rtl_then_failed():
+    """S23:ABORT → action.return_to_launch() → STATE_FAILED(契約無 ABORTED,
+    以 FAILED 承載,訊息註明 abort)→ MissionExecError。"""
+
+    async def gen():
+        yield _Progress(0, 2)
+        await asyncio.Event().wait()  # 永不推進,等 ABORT
+        yield _Progress(2, 2)  # pragma: no cover
+
+    drone = FakeDrone(progress_gen=gen)
+    queue: asyncio.Queue = asyncio.Queue()
+    states: list = []
+
+    async def scenario():
+        await queue.put(_cmd(C.COMMAND_ABORT))
+        await run_mission(drone, _plan(2), "d1", _collect_cb(states), ctrl_queue=queue)
+
+    with pytest.raises(MissionExecError, match="ABORT"):
+        asyncio.run(scenario())
+    assert ("rtl", None) in drone.calls
+    assert states[-1] == S.STATE_FAILED
+
+
+def test_stall_timeout_suspended_while_paused():
+    """S23 重點:PAUSED 期間停滯逾時暫停計時(暫停是合法靜止,不可被當停滯誤殺);
+    RESUME 後計時重新起算、任務照常完成。"""
+
+    async def scenario():
+        resumed = asyncio.Event()
+
+        async def gen():
+            yield _Progress(0, 2)
+            await resumed.wait()
+            yield _Progress(2, 2)
+
+        drone = FakeDrone(progress_gen=gen)
+        orig_start = drone.mission.start_mission
+
+        async def start_mission():
+            await orig_start()
+            if drone.calls.count(("start", None)) >= 2:
+                resumed.set()
+
+        drone.mission.start_mission = start_mission
+        queue: asyncio.Queue = asyncio.Queue()
+        states: list = []
+        task = asyncio.create_task(
+            run_mission(
+                drone,
+                _plan(2),
+                "d1",
+                _collect_cb(states),
+                ctrl_queue=queue,
+                progress_stall_s=0.2,
+            )
+        )
+        await queue.put(_cmd(C.COMMAND_PAUSE))
+        while S.STATE_PAUSED not in states:
+            await asyncio.sleep(0.01)
+        await asyncio.sleep(0.6)  # 遠超 stall 0.2:暫停中不可觸發停滯逾時
+        await queue.put(_cmd(C.COMMAND_RESUME))
+        await task
+        return states
+
+    states = asyncio.run(scenario())
+    assert S.STATE_FAILED not in states
+    assert states[-1] == S.STATE_COMPLETED
+
+
+def test_ctrl_mismatched_mission_id_ignored():
+    """S23:mission_id 不符當前任務的控制命令 log 後忽略,任務照常完成。"""
+
+    queue: asyncio.Queue = asyncio.Queue()
+
+    async def gen():
+        yield _Progress(0, 2)
+        while not queue.empty():  # 等 ctrl 命令被消化,確保走到忽略分支
+            await asyncio.sleep(0)
+        await asyncio.sleep(0.05)
+        yield _Progress(2, 2)
+
+    drone = FakeDrone(progress_gen=gen)
+    states: list = []
+
+    async def scenario():
+        await queue.put(_cmd(C.COMMAND_PAUSE, mission_id="other-mission"))
+        await run_mission(drone, _plan(2), "d1", _collect_cb(states), ctrl_queue=queue)
+
+    asyncio.run(scenario())
+    assert ("pause", None) not in drone.calls
+    assert S.STATE_PAUSED not in states
+    assert states[-1] == S.STATE_COMPLETED
+
+
+def test_ctrl_unknown_command_ignored():
+    """S23:未知/未指定命令 log 後忽略(不 pause、不 RTL),任務照常完成。"""
+
+    queue: asyncio.Queue = asyncio.Queue()
+
+    async def gen():
+        yield _Progress(0, 2)
+        while not queue.empty():
+            await asyncio.sleep(0)
+        await asyncio.sleep(0.05)
+        yield _Progress(2, 2)
+
+    drone = FakeDrone(progress_gen=gen)
+    states: list = []
+
+    async def scenario():
+        await queue.put(_cmd(C.COMMAND_UNSPECIFIED))
+        # proto3 開放 enum:未知數字 99 能通過 json_format.Parse,
+        # Command.Name(99) 會炸 ValueError——不可讓它炸掉任務
+        unknown = _cmd(C.COMMAND_PAUSE)
+        unknown.command = 99
+        await queue.put(unknown)
+        await run_mission(drone, _plan(2), "d1", _collect_cb(states), ctrl_queue=queue)
+
+    asyncio.run(scenario())
+    assert ("pause", None) not in drone.calls
+    assert ("rtl", None) not in drone.calls
+    assert S.STATE_FAILED not in states
+    assert states[-1] == S.STATE_COMPLETED
+
+
+def test_resume_from_sets_current_item_before_start():
+    """S23:--resume N 斷點續飛——上傳後、start 前 set_current_mission_item(N)。"""
+    drone = FakeDrone(progress_gen=_complete_after(3))
+    states: list = []
+    asyncio.run(run_mission(drone, _plan(3), "d1", _collect_cb(states), resume_from=1))
+    assert ("set_current", 1) in drone.calls
+    names = [name for name, _ in drone.calls]
+    assert names.index("upload") < names.index("set_current") < names.index("start")
+    assert states[-1] == S.STATE_COMPLETED
+
+
+def test_resume_from_out_of_range_fails():
+    """S23:resume_from 超出航點範圍 → FAILED(不 set、不 arm)。"""
+    drone = FakeDrone(progress_gen=_complete_after(2))
+    states: list = []
+    with pytest.raises(MissionExecError, match="resume_from"):
+        asyncio.run(run_mission(drone, _plan(2), "d1", _collect_cb(states), resume_from=5))
+    assert states[-1] == S.STATE_FAILED
+    names = [name for name, _ in drone.calls]
+    assert "set_current" not in names
+    assert "arm" not in names

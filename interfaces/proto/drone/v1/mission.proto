@@ -3,8 +3,9 @@
 // 傳輸:
 //   - MissionProgress:MQTT 主題 `fleet/{drone_id}/mission/progress`(事件觸發,QoS 1)
 //   - MissionPlan:MQTT 主題 `fleet/{drone_id}/cmd/mission`(雲 → 機,事件觸發,QoS 1)
-//   - MissionCommand:預留 MQTT 主題 `fleet/{drone_id}/cmd/mission_ctrl`
-//     (雲 → 機,事件觸發,QoS 1;v0.2.0 只定契約,機上訂閱與執行於 S12 實作)
+//   - MissionCommand:MQTT 主題 `fleet/{drone_id}/cmd/mission_ctrl`
+//     (雲 → 機,事件觸發,QoS 1;S23 起機上已實作——mission_exec
+//     任務執行期間直訂,無 MQTT 時控制通道自然停用)
 // 編碼:Phase 0 使用 proto3 JSON mapping;Phase 1 切換 binary。
 //
 // v0.2.0(純增量,proto3 向後相容):新增 MissionCommand;MissionProgress.State
@@ -53,7 +54,7 @@ message MissionProgress {
     // 任務失敗(上傳失敗、中止、失效保護接管等)。
     STATE_FAILED = 5;
     // 任務暫停中(收到 COMMAND_PAUSE;COMMAND_RESUME 後回 STATE_IN_PROGRESS)。
-    // v0.2.0 新增;機上狀態機接入於 S12 實作。
+    // v0.2.0 新增;S23 起機上狀態機已接入。
     STATE_PAUSED = 6;
   }
 
@@ -72,8 +73,8 @@ message MissionProgress {
 }
 
 // 任務執行控制命令(雲 → 機:對執行中任務下發暫停/續飛/中止)。
-// v0.2.0 起預留契約(MQTT 主題 `fleet/{drone_id}/cmd/mission_ctrl`,QoS 1,
-// proto3 JSON);機上訂閱與執行於 S12 實作。
+// v0.2.0 定契約(MQTT 主題 `fleet/{drone_id}/cmd/mission_ctrl`,QoS 1,
+// proto3 JSON);S23 起機上已實作(mission_exec 直訂)。
 message MissionCommand {
   // 控制命令種類。
   enum Command {
@@ -82,7 +83,8 @@ message MissionCommand {
     COMMAND_PAUSE = 1;
     // 續飛(自暫停點續跑任務,進度回 STATE_IN_PROGRESS)。
     COMMAND_RESUME = 2;
-    // 中止任務(停止任務並以 RTL 收尾)。
+    // 中止任務(停止任務並以 RTL 收尾;契約 State 無 ABORTED,
+    // 機上以 STATE_FAILED 承載中止終態,log 註明 abort)。
     COMMAND_ABORT = 3;
   }
 
