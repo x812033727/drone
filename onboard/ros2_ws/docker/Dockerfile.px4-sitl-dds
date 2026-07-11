@@ -1,0 +1,65 @@
+# 自建 PX4 v1.15.4 SITL(SIH 模式,無 Gazebo)—— 專供 uXRCE-DDS 煙霧。
+#
+# 為什麼不用 jonasvautherin/px4-gazebo-headless:1.15.4(其他 SITL job 用的那顆)?
+# 2026-07 實測:該 image 基底 Ubuntu 18.04 → cmake 3.10.2,而 PX4 的
+# uxrce_dds_client CMakeLists 在 CMAKE_VERSION < 3.11 時「靜默跳過」該模組
+# (strings 其 px4 binary 找不到 uxrce_dds_client,rcS 的 "if module exists"
+# 靜默略過)→ 1.15.x 系列現成 image 全數不含 DDS client,無解。
+# 1.16+/master 才換新基底,但韌體版本會與本專案(1.15.4)不一致,
+# 違反「px4_msgs 訊息定義必須與韌體一致」原則 → 自建。
+#
+# SIH(Simulation-In-Hardware 之 SITL 版)讓動力學在 PX4 內部模擬,
+# 不需外部 Gazebo → image 免裝模擬器、啟動快(數秒即出 vehicle_status)。
+# 煙霧只驗 DDS 資料流,SIH 足夠;飛行行為回歸仍用 gazebo-headless image。
+FROM ubuntu:22.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+ENV LANG=C.UTF-8
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        build-essential \
+        ca-certificates \
+        cmake \
+        file \
+        git \
+        ninja-build \
+        python3 \
+        python3-pip \
+        rsync \
+    && rm -rf /var/lib/apt/lists/*
+
+# PX4 build 的 python 依賴(對齊 Tools/setup/requirements.txt 的必要子集;
+# empy 鎖 3.3.4:PX4 1.15 與 empy 4.x 不相容)
+RUN pip3 install --no-cache-dir \
+        empy==3.3.4 \
+        future \
+        jinja2 \
+        jsonschema \
+        kconfiglib \
+        numpy \
+        packaging \
+        pyros-genmsg \
+        pyyaml \
+        toml
+
+# 韌體版本鎖 v1.15.4(= SITL 回歸與實機 X500 V2 的基準版)
+RUN git clone --depth 1 --recursive --shallow-submodules -b v1.15.4 \
+        https://github.com/PX4/PX4-Autopilot.git /px4
+
+WORKDIR /px4
+
+# 陷阱(實測):--shallow-submodules 的 NuttX submodule 不帶 tag,
+# src/lib/version/px_update_git_header.py 讀不到 nuttx-x.y.z tag 會 IndexError
+# 中斷 build。SITL 不編 NuttX,補一個對應實際基底(PX4 1.15 用 NuttX 11.0.0)
+# 的本地 tag 滿足版本頭產生器即可。
+RUN git -C platforms/nuttx/NuttX/nuttx tag nuttx-11.0.0
+
+RUN make px4_sitl_default
+
+# SIH 四旋翼(airframe 10040_sihsim_quadx);lockstep 由 SIH 自理
+ENV PX4_SYS_AUTOSTART=10040
+ENV PX4_SIM_MODEL=sihsim_quadx
+ENV HEADLESS=1
+
+# 沿用官方 make 目標啟動(artifacts 已就緒,make 只做檢查即進 sitl_run.sh)
+CMD ["make", "px4_sitl", "sihsim_quadx"]
