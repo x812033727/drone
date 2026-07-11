@@ -80,10 +80,13 @@ stateDiagram-v2
     RECEIVED --> UPLOADED : RTL 設定 + MAVSDK 上傳任務
     UPLOADED --> IN_PROGRESS : 定位就緒 + arm + start_mission
     IN_PROGRESS --> IN_PROGRESS : current_item 遞增
+    IN_PROGRESS --> PAUSED : COMMAND_PAUSE(pause_mission,Hold 懸停)
+    PAUSED --> IN_PROGRESS : COMMAND_RESUME(start_mission 自暫停點續飛)
     IN_PROGRESS --> COMPLETED : current == total(RTL 交飛控接手)
     RECEIVED --> FAILED : 上傳失敗 / 飛控拒絕
     UPLOADED --> FAILED : 定位逾時 / arm/start 失敗
-    IN_PROGRESS --> FAILED : 例外 / 鏈路中斷 / 進度停滯逾時
+    IN_PROGRESS --> FAILED : 例外 / 鏈路中斷 / 進度停滯逾時 / ABORT(RTL 收尾)
+    PAUSED --> FAILED : ABORT(RTL 收尾)
     COMPLETED --> [*]
     FAILED --> [*]
 ```
@@ -91,16 +94,29 @@ stateDiagram-v2
 任何例外都會先發出 `STATE_FAILED` 事件再拋出 `MissionExecError`(CLI exit code 1;
 任務檔格式錯誤為 exit code 2)。
 
-## 任務控制(契約預留,S12 實作)
+## 任務控制(S23 已實作)
 
-契約 v0.2.0 起預留下行控制主題(定義見
-[interfaces/README.md](../../interfaces/README.md) 與
-[mission.proto](../../interfaces/proto/drone/v1/mission.proto)):
+有給 `--mqtt-host` 時,任務執行期間同一條 MQTT 連線**直訂**
+`fleet/{drone_id}/cmd/mission_ctrl`(QoS 1,`drone.v1.MissionCommand` proto3 JSON;
+定義見 [interfaces/README.md](../../interfaces/README.md) 與
+[mission.proto](../../interfaces/proto/drone/v1/mission.proto));
+無 `--mqtt-host` 時控制通道自然停用。發送端:
+`python tools/dispatch_mission.py --drone-id dev-1 --ctrl pause --mission-id <id>`。
 
-| 主題 | 訊息 | QoS / 編碼 | 狀態 |
-|------|------|-----------|------|
-| `fleet/{drone_id}/cmd/mission_ctrl` | `drone.v1.MissionCommand`(PAUSE / RESUME / ABORT) | QoS 1,proto3 JSON | **S12 實作**(v0.2.0 只定契約) |
+| 命令 | 機上動作 | 進度事件 |
+|------|---------|---------|
+| `COMMAND_PAUSE` | `mission.pause_mission()`(Hold 懸停) | `STATE_PAUSED`(帶 current_item 斷點) |
+| `COMMAND_RESUME` | `mission.start_mission()`(自暫停點續飛) | 回 `STATE_IN_PROGRESS` |
+| `COMMAND_ABORT` | `action.return_to_launch()` 後結束(exit 1) | `STATE_FAILED`(契約無 ABORTED,以 FAILED 承載,log 註明 abort) |
 
-對應的進度狀態 `STATE_PAUSED = 6` 亦於 v0.2.0 新增;本套件的狀態機接入
-(`IN_PROGRESS ⇄ PAUSED`、`--resume` 斷點續飛)同屬 S12 範圍,Phase 0 現行
-狀態機(上圖)不變。
+語意細節:
+
+- `mission_id` 不符當前任務、未知命令、狀態不符(未暫停收 RESUME、暫停中重複
+  PAUSE)一律 log 後忽略(QoS 1 at-least-once,dup 常態);
+- **PAUSED 期間 `--stall-timeout` 暫停計時**(暫停是合法靜止,不可被當停滯誤殺),
+  RESUME 後重新起算;
+- 控制通道為 best-effort:broker 斷線只停用控制,不中斷任務本體。
+
+斷點續飛:`--resume N`(0-based)於上傳後 `set_current_mission_item(N)` 再
+start,自航點 N 開始;斷點可由進度事件的 `current_item` 記錄(PAUSED / FAILED
+事件皆帶)。
