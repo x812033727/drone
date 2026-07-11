@@ -30,13 +30,19 @@ cleanup() {
     log "清理容器($SITL_NAME / $ROS2_NAME)"
     docker rm -f "$SITL_NAME" "$ROS2_NAME" >/dev/null 2>&1 || true
 }
-trap cleanup EXIT
+trap cleanup EXIT INT TERM
+
+# 先清上次異常中斷的同名殘留容器(名字帶 s8 前綴,不會誤傷他人),
+# 再驗埠:順序不能反,否則自家殘留容器占的埠會誤觸「埠被占」而卡死流程。
+docker rm -f "$SITL_NAME" "$ROS2_NAME" >/dev/null 2>&1 || true
 
 # 埠衝突防護:--network host 下 agent 佔 UDP 8888、SITL 佔 UDP 14550 等,
 # 被占直接報錯退出(常見肇因:別的 agent/SITL/QGC 還開著)。
+# grep 不用 -q:pipefail 下 grep -q 提前退出會讓 ss 吃 SIGPIPE(exit 141),
+# 整條 pipeline 非零 → if 判斷反轉(占用被誤判為空閒)。
 if command -v ss >/dev/null 2>&1; then
     for port in 8888 14550; do
-        if ss -lun | grep -q ":$port "; then
+        if ss -lun 2>/dev/null | grep ":$port " >/dev/null; then
             log "錯誤:UDP $port 已被占用(ss -lun | grep $port 查佔用者),請先釋放再跑"
             exit 1
         fi
@@ -44,9 +50,6 @@ if command -v ss >/dev/null 2>&1; then
 else
     log "警告:找不到 ss,略過埠占用檢查"
 fi
-
-# 上次異常中斷的同名殘留容器直接清掉(名字帶 s8 前綴,不會誤傷他人)
-docker rm -f "$SITL_NAME" "$ROS2_NAME" >/dev/null 2>&1 || true
 
 log "build ROS 2 image($ROS2_IMAGE;首次含 agent + px4_msgs source build,約 10 分)"
 docker build -t "$ROS2_IMAGE" -f docker/Dockerfile .
