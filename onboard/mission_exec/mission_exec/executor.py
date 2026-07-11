@@ -48,6 +48,33 @@ async def wait_position_ready(drone) -> None:
     raise RuntimeError("健康狀態串流在定位就緒前結束(鏈路中斷?)")
 
 
+ARM_ATTEMPTS = 8
+ARM_RETRY_DELAY_S = 5.0
+
+
+async def _arm_with_retry(drone) -> None:
+    """arm 並對飛控拒絕重試(慢 runner 上 SITL 就緒晚於定位就緒的常見情況)。
+
+    2026-07-11 nightly 實錄:wait_position_ready 已過但 arm 立即 COMMAND_DENIED。
+    重試耗盡讓最後一次 ActionError 原樣拋出,由 run_mission 統一轉 MissionExecError
+    (FAILED 事件照發)。
+    """
+    from mavsdk.action import ActionError
+
+    for attempt in range(1, ARM_ATTEMPTS + 1):
+        try:
+            await drone.action.arm()
+            return
+        except ActionError as e:
+            if attempt == ARM_ATTEMPTS:
+                raise
+            print(
+                f"arm 被拒({e}),{ARM_RETRY_DELAY_S:.0f}s 後重試({attempt}/{ARM_ATTEMPTS})",
+                flush=True,
+            )
+            await asyncio.sleep(ARM_RETRY_DELAY_S)
+
+
 async def run_mission(
     drone,
     plan: mission_pb2.MissionPlan,
@@ -100,7 +127,7 @@ async def run_mission(
                 f"定位未就緒:等待 GPS/home 超過 {health_timeout_s:g} 秒"
             ) from None
 
-        await drone.action.arm()
+        await _arm_with_retry(drone)
         await drone.mission.start_mission()
 
         # 進度訂閱:current 每推進一個航點發一次 IN_PROGRESS;
