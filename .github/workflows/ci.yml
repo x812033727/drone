@@ -22,7 +22,8 @@ jobs:
           pip install ruff pytest
           for f in tools/requirements.txt \
                    onboard/drone_agent/requirements.txt \
-                   cloud/ingest/requirements.txt; do
+                   cloud/ingest/requirements.txt \
+                   cloud/log_svc/requirements.txt; do
             if [ -f "$f" ]; then pip install -r "$f"; fi
           done
           if [ -d interfaces/proto/gen/python ]; then

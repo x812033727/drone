@@ -40,6 +40,32 @@ jobs:
           echo "telemetry rows: ${COUNT}"
           test "${COUNT}" -ge 1
 
+      - name: 斷言 log-svc 收檔落庫(假檔非合法 ULog → report_ok=false 也是有效斷言)
+        run: |
+          echo "not a real ulog" > fake.ulg
+          curl -sf -F "file=@fake.ulg" http://127.0.0.1:8090/api/v1/logs/ci-1
+          echo ""
+          # volume 內存在(容器路徑 /data/ulog/ci-1/{UTC 時戳}_fake.ulg)
+          docker compose exec -T logsvc ls -l /data/ulog/ci-1/
+          # 報告在背景跑:輪詢落庫(非法 ULog → report_ok=false 照落庫)
+          for i in $(seq 1 30); do
+            COUNT=$(docker compose exec -T timescaledb \
+              psql -U drone -d drone -tAc "SELECT count(*) FROM flight_logs WHERE drone_id='ci-1'")
+            [ "${COUNT}" -ge 1 ] && break
+            sleep 2
+          done
+          echo "flight_logs rows: ${COUNT}"
+          test "${COUNT}" -ge 1
+          BAD=$(docker compose exec -T timescaledb \
+            psql -U drone -d drone -tAc \
+            "SELECT count(*) FROM flight_logs WHERE drone_id='ci-1' AND report_ok=false")
+          echo "report_ok=false rows: ${BAD}"
+          test "${BAD}" -ge 1
+          # GET list 回 JSON 含該檔
+          LIST=$(curl -sf http://127.0.0.1:8090/api/v1/logs/ci-1)
+          echo "${LIST}"
+          echo "${LIST}" | grep -q "fake.ulg"
+
       - name: 失敗時傾印容器日誌
         if: failure()
         run: docker compose logs --tail 200

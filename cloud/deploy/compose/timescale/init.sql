@@ -43,3 +43,16 @@ CREATE TABLE flight_events (
     event    text
 );
 CREATE INDEX ON flight_events (drone_id, time DESC);
+
+-- log-svc 的 ULog 回收摘要(S20;一般表,量小不需 hypertable)
+-- 檔案本體在 named volume ulog-archive(/data/ulog/{drone_id}/),
+-- 報告全文在同名 .report.txt;此表只留看板/查詢用摘要
+CREATE TABLE flight_logs (
+    time           timestamptz NOT NULL DEFAULT now(),
+    drone_id       text        NOT NULL,
+    filename       text        NOT NULL,
+    size_bytes     bigint      NOT NULL,
+    report_ok      boolean     NOT NULL,   -- ulog_report 是否產出可用報告(失敗照落庫)
+    report_excerpt text                    -- 報告前 500 字(全文在 .report.txt)
+);
+CREATE INDEX ON flight_logs (drone_id, time DESC);

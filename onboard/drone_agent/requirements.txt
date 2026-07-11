@@ -2,6 +2,7 @@
 mavsdk>=2
 aiomqtt>=2,<3
 protobuf>=5.26,<8
+httpx>=0.28,<1   # S20 ULog 上傳(async multipart)
 
 # 契約生成碼 drone-proto(repo 內套件,另行安裝):
 #   pip install -e ../../interfaces/proto/gen/python
