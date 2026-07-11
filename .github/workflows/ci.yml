@@ -20,7 +20,12 @@ jobs:
         # 各子系統 requirements 存在才裝(本 workflow 需在堆疊合併的任何中間狀態都可跑)
         run: |
           pip install ruff pytest
+          # tools/flight_ops 與 tools/sitl_scenarios 目前無獨立 requirements
+          # (執行依賴由 tools/requirements.txt 供給,單測不需 SITL);
+          # 之後若拆出各自的 requirements.txt,此迴圈已條件式涵蓋
           for f in tools/requirements.txt \
+                   tools/flight_ops/requirements.txt \
+                   tools/sitl_scenarios/requirements.txt \
                    onboard/drone_agent/requirements.txt \
                    cloud/ingest/requirements.txt \
                    cloud/log_svc/requirements.txt; do

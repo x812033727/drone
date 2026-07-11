@@ -7,6 +7,9 @@ on:
       - "tools/publish_fake_telemetry.py"
       - "interfaces/**"
       - ".github/workflows/cloud-smoke.yml"
+      # 機載端 mediamtx 設定改動也該觸發 video-record-smoke(S25 補漏):
+      # 推流端行為變了,錄存回放鏈可能一起壞
+      - "onboard/video_pipeline/docker/mediamtx.yml"
 
 jobs:
   compose-smoke:
@@ -25,12 +28,13 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: 打 10 筆假遙測 + sensors 三主題各 1 筆(S22)
+      - name: 打 10 筆假遙測 + sensors 三主題各 1 筆(S22)+ mission/events 各 1 筆(S25)
         working-directory: .
         run: |
           pip install paho-mqtt protobuf
           pip install -e interfaces/proto/gen/python
-          python tools/publish_fake_telemetry.py --drone-id ci-1 --rate 5 --count 10 --with-sensors
+          python tools/publish_fake_telemetry.py --drone-id ci-1 --rate 5 --count 10 \
+            --with-sensors --with-mission-events
 
       - name: 斷言遙測落庫
         run: |
@@ -43,6 +47,15 @@ jobs:
       - name: 斷言 sensors 三表落庫(S22 高頻流,QoS 0)
         run: |
           for table in sensor_attitude sensor_gps sensor_local_position; do
+            COUNT=$(docker compose exec -T timescaledb \
+              psql -U drone -d drone -tAc "SELECT count(*) FROM ${table} WHERE drone_id='ci-1'")
+            echo "${table} rows: ${COUNT}"
+            test "${COUNT}" -ge 1
+          done
+
+      - name: 斷言 mission_progress / flight_events 落庫(S25 補漏:ingest 四訂閱全覆蓋)
+        run: |
+          for table in mission_progress flight_events; do
             COUNT=$(docker compose exec -T timescaledb \
               psql -U drone -d drone -tAc "SELECT count(*) FROM ${table} WHERE drone_id='ci-1'")
             echo "${table} rows: ${COUNT}"
