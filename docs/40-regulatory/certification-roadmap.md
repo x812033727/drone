@@ -42,7 +42,8 @@
 - [ ] 防撞燈(夜航)、機身標識區(註冊號牌位)
 - [x] ULog 完整飛行紀錄(事故調查與保險要求)——設計需求已寫入:[firmware §6](../20-software/firmware.md)、REQ-SAF-02 細化(最小集 + 保存 ≥ 2 年)
 - [x] GeoFence + 禁航區圖層(台灣 CAA 圖資 / FAA / EASA)——設計需求已寫入:[firmware §2](../20-software/firmware.md) GeoFence 列、[ground-station §5](../20-software/ground-station.md)、REQ-NAV-06 新增
-- [ ] 電池 UN38.3(空運與銷售前提)+ 標籤
+- [x] 電池 UN38.3 + 標籤——**規格條款入 RFQ**(2026-07-11 完成):T.1–T.8 全項報告 + IATA Test Summary、變更即重測(PCN)、Class 9/Wh/序號銘板位、BMS 運輸模式 SoC ≤ 30% [S] 已入 pack 規格書([propulsion §7.1](../10-hardware/propulsion.md) 運輸合規列;UN 手冊 Part III §38.3 / IATA DGR / EU 2023/1542,2026-07 查核,送件前以最新版覆核)
+- [ ] 電池 UN38.3 + 標籤——**Test Summary 取得**(空運與銷售前提):送測時點 = 電芯組態凍結(pack 廠 W10 回價複核通過)後,BAT-A/BAT-B 兩型兩案,Phase 1 由 VT-SAF-03 追蹤;**本格 = 實際取得報告,上格勾選不代表已認證**
 - [ ] EMC 設計裕度(EN 55032/55035、FCC Part 15B 預掃於 rev B)
 - [ ] PB-1:降落傘介面、急停、鎖固偵測(Specific 類 SORA 減緩措施)
 
