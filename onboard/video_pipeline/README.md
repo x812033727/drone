@@ -104,12 +104,29 @@ x86 軟編數字對「編碼延遲」不具代表性,只作傳輸層參考。
 | 檔案 | 說明 |
 |------|------|
 | [stamp.py](stamp.py) | 像素時戳編解碼純函式(`encode_stamp`/`decode_stamp`,numpy) |
-| [sender.py](sender.py) | 推流端:合成畫面+時戳 → x264 → RTSP(`--width/--height/--fps/--bitrate/--rtsp-url`) |
+| [pipelines.py](pipelines.py) | pipeline 描述字串組裝純函式(不依賴 gi,可單測) |
+| [sender.py](sender.py) | 推流端:`--source test`(合成畫面+時戳)或 `v4l2:/dev/videoN` → x264 → RTSP(`--width/--height/--fps/--bitrate/--rtsp-url/--duration`) |
 | [measure_latency.py](measure_latency.py) | 量測端:拉流解碼讀時戳 → 統計(`--rtsp-url --frames --json`) |
 | [run_poc.sh](run_poc.sh) | 一鍵跑通 + WHEP 檢查 + 清理 |
 | [docker/get_mediamtx.sh](docker/get_mediamtx.sh) | MediaMTX v1.12.3 下載(SHA-256 釘死校驗) |
 | [docker/mediamtx.yml](docker/mediamtx.yml) | 最小設定:RTSP + WebRTC + API,其餘協議關閉 |
 | [tests/test_stamp.py](tests/test_stamp.py) | 時戳往返/抗噪/損毀偵測測試(不需 GStreamer) |
+| [tests/test_sender_pipeline.py](tests/test_sender_pipeline.py) | `--source` 解析與 pipeline 字串組裝測試(不需 GStreamer) |
+
+## 實體相機源與雲端錄存(S21 邊界)
+
+- `sender.py --source v4l2:/dev/videoN` 推 USB/UVC 相機:
+  `v4l2src ! videoconvert ! x264enc zerolatency key-int-max=30 ! h264parse
+  ! rtspclientsink`,解析度/幀率由相機協商(`--width/--height/--fps` 不生效),
+  跑 GLib mainloop 至 `--duration`(0 = 直到中斷)。
+  **像素時戳僅 test 源有**:v4l2 源的延遲量測需 Phase 1 治具
+  (拍攝毫秒鐘/LED 陣列),`measure_latency.py` 對 v4l2 源讀不到時戳屬預期。
+- 雲端常駐錄存/回放棧在
+  [cloud/deploy/compose](../../cloud/deploy/compose/docker-compose.yml)
+  (`mediamtx` 服務,官方 image v1.12.3 + fMP4 錄存 + playback API),
+  與本目錄的量測用 MediaMTX(`docker/`,下載 binary)是**兩處部署**:
+  `run_poc.sh` / `docker/mediamtx.yml` 專供延遲量測,保持不動;
+  **升版 MediaMTX 時兩處(此處 binary 版本+SHA、compose image tag)一起動**。
 
 選型落地:**host apt 路線**(Ubuntu 24.04 apt 的 PyGObject + GStreamer 1.24
 即可跑,未走 docker;`docker/` 目錄僅放 MediaMTX 取得腳本與設定)。

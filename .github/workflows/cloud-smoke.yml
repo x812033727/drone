@@ -73,3 +73,21 @@ jobs:
       - name: 收攤
         if: always()
         run: docker compose down -v
+
+  # S21 影像錄存回放:mediamtx 服務獨立起(無 build,~3-4 分),
+  # 推流→/list→/get→ffprobe 斷言全在 video_smoke.sh(本地/CI 共用;
+  # 失敗傾印 mediamtx 日誌與 down -v 由腳本 trap 處理)
+  video-record-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: cloud/deploy/compose
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 裝 ffmpeg
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg
+
+      - name: 錄存回放煙霧(推流 → list → get → ffprobe)
+        run: COMPOSE_PROJECT=video-smoke-ci ./video_smoke.sh

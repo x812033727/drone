@@ -1,6 +1,8 @@
 # Phase 0 雲端最小棧:MQTT broker + 遙測落庫 + Grafana 看板 + ingest
+# + log-svc + MediaMTX(影像錄存回放)
 # 對 cloud/README.md「Phase 0 最小目標」。宿主埠可用環境變數覆寫
-# (MQTT_PORT / PG_PORT / GRAFANA_PORT),避免與同機其他服務衝突。
+# (MQTT_PORT / PG_PORT / GRAFANA_PORT / LOGSVC_PORT / RTSP_PORT /
+#  PLAYBACK_PORT / MTX_API_PORT),避免與同機其他服務衝突。
 #
 # 啟動:docker compose up -d --build
 # 驗證:python tools/publish_fake_telemetry.py --mqtt-port ${MQTT_PORT:-1883} --count 10
@@ -102,6 +104,24 @@ services:
       start_period: 10s
     restart: unless-stopped
 
+  mediamtx:
+    # 官方標準 image 無 shell/curl:不設 healthcheck(--wait 對它只等 running,
+    # 不影響其他服務的 healthcheck 等待;無人 depends_on 它),
+    # 健康/煙霧斷言一律由 host 打已發布埠(見 video_smoke.sh)。
+    image: bluenviron/mediamtx:1.12.3
+    ports:
+      # RTSP 收流(機上推流入口)
+      - "${RTSP_PORT:-8554}:8554"
+      # 回放 API 與管理 API 只綁 loopback:Phase 0 無認證,不對外網開
+      # (security.md §8 內網豁免)
+      - "127.0.0.1:${PLAYBACK_PORT:-9996}:9996"
+      - "127.0.0.1:${MTX_API_PORT:-9997}:9997"
+    volumes:
+      - ./mediamtx/mediamtx.yml:/mediamtx.yml:ro
+      - mediamtx-recordings:/recordings
+    restart: unless-stopped
+
 volumes:
   timescale-data:
   ulog-archive:
+  mediamtx-recordings:

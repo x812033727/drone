@@ -1,0 +1,44 @@
+# MediaMTX 常駐錄存/回放設定(S21):RTSP 收流 + fMP4 錄存 + 回放 API。
+# 與 onboard/video_pipeline/docker/mediamtx.yml(POC 延遲量測用)是兩份設定;
+# 升版 MediaMTX 時兩處一起動(見 onboard/video_pipeline/README.md)。
+# 容器內埠固定(8554/9996/9997),宿主埠由 compose 以環境變數映射。
+logLevel: info
+
+# 預設 authInternalUsers 只允許 127.0.0.1 打 api/playback,但容器內看到的
+# 來源是 docker 網段 IP(docker-proxy)→ 一律 401。Phase 0 內網豁免
+# (security.md §8):容器內全開;實際暴露面由 compose 控
+# (api/playback 宿主埠只綁 loopback)。正式部署換帳密+TLS。
+authInternalUsers:
+  - user: any
+    pass:
+    ips: []
+    permissions:
+      - action: publish
+      - action: read
+      - action: playback
+      - action: api
+
+api: yes
+apiAddress: :9997
+
+# 回放 API:GET /list?path=… 列時段;GET /get?path=…&start=…&duration=… 取片段
+playback: yes
+playbackAddress: :9996
+
+rtsp: yes
+rtspAddress: :8554
+
+# 常駐棧只收 RTSP + 錄存 + 回放;其餘協議全關,少開埠
+rtmp: no
+hls: no
+srt: no
+webrtc: no
+
+paths:
+  stream:
+    record: yes
+    recordPath: /recordings/%path/%Y-%m-%d_%H-%M-%S-%f
+    recordFormat: fmp4
+    recordPartDuration: 1s
+    recordSegmentDuration: 15m
+    recordDeleteAfter: 72h
