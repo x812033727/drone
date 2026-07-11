@@ -29,6 +29,7 @@
 - [動力系統(馬達/電變/槳/電池)](docs/10-hardware/propulsion.md)
 - [感測器與酬載](docs/10-hardware/sensors-and-payload.md)
 - [通訊鏈路(RC/數傳/4G5G/Remote ID)](docs/10-hardware/communication.md)
+- [EMC/RF 設計(天線佈局/接地屏蔽/預掃計畫)](docs/10-hardware/emc-rf.md)
 - [BOM 與成本估算](docs/10-hardware/bom.md)
 
 ### 20 軟體
@@ -36,6 +37,7 @@
 - [飛控韌體(PX4 客製)](docs/20-software/firmware.md)
 - [機載電腦(ROS 2 / AI)](docs/20-software/companion-computer.md)
 - [地面站(GCS)](docs/20-software/ground-station.md)
+- [QGC 客製評估與 Phase 1 GCS 決策](docs/20-software/gcs-qgc-evaluation.md)
 - [雲端機隊管理](docs/20-software/cloud-fleet.md)
 - [資安架構](docs/20-software/security.md)
 
@@ -49,18 +51,22 @@
 
 ### 50 專案管理
 - [開發時程與里程碑(Phase 0–3)](docs/50-project/roadmap.md)
+- [風險登錄表(Top-8 活登錄)](docs/50-project/risk-register.md)
 - [預算估算](docs/50-project/budget.md)
 - [團隊組成](docs/50-project/team.md)
 - [供應鏈與製造策略](docs/50-project/supply-chain.md)
 - [Phase 0 詳細執行計畫](docs/50-project/phase0/README.md)
 - [Phase 0 採購計畫](docs/50-project/phase0/procurement.md)
+- [Phase 0 開發機組裝與首飛檢查表](docs/50-project/phase0/build-and-first-flight.md)
+- [Phase 0 飛行測試計畫(F01–F20)](docs/50-project/phase0/flight-test-plan.md)
+- [Phase 0 SITL 環境建置指南](docs/50-project/phase0/sitl-setup.md)
 - [營運/售後服務](docs/50-project/operations-support.md)
 
 ## Repo 結構
 
 | 目錄 | 內容 | 狀態 |
 |------|------|------|
-| [`docs/`](docs/00-overview.md) | 完整規劃文件(本階段主要產出) | ✅ rev 1 |
+| [`docs/`](docs/00-overview.md) | 完整規劃文件(本階段主要產出) | 持續修訂,rev 見各檔檔頭 |
 | [`firmware/`](firmware/README.md) | PX4 客製韌體、FC-H7 板級支援 | 骨架 + SITL 指引 |
 | [`onboard/`](onboard/README.md) | Jetson / ROS 2 機載軟體、drone-agent | 骨架 |
 | [`gcs/`](gcs/README.md) | 地面站(QGC 客製 → 自研) | 骨架 |

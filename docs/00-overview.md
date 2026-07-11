@@ -1,5 +1,7 @@
 # 00 產品總覽與平台策略
 
+> rev 2 · 2026-07。願景/平台策略/商業模式不變;本版回寫兩項子系統定案:PA-1 電池 12S2P 能量型(§3,[propulsion §7.3](10-hardware/propulsion.md))、PB-1 60 GHz 毫米波雷達定案引註(§3 AC-1 避障列,[sensors-and-payload §6.3](10-hardware/sensors-and-payload.md)),並補 §5 安全危害列。版本紀錄見 §6。
+
 ## 1. 願景與定位
 
 打造一個**可商用、可規模化、可認證**的多旋翼無人機產品家族。目標不是做一台展示機,而是建立三項可長期複用的核心資產:
@@ -68,7 +70,7 @@
 | 機載電腦 | NVIDIA Jetson Orin NX 16GB(自研載板) |
 | GNSS | u-blox ZED-F9P RTK(PA-1 單天線;PB-1 雙天線定向) |
 | 通訊 | 自研 2.4 GHz 數傳 + Quectel RM520N-GL 5G 模組 + Remote ID 廣播模組 |
-| 避障 | PA-1:前/下雙目 + 上視 ToF;PB-1:前視雙目 + 60 GHz 毫米波雷達(上/下) |
+| 避障 | PA-1:前/下雙目 + 上視 ToF;PB-1:前視雙目 + 60 GHz 毫米波雷達 ×3(仿地/上/下避障;TI IWR6843 AOP 自載板,定案見 [sensors-and-payload §6.3](10-hardware/sensors-and-payload.md)) |
 
 ## 4. 商業模式假設
 
@@ -86,3 +88,11 @@
 | BVLOS 法規進度不可控 | 物流場景收入不排入前兩年財務模型 |
 | 電池供應與認證(UN38.3) | 選用有既有認證的電芯與 pack 廠合作,不自製電芯 |
 | 安全危害(撞人/失控墜落/熱失控) | 系統性危害分析、FMEA 與失效保護矩陣,見 [03-safety-analysis.md](03-safety-analysis.md) |
+
+## 6. 版本紀錄
+
+| rev | 日期 | 變更摘要 |
+|-----|------|----------|
+| 1 | 2026-07-10 | 初版(PR #1) |
+| 2 | 2026-07-11 | PA-1 電池 12S2P 能量型定案回寫(§3 電壓平台 11.6 Ah/~501 Wh、續航設計值口徑,[propulsion §7.3](10-hardware/propulsion.md));§5 風險摘要補安全危害列 |
+| 2 | 2026-07-12 | 60 GHz 雷達口徑三檔同步:§3 AC-1 避障列補定案引註(TI IWR6843 AOP ×3,[sensors-and-payload §6.3](10-hardware/sensors-and-payload.md));形式化:補 rev 檔頭與版本紀錄 |
