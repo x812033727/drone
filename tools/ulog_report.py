@@ -29,6 +29,58 @@ def dataset(ulog: ULog, name: str):
         return None
 
 
+# --- 異常門檻純函式(與 ULog I/O 分離,便於單測)---------------------------
+# report() 呼叫這些函式;數值/門檻邏輯集中在此,tools/tests 以合成陣列驗邊界。
+
+def min_cell_voltage(voltage_v, cell_count_max) -> float | None:
+    """單芯最低電壓(V/cell);濾除 <1.0 V 未上電雜訊後無有效值則回 None。"""
+    v = voltage_v[voltage_v > 1.0]
+    if not v.size:
+        return None
+    cells = int(cell_count_max) or 1
+    return float(v.min()) / cells
+
+
+def battery_warning(vmin_cell: float) -> str | None:
+    """單芯最低電壓低於門檻 → 警告字串,否則 None。"""
+    if vmin_cell < VOLTAGE_SAG_WARN:
+        return (
+            f"單芯最低電壓 {vmin_cell:.2f} V 低於 {VOLTAGE_SAG_WARN} V,"
+            "檢查電池健康度或降低負載"
+        )
+    return None
+
+
+def gps_fix_ratio(fix_type) -> float:
+    """fix_type≥3(3D fix)佔比 [0,1]。"""
+    return float((fix_type >= 3).mean())
+
+
+def gps_fix_warning(fix_ratio: float) -> str | None:
+    """3D fix 佔比低於 95% → 警告字串,否則 None。"""
+    if fix_ratio < 0.95:
+        return "GPS 3D fix 佔比低於 95%,檢查天線佈局或干擾"
+    return None
+
+
+def vibration_rms(acc_nx3) -> float:
+    """加速度計高通(去 50 點移動平均)後三軸合成 RMS 的標準差 —— 振動指標。"""
+    acc_hp = acc_nx3 - np.apply_along_axis(
+        lambda a: np.convolve(a, np.ones(50) / 50, mode="same"), 0, acc_nx3
+    )
+    return float(np.sqrt((acc_hp**2).sum(axis=1)).std())
+
+
+def vibration_warning(vib: float) -> str | None:
+    """振動指標超過門檻 → 警告字串,否則 None。"""
+    if vib > VIBRATION_WARN_MS2:
+        return (
+            f"振動 {vib:.1f} m/s² 超過 {VIBRATION_WARN_MS2},"
+            "檢查槳平衡、馬達軸承、隔震"
+        )
+    return None
+
+
 def report(path: str) -> int:
     ulog = ULog(path)
     warnings: list[str] = []
@@ -50,31 +102,26 @@ def report(path: str) -> int:
     batt = dataset(ulog, "battery_status")
     if batt:
         v = batt.data["voltage_v"]
-        v = v[v > 1.0]  # 去除未上電雜訊
-        if v.size:
+        vmin_cell = min_cell_voltage(v, batt.data["cell_count"].max())
+        if vmin_cell is not None:
+            vv = v[v > 1.0]
             cells = int(batt.data["cell_count"].max()) or 1
-            vmin_cell = v.min() / cells
             print(
-                f"電池:{v.max():.1f} → {v.min():.1f} V"
+                f"電池:{vv.max():.1f} → {vv.min():.1f} V"
                 f"({cells}S,最低 {vmin_cell:.2f} V/cell)"
             )
-            if vmin_cell < VOLTAGE_SAG_WARN:
-                warnings.append(
-                    f"單芯最低電壓 {vmin_cell:.2f} V 低於 {VOLTAGE_SAG_WARN} V,"
-                    "檢查電池健康度或降低負載"
-                )
+            if (w := battery_warning(vmin_cell)) is not None:
+                warnings.append(w)
 
     # GPS 品質
     gps = dataset(ulog, "vehicle_gps_position")
     if gps:
         nsats = gps.data["satellites_used"]
         fix = gps.data["fix_type"]
-        print(
-            f"GPS:平均衛星數 {nsats.mean():.0f},"
-            f"fix_type≥3 佔比 {(fix >= 3).mean() * 100:.0f}%"
-        )
-        if (fix >= 3).mean() < 0.95:
-            warnings.append("GPS 3D fix 佔比低於 95%,檢查天線佈局或干擾")
+        ratio = gps_fix_ratio(fix)
+        print(f"GPS:平均衛星數 {nsats.mean():.0f},fix_type≥3 佔比 {ratio * 100:.0f}%")
+        if (w := gps_fix_warning(ratio)) is not None:
+            warnings.append(w)
 
     # 振動(加速度計高通後 RMS;槳/馬達/結構問題的第一指標)
     imu = dataset(ulog, "sensor_combined")
@@ -82,16 +129,10 @@ def report(path: str) -> int:
         acc = np.column_stack(
             [imu.data[f"accelerometer_m_s2[{i}]"] for i in range(3)]
         )
-        acc_hp = acc - np.apply_along_axis(
-            lambda a: np.convolve(a, np.ones(50) / 50, mode="same"), 0, acc
-        )
-        vib_rms = float(np.sqrt((acc_hp**2).sum(axis=1)).std())
-        print(f"振動指標(高頻 RMS):{vib_rms:.1f} m/s²")
-        if vib_rms > VIBRATION_WARN_MS2:
-            warnings.append(
-                f"振動 {vib_rms:.1f} m/s² 超過 {VIBRATION_WARN_MS2},"
-                "檢查槳平衡、馬達軸承、隔震"
-            )
+        vib = vibration_rms(acc)
+        print(f"振動指標(高頻 RMS):{vib:.1f} m/s²")
+        if (w := vibration_warning(vib)) is not None:
+            warnings.append(w)
 
     # 韌體端訊息(錯誤/警告等級)
     logged = [
