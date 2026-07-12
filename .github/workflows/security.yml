@@ -1,0 +1,58 @@
+name: security
+
+# 相依漏洞(pip-audit)+ Python SAST(bandit)。雲端服務有對外埠
+# (MQTT/RTSP/Grafana),需基本掃描守門。
+# 漸進 gate:初期 continue-on-error(不擋 PR,先累積訊號),與 sitl-integration
+# 「刻意不掛 PR」同精神;穩定後再議升為硬 gate。
+on:
+  push:
+    branches: [main]
+  pull_request:
+  # 相依漏洞資料庫會更新:每週掃一次即使無程式碼變更
+  schedule:
+    - cron: "27 4 * * 1"
+
+jobs:
+  pip-audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: 裝 pip-audit
+        run: pip install pip-audit
+      - name: 掃各 requirements 的相依漏洞
+        run: |
+          status=0
+          for f in tools/requirements.txt \
+                   onboard/drone_agent/requirements.txt \
+                   cloud/ingest/requirements.txt \
+                   cloud/log_svc/requirements.txt \
+                   interfaces/proto/requirements-dev.txt; do
+            if [ -f "$f" ]; then
+              echo "::group::pip-audit $f"
+              pip-audit -r "$f" --strict || status=1
+              echo "::endgroup::"
+            fi
+          done
+          exit $status
+
+  bandit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: 裝 bandit
+        run: pip install bandit
+      - name: Python SAST(排除測試與 proto 生成碼)
+        run: |
+          bandit -r cloud onboard tools \
+            -x '*/tests/*,*/gen/*' \
+            --severity-level medium

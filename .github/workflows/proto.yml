@@ -12,6 +12,9 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
+        with:
+          # buf breaking 需與 main 比對:抓完整歷史,拿得到 main ref
+          fetch-depth: 0
 
       - name: 安裝 buf(官方 release binary,版本固定)
         env:
@@ -25,6 +28,13 @@ jobs:
       - name: buf lint
         working-directory: interfaces/proto
         run: buf lint
+
+      - name: buf breaking(對 main 檢查破壞性變更)
+        run: |
+          # PR 一律有 origin/main;取其 ref 供 buf 比對(subdir 指到 proto 模組)
+          git fetch --no-tags --depth=1 origin main
+          buf breaking interfaces/proto \
+            --against '.git#ref=FETCH_HEAD,subdir=interfaces/proto'
 
       - uses: actions/setup-python@v6
         with:
