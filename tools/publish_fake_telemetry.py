@@ -20,10 +20,10 @@ import paho.mqtt.client as mqtt
 from google.protobuf.json_format import MessageToJson
 
 try:
-    from drone.v1 import events_pb2, mission_pb2, sensors_pb2, telemetry_pb2
+    from drone.v1 import device_pb2, events_pb2, mission_pb2, sensors_pb2, telemetry_pb2
 except ImportError:  # 開發便利:未安裝 drone-proto 時直接用 repo 內生成碼
     sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "interfaces/proto/gen/python"))
-    from drone.v1 import events_pb2, mission_pb2, sensors_pb2, telemetry_pb2
+    from drone.v1 import device_pb2, events_pb2, mission_pb2, sensors_pb2, telemetry_pb2
 
 CENTER_LAT, CENTER_LON = 25.0330, 121.5654  # 台北
 RADIUS_DEG = 0.002  # 約 200 m
@@ -130,6 +130,26 @@ def publish_mission_events(client: mqtt.Client, drone_id: str) -> None:
     print(f"已各發布 1 筆至 fleet/{drone_id}/{{mission/progress,events}}")
 
 
+def publish_heartbeat(client: mqtt.Client, drone_id: str) -> None:
+    """發 1 筆 DeviceHeartbeat 到 fleet/{id}/heartbeat(v0.5.0,QoS 1)。
+
+    覆蓋 ingest 的 heartbeat 訂閱落庫路徑(device_heartbeat 表)。
+    """
+    now_ms = int(time.time() * 1000)
+    hb = device_pb2.DeviceHeartbeat(
+        drone_id=drone_id,
+        unix_time_ms=now_ms,
+        agent_version="0.1.0",
+        firmware_version="1.15.4",
+        boot_unix_ms=now_ms - 60_000,
+        uptime_s=60,
+    )
+    client.publish(
+        f"fleet/{drone_id}/heartbeat", MessageToJson(hb, indent=None), qos=1
+    ).wait_for_publish(timeout=5)
+    print(f"已發布 1 筆心跳至 fleet/{drone_id}/heartbeat")
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--drone-id", default="dev-1")
@@ -148,6 +168,11 @@ def main() -> None:
         help="額外對 fleet/{id}/mission/progress 與 fleet/{id}/events 各發 1 筆假資料"
         "(S25,QoS 1;覆蓋 ingest 全部四條訂閱)",
     )
+    ap.add_argument(
+        "--with-heartbeat",
+        action="store_true",
+        help="額外對 fleet/{id}/heartbeat 發 1 筆 DeviceHeartbeat(v0.5.0,QoS 1)",
+    )
     args = ap.parse_args()
 
     client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, client_id=f"fake-{args.drone_id}")
@@ -161,6 +186,8 @@ def main() -> None:
             publish_sensor_samples(client, args.drone_id)
         if args.with_mission_events:
             publish_mission_events(client, args.drone_id)
+        if args.with_heartbeat:
+            publish_heartbeat(client, args.drone_id)
         while args.count <= 0 or tick < args.count:
             payload = MessageToJson(make_summary(args.drone_id, tick))
             client.publish(topic, payload, qos=1).wait_for_publish(timeout=5)

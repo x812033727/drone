@@ -6,7 +6,7 @@
 
 from datetime import datetime, timezone
 
-from drone.v1 import events_pb2, mission_pb2, sensors_pb2, telemetry_pb2
+from drone.v1 import device_pb2, events_pb2, mission_pb2, sensors_pb2, telemetry_pb2
 from google.protobuf import json_format
 
 TELEMETRY_COLUMNS = (
@@ -32,6 +32,15 @@ EVENT_COLUMNS = (
     "time",
     "drone_id",
     "event",
+)
+
+DEVICE_HEARTBEAT_COLUMNS = (
+    "time",
+    "drone_id",
+    "agent_version",
+    "firmware_version",
+    "boot_time",
+    "uptime_s",
 )
 
 MISSION_COLUMNS = (
@@ -115,6 +124,19 @@ def event_row(payload: bytes | str) -> tuple:
         _ms_to_dt(msg.unix_time_ms),
         msg.drone_id,
         events_pb2.FlightEvent.Event.Name(msg.event),
+    )
+
+
+def device_heartbeat_row(payload: bytes | str) -> tuple:
+    """fleet/{id}/heartbeat 的 JSON payload → device_heartbeat 表 row。"""
+    msg = json_format.Parse(payload, device_pb2.DeviceHeartbeat())
+    return (
+        _ms_to_dt(msg.unix_time_ms),
+        msg.drone_id,
+        msg.agent_version,
+        msg.firmware_version,
+        _ms_to_dt(msg.boot_unix_ms),
+        msg.uptime_s,
     )
 
 

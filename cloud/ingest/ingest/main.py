@@ -48,6 +48,7 @@ def _insert_sql(table: str, columns: tuple[str, ...]) -> str:
 TELEMETRY_SQL = _insert_sql("telemetry", decode.TELEMETRY_COLUMNS)
 MISSION_SQL = _insert_sql("mission_progress", decode.MISSION_COLUMNS)
 EVENT_SQL = _insert_sql("flight_events", decode.EVENT_COLUMNS)
+DEVICE_HEARTBEAT_SQL = _insert_sql("device_heartbeat", decode.DEVICE_HEARTBEAT_COLUMNS)
 SENSOR_ATTITUDE_SQL = _insert_sql("sensor_attitude", decode.SENSOR_ATTITUDE_COLUMNS)
 SENSOR_GPS_SQL = _insert_sql("sensor_gps", decode.SENSOR_GPS_COLUMNS)
 SENSOR_LOCAL_POSITION_SQL = _insert_sql(
@@ -60,6 +61,7 @@ SENSOR_LOCAL_POSITION_SQL = _insert_sql(
 ROUTES: dict[str, tuple[str, object]] = {
     "telemetry": (TELEMETRY_SQL, decode.telemetry_row),
     "events": (EVENT_SQL, decode.event_row),
+    "heartbeat": (DEVICE_HEARTBEAT_SQL, decode.device_heartbeat_row),
     "mission/progress": (MISSION_SQL, decode.mission_row),
     "sensors/attitude": (SENSOR_ATTITUDE_SQL, decode.sensor_attitude_row),
     "sensors/gps": (SENSOR_GPS_SQL, decode.sensor_gps_row),
@@ -131,6 +133,7 @@ async def run() -> None:
                 await client.subscribe("fleet/+/telemetry", qos=1)
                 await client.subscribe("fleet/+/mission/progress", qos=1)
                 await client.subscribe("fleet/+/events", qos=1)
+                await client.subscribe("fleet/+/heartbeat", qos=1)
                 # v0.4.0 高頻感測器流:QoS 0 容失(與 1 Hz 摘要 QoS 1 區隔)
                 await client.subscribe("fleet/+/sensors/+", qos=0)
                 log.info("已連上 MQTT %s:%s,開始收訊", MQTT_HOST, MQTT_PORT)

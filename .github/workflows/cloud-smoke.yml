@@ -34,7 +34,7 @@ jobs:
           pip install paho-mqtt protobuf
           pip install -e interfaces/proto/gen/python
           python tools/publish_fake_telemetry.py --drone-id ci-1 --rate 5 --count 10 \
-            --with-sensors --with-mission-events
+            --with-sensors --with-mission-events --with-heartbeat
 
       - name: 斷言遙測落庫
         run: |
@@ -53,9 +53,9 @@ jobs:
             test "${COUNT}" -ge 1
           done
 
-      - name: 斷言 mission_progress / flight_events 落庫(S25 補漏:ingest 四訂閱全覆蓋)
+      - name: 斷言 mission_progress / flight_events / device_heartbeat 落庫(ingest 五訂閱全覆蓋)
         run: |
-          for table in mission_progress flight_events; do
+          for table in mission_progress flight_events device_heartbeat; do
             COUNT=$(docker compose exec -T timescaledb \
               psql -U drone -d drone -tAc "SELECT count(*) FROM ${table} WHERE drone_id='ci-1'")
             echo "${table} rows: ${COUNT}"

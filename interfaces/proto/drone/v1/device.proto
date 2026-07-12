@@ -1,0 +1,28 @@
+// 機-雲裝置心跳契約 v0.5.0
+//
+// 傳輸:MQTT 主題 `fleet/{drone_id}/heartbeat`(定期,預設 30 s,QoS 1)。
+// 編碼:Phase 0 使用 proto3 JSON mapping;Phase 1 切換 binary。
+//
+// 用途:讓雲端在無飛行遙測時(未解鎖、地面待命)仍能看見機載軟體存活與
+// 版本資訊——drone-agent 存活即發,獨立於 MAVSDK 遙測是否斷流。
+// 這是 Phase 0 觀測性加強,非 Phase 1 完整 fleet-svc 裝置註冊(見 cloud/README)。
+// 消費者:雲端 ingest(device_heartbeat 表)、機隊看板「最後上線/版本」欄。
+syntax = "proto3";
+
+package drone.v1;
+
+// 機載 drone-agent 的定期心跳(存活 + 版本 + 開機資訊)。
+message DeviceHeartbeat {
+  // 機隊內唯一機身識別碼(同 MQTT 主題中的 {drone_id})。
+  string drone_id = 1;
+  // 心跳送出時間,Unix epoch 毫秒(UTC)。
+  int64 unix_time_ms = 2;
+  // 機載 drone-agent 版本(drone_agent.__version__)。
+  string agent_version = 3;
+  // 飛控韌體版本字串(MAVSDK info.get_version();取不到留空)。
+  string firmware_version = 4;
+  // agent 程序啟動時間,Unix epoch 毫秒(UTC)。
+  int64 boot_unix_ms = 5;
+  // agent 已運行秒數(= (unix_time_ms - boot_unix_ms) / 1000)。
+  int64 uptime_s = 6;
+}

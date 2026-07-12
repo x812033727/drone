@@ -22,10 +22,11 @@ import logging
 import time
 
 import aiomqtt
-from drone.v1 import events_pb2, telemetry_pb2
+from drone.v1 import device_pb2, events_pb2, telemetry_pb2
 from google.protobuf.json_format import MessageToJson
 from google.protobuf.message import Message
 
+from drone_agent import __version__
 from drone_agent.state import TelemetryState
 from drone_agent.tls import from_env as _mqtt_tls
 
@@ -33,6 +34,7 @@ logger = logging.getLogger(__name__)
 
 RECONNECT_DELAY_S = 3.0
 STALE_TIMEOUT_S = 5.0
+HEARTBEAT_INTERVAL_S = 30.0
 
 # TelemetryState 與 TelemetrySummary 同名欄位(逐欄映射)
 _FIELDS = (
@@ -100,6 +102,24 @@ def flight_event(drone_id: str, armed: bool, unix_time_ms: int) -> events_pb2.Fl
     )
 
 
+def heartbeat(
+    drone_id: str,
+    boot_unix_ms: int,
+    now_unix_ms: int,
+    firmware_version: str = "",
+    agent_version: str = __version__,
+) -> device_pb2.DeviceHeartbeat:
+    """組一筆裝置心跳。uptime_s 由 boot 與當下時間推導(不早於 0)。"""
+    return device_pb2.DeviceHeartbeat(
+        drone_id=drone_id,
+        unix_time_ms=now_unix_ms,
+        agent_version=agent_version,
+        firmware_version=firmware_version,
+        boot_unix_ms=boot_unix_ms,
+        uptime_s=max(0, (now_unix_ms - boot_unix_ms) // 1000),
+    )
+
+
 def _to_json(msg: Message) -> str:
     """proto3 JSON mapping,單行、保留 proto 欄位名、預設值也輸出(除錯友善)。"""
     return MessageToJson(
@@ -163,4 +183,36 @@ async def publish_loop(
                     await asyncio.sleep(interval)
         except aiomqtt.MqttError as exc:
             logger.warning("MQTT 斷線:%s;%.0f 秒後重連(期間遙測丟棄)", exc, RECONNECT_DELAY_S)
+            await asyncio.sleep(RECONNECT_DELAY_S)
+
+
+async def heartbeat_loop(
+    mqtt_host: str,
+    mqtt_port: int,
+    drone_id: str,
+    firmware_version: str = "",
+    interval: float = HEARTBEAT_INTERVAL_S,
+    boot_unix_ms: int | None = None,
+) -> None:
+    """定期發佈裝置心跳到 `fleet/{drone_id}/heartbeat`(QoS 1)。
+
+    與遙測分開的獨立連線與迴圈:心跳證明 agent 程序存活,即使 MAVSDK
+    遙測斷流(飛控鏈路中斷)也照發——雲端據此區分「機掛了」與「鏈路掛了」。
+    斷線自動重連;boot_unix_ms 於首次進入時鎖定(agent 啟動時間近似)。
+    """
+    if boot_unix_ms is None:
+        boot_unix_ms = int(time.time() * 1000)
+    topic = f"fleet/{drone_id}/heartbeat"
+    while True:
+        try:
+            async with aiomqtt.Client(hostname=mqtt_host, port=mqtt_port) as client:
+                logger.info("MQTT 已連線,心跳主題 %s(每 %.0f 秒)", topic, interval)
+                while True:
+                    msg = heartbeat(
+                        drone_id, boot_unix_ms, int(time.time() * 1000), firmware_version
+                    )
+                    await client.publish(topic, payload=_to_json(msg), qos=1)
+                    await asyncio.sleep(interval)
+        except aiomqtt.MqttError as exc:
+            logger.warning("心跳 MQTT 斷線:%s;%.0f 秒後重連", exc, RECONNECT_DELAY_S)
             await asyncio.sleep(RECONNECT_DELAY_S)
