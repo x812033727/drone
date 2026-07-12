@@ -1,4 +1,4 @@
-# 50-4 營運/售後服務
+# 50-5 營運/售後服務
 
 > rev 1 · 2026-07。本文件定義 PA-1 的交付、培訓、維保、RMA、保固與試點支援體系,承接 [01-requirements.md](../01-requirements.md) REQ-OPS 系列與 [00-overview.md §4](../00-overview.md) 商業模式(整機銷售 + 軟體訂閱,售後是續約率的地基)。法規義務以 [40-regulatory](../40-regulatory/certification-roadmap.md) 為準;試點期預算對應 [budget.md](budget.md) Phase 2 試點支援 2 M。
 

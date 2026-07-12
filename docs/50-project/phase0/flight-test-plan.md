@@ -38,7 +38,7 @@
 | # | 目標 | 前置 | 剖面 | 通過準則 |
 |---|------|------|------|----------|
 | F09 | 失聯 RTL | F08;SITL 腳本已備(`tools/sitl_scenarios` f09) | 任務中關遙控器電源(繫留場邊、預告全員) | `COM_RC_LOSS_T` 內判失聯 → RTL 全程正確;RC 恢復可接管 |
-| F10 | 低電量分級 | F03 基線;SITL 腳本已備(`tools/sitl_scenarios` f10) | 低電量電池起飛跑任務,依序穿越 Low/Critical 門檻 | Low 僅告警不中斷;Critical 自動 RTL(`COM_LOW_BAT_ACT=2`);全程不觸及 Emergency |
+| F10 | 低電量分級 | F03 基線;SITL 腳本已備(`tools/sitl_scenarios` f10) | 低電量電池起飛跑任務,依序穿越 Low/Critical 門檻 | Low 僅告警不中斷;Critical 自動 RTL(`COM_LOW_BAT_ACT=3`);全程不觸及 Emergency |
 | F11 | GeoFence 觸發 | F08;SITL 腳本已備(`tools/sitl_scenarios` f11) | 圍欄縮至 200 m,任務刻意規劃一個界外航點 | 到界即觸發 `GF_ACTION=3`(RTL),不穿越圍欄 > 10 m |
 | F12 | GPS 劣化降級 | F09–F11;SITL 腳本已備(`tools/sitl_scenarios` f12) | GNSS 天線加鋁箔遮蔽(地面預驗)後低高度短任務;不做全拒止 | 衛星數下降時 EKF 告警正確;劣化到門檻觸發保護行為(Hold/RTL)而非失控 |
 

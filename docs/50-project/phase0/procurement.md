@@ -1,4 +1,4 @@
-# 50-5 Phase 0 採購計畫(開發機兩套)
+# 50-4-5 Phase 0 採購計畫(開發機兩套)
 
 > rev 1 · 2026-07。對應 [budget.md](../budget.md) Phase 0「開發機兩套 0.6 M」預算線。金額為詢價前量級估算(NTD,1 USD ≈ 32,同 [bom.md](../../10-hardware/bom.md) 匯率基準),下單前以實際報價滾動修正。開發機規格:**Jetson Orin Nano 開發套件**(產品機才是 Orin NX 16GB,不可誤購)。
 
