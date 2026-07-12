@@ -4,6 +4,7 @@ S24 任務場景斷言(覆蓋/走滿/高度序列/進度凍結)。"""
 from sitl_scenarios.checks import (
     alts_reached_in_order,
     crossed_boundary,
+    degraded_before_land,
     evaluate_battery_ladder,
     first_mode_time,
     items_all_visited,
@@ -254,3 +255,44 @@ def test_progress_frozen():
     assert not progress_frozen(items, 25.0, 60.0, baseline_item=2)
     # 窗內重發同斷點(QoS 1 dup)不算推進
     assert progress_frozen([(30.0, 2)], 25.0, 55.0, baseline_item=2)
+
+
+# ---- degraded_before_land(F12 漸進降級)--------------------------------------
+
+
+def test_degraded_before_land_gradient_present():
+    # 部分劣化先進 HOLD,之後才 LAND → 漸進降級成立
+    events = [(0.0, "MISSION"), (5.0, "HOLD"), (12.0, "LAND")]
+    assert degraded_before_land(events)
+
+
+def test_degraded_before_land_direct_jump_is_false():
+    # GPS 完全 OFF 直接就地 LAND(無保護態)→ 非漸進
+    events = [(0.0, "MISSION"), (5.0, "LAND")]
+    assert not degraded_before_land(events)
+
+
+def test_degraded_before_land_protective_after_land_does_not_count():
+    # LAND 之後才出現的模式不算「LAND 之前的漸進」
+    events = [(0.0, "MISSION"), (5.0, "LAND"), (9.0, "HOLD")]
+    assert not degraded_before_land(events)
+
+
+def test_degraded_before_land_protective_without_land():
+    # 已進保護態、尚未到終端 LAND → 視為漸進中
+    events = [(0.0, "MISSION"), (5.0, "HOLD")]
+    assert degraded_before_land(events)
+
+
+def test_degraded_before_land_rtl_counts_as_protective():
+    events = [(0.0, "MISSION"), (3.0, "RTL"), (8.0, "LAND")]
+    assert degraded_before_land(events)
+
+
+def test_degraded_before_land_nav_state_vocabulary():
+    # nav_state 詞彙(AUTO_LOITER / AUTO_LAND)亦適用
+    events = [(0.0, "AUTO_MISSION"), (4.0, "AUTO_LOITER"), (10.0, "AUTO_LAND")]
+    assert degraded_before_land(events, land_name="AUTO_LAND")
+    assert not degraded_before_land(
+        [(0.0, "AUTO_MISSION"), (4.0, "AUTO_LAND")], land_name="AUTO_LAND"
+    )

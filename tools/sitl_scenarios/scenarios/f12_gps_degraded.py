@@ -29,6 +29,15 @@
 
 已知雜訊:落地前後的 'Preflight Fail: Battery unhealthy'、'height estimate not
 stable' 等為 SITL 電池/估計器模型副作用,與 GPS 斷言無關,一律忽略。
+
+漸進降級分支(矩陣「衛星數下降 → 懸停/RTH」)的驗證路徑(待 nightly 落地):
+  本場景只覆蓋 GPS 完全 OFF 的終端 LAND 跳變。要另外驗漸進分支,需在 OFF 之前
+  先注入「部分劣化」(FailureType.GARBAGE,或調 EKF2_GPS_CHECK/降衛星數門檻),
+  觀測是否先進保護態(HOLD/RTL)才到 LAND。判定純函式已備:
+  checks.degraded_before_land(mode_events)——LAND 前需先出現保護態才算漸進
+  (已單測)。之所以未直接併入本場景:GARBAGE 是否觸發 fix→NO_GPS 轉換會影響
+  上方以 inject_t 起算的 NO_GPS/global_ok/LAND 延遲窗,需 SITL 實跑確認注入型別與
+  時窗後才能安全併入,故留作 nightly 驗證的獨立增量,不動已驗證的終端斷言。
 """
 
 import asyncio

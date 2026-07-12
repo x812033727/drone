@@ -51,6 +51,33 @@ def crossed_boundary(max_dist_m: float, radius_m: float, margin_m: float = 10.0)
     return max_dist_m > radius_m + margin_m
 
 
+# F12 GPS 劣化的「保護性中間態」名稱(涵蓋 flight_mode 與 nav_state 兩套詞彙):
+# HOLD/LOITER = 定點懸停等待,RTL = 返航——皆為「漸進降級」而非終端就地降落。
+PROTECTIVE_MODES = ("HOLD", "LOITER", "RTL", "AUTO_LOITER", "AUTO_RTL")
+
+
+def degraded_before_land(
+    mode_events: list[ModeEvent],
+    protective_modes: tuple[str, ...] = PROTECTIVE_MODES,
+    land_name: str = "LAND",
+) -> bool:
+    """漸進降級判定:首次進入終端 LAND 之前,是否先出現過保護性中間態
+    (HOLD/LOITER/RTL)。
+
+    用於 F12 的「衛星數下降/部分劣化 → Hold/RTL 漸進」分支斷言,與
+    「GPS 完全 OFF → 就地 LAND」的終端跳變區隔(見 scenarios/f12_gps_degraded.py)。
+
+    mode_events:flight_mode 或 nav_state 轉換序列 (相對秒, 名稱),時間遞增。
+    - 有 LAND:須在 LAND 之前出現保護態才 True(直接跳 LAND = False)。
+    - 無 LAND:出現過任一保護態即 True(已漸進、尚未到終端);全程無保護態 False。
+    """
+    t_land = first_mode_time(mode_events, land_name)
+    for t, m in mode_events:
+        if m in protective_modes and (t_land is None or t < t_land):
+            return True
+    return False
+
+
 def evaluate_battery_ladder(
     warn_events: list[ModeEvent], nav_events: list[ModeEvent]
 ) -> list[tuple[str, bool, str]]:
