@@ -133,3 +133,18 @@ class DeviceStatusView(BaseModel):
     battery_pct: float | None = None
     flight_mode: str | None = None
     armed: bool | None = None
+
+
+# ---- audit(G14) ----
+class AuditEntry(BaseModel):
+    """審計軌跡一筆(供 GET /api/v1/audit,admin 稽核檢視)。"""
+
+    id: int
+    at: datetime
+    actor: str
+    role: str | None = None
+    action: str
+    resource_type: str
+    resource_id: str | None = None
+    details: dict = Field(default_factory=dict)
+    source_ip: str | None = None

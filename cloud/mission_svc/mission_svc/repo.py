@@ -8,7 +8,7 @@ from uuid import UUID, uuid4
 import asyncpg
 
 from mission_svc.dispatch import TERMINAL_STATUSES
-from mission_svc.models import Mission, MissionCreate, Route, RouteCreate
+from mission_svc.models import AuditEntry, Mission, MissionCreate, Route, RouteCreate
 
 _ROUTE_COLS = "id, name, org_id, waypoints, rtl_after_last, created_at"
 _MISSION_COLS = (
@@ -158,3 +158,47 @@ async def apply_progress(
         current_item,
         total_items,
     )
+
+
+# ---- audit(G14 稽核查詢;寫入在 mission_svc.audit) ----
+_AUDIT_COLS = "id, at, actor, role, action, resource_type, resource_id, details, source_ip"
+
+
+def _audit(r: asyncpg.Record) -> AuditEntry:
+    d = dict(r)
+    # jsonb 由 asyncpg 以字串回傳(未設 codec);轉回 dict 供模型
+    if isinstance(d.get("details"), str):
+        d["details"] = json.loads(d["details"])
+    return AuditEntry.model_validate(d)
+
+
+async def list_audit(
+    conn: asyncpg.Connection,
+    resource_type: str | None = None,
+    limit: int = 100,
+    offset: int = 0,
+) -> list[AuditEntry]:
+    if resource_type is not None:
+        rows = await conn.fetch(
+            f"SELECT {_AUDIT_COLS} FROM mission.audit_log WHERE resource_type = $1 "
+            "ORDER BY at DESC, id DESC LIMIT $2 OFFSET $3",
+            resource_type,
+            limit,
+            offset,
+        )
+    else:
+        rows = await conn.fetch(
+            f"SELECT {_AUDIT_COLS} FROM mission.audit_log "
+            "ORDER BY at DESC, id DESC LIMIT $1 OFFSET $2",
+            limit,
+            offset,
+        )
+    return [_audit(r) for r in rows]
+
+
+async def count_audit(conn: asyncpg.Connection, resource_type: str | None = None) -> int:
+    if resource_type is not None:
+        return await conn.fetchval(
+            "SELECT count(*) FROM mission.audit_log WHERE resource_type = $1", resource_type
+        )
+    return await conn.fetchval("SELECT count(*) FROM mission.audit_log")

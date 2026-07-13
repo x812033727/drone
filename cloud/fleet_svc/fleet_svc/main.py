@@ -18,12 +18,13 @@ import asyncpg
 from fastapi import Depends, FastAPI, HTTPException, Query, Request, Response
 from fastapi.responses import StreamingResponse
 
-from fleet_svc import metrics, repo
+from fleet_svc import audit, metrics, repo
 from fleet_svc.auth import AUTH_ENABLED, authorize_token, require_role
 from fleet_svc.consumer import run_consumer
 from fleet_svc.hub import TelemetryHub
 from fleet_svc.migrate import apply_migrations
 from fleet_svc.models import (
+    AuditEntry,
     Device,
     DeviceCreate,
     DeviceFirmware,
@@ -88,9 +89,12 @@ metrics.instrument(app)  # /metrics(Prometheus)+ HTTP 指標 middleware(G13)
 if not AUTH_ENABLED:
     log.warning("⚠ JWT 認證未啟用(dev 模式,全放行)——正式部署須設 JWT_SECRET 或 JWT_JWKS_URL")
 
-# RBAC 依賴:讀取需 viewer,變更需 operator(healthz 不設,供 compose healthcheck)
+# RBAC 依賴:讀取需 viewer,變更需 operator(healthz 不設,供 compose healthcheck);
+# 審計稽核檢視需 admin。變更端點以參數注入 claims(= Depends 值)供審計取 actor,
+# FastAPI 對同一 Depends 物件快取,故不會重複驗證。
 VIEWER = Depends(require_role("viewer"))
 OPERATOR = Depends(require_role("operator"))
+ADMIN = Depends(require_role("admin"))
 
 
 def _pool(app: FastAPI) -> asyncpg.Pool:
@@ -119,10 +123,16 @@ async def healthz() -> dict:
 
 
 # ---- fleets ----
-@app.post("/api/v1/fleets", response_model=Fleet, status_code=201, dependencies=[OPERATOR])
-async def create_fleet(body: FleetCreate) -> Fleet:
+@app.post("/api/v1/fleets", response_model=Fleet, status_code=201)
+async def create_fleet(body: FleetCreate, request: Request, claims: dict = OPERATOR) -> Fleet:
     async with _pool(app).acquire() as conn:
-        return await repo.create_fleet(conn, body)
+        fleet = await repo.create_fleet(conn, body)
+        await audit.record(
+            conn, claims=claims, action="create", resource_type="fleet",
+            resource_id=fleet.id, details={"name": fleet.name, "org_id": fleet.org_id},
+            request=request,
+        )
+    return fleet
 
 
 @app.get("/api/v1/fleets", response_model=list[Fleet], dependencies=[VIEWER])
@@ -148,13 +158,20 @@ async def get_fleet(fleet_id: UUID) -> Fleet:
 
 
 # ---- devices ----
-@app.post("/api/v1/devices", response_model=Device, status_code=201, dependencies=[OPERATOR])
-async def create_device(body: DeviceCreate) -> Device:
+@app.post("/api/v1/devices", response_model=Device, status_code=201)
+async def create_device(body: DeviceCreate, request: Request, claims: dict = OPERATOR) -> Device:
     async with _pool(app).acquire() as conn:
         try:
-            return await repo.create_device(conn, body)
+            device = await repo.create_device(conn, body)
         except asyncpg.UniqueViolationError:
             raise HTTPException(status_code=409, detail=f"serial 已存在:{body.serial}")
+        await audit.record(
+            conn, claims=claims, action="create", resource_type="device",
+            resource_id=device.id,
+            details={"serial": device.serial, "name": device.name, "model": device.model},
+            request=request,
+        )
+    return device
 
 
 @app.get("/api/v1/devices", response_model=list[Device], dependencies=[VIEWER])
@@ -180,33 +197,50 @@ async def get_device(device_id: UUID) -> Device:
     return d
 
 
-@app.patch("/api/v1/devices/{device_id}", response_model=Device, dependencies=[OPERATOR])
-async def update_device(device_id: UUID, body: DeviceUpdate) -> Device:
+@app.patch("/api/v1/devices/{device_id}", response_model=Device)
+async def update_device(
+    device_id: UUID, body: DeviceUpdate, request: Request, claims: dict = OPERATOR
+) -> Device:
     async with _pool(app).acquire() as conn:
         d = await repo.update_device(conn, device_id, body)
-    if d is None:
-        raise HTTPException(status_code=404, detail="device 不存在")
+        if d is None:
+            raise HTTPException(status_code=404, detail="device 不存在")
+        await audit.record(
+            conn, claims=claims, action="update", resource_type="device", resource_id=device_id,
+            details=body.model_dump(exclude_unset=True, mode="json"), request=request,
+        )
     return d
 
 
-@app.delete("/api/v1/devices/{device_id}", status_code=204, dependencies=[OPERATOR])
-async def delete_device(device_id: UUID) -> None:
+@app.delete("/api/v1/devices/{device_id}", status_code=204)
+async def delete_device(device_id: UUID, request: Request, claims: dict = OPERATOR) -> None:
     async with _pool(app).acquire() as conn:
         ok = await repo.delete_device(conn, device_id)
-    if not ok:
-        raise HTTPException(status_code=404, detail="device 不存在")
+        if not ok:
+            raise HTTPException(status_code=404, detail="device 不存在")
+        await audit.record(
+            conn, claims=claims, action="delete", resource_type="device",
+            resource_id=device_id, request=request,
+        )
 
 
 # ---- firmware ----
-@app.post("/api/v1/firmware", response_model=Firmware, status_code=201, dependencies=[OPERATOR])
-async def create_firmware(body: FirmwareCreate) -> Firmware:
+@app.post("/api/v1/firmware", response_model=Firmware, status_code=201)
+async def create_firmware(
+    body: FirmwareCreate, request: Request, claims: dict = OPERATOR
+) -> Firmware:
     async with _pool(app).acquire() as conn:
         try:
-            return await repo.create_firmware(conn, body)
+            fw = await repo.create_firmware(conn, body)
         except asyncpg.UniqueViolationError:
             raise HTTPException(
                 status_code=409, detail=f"{body.component.value} {body.version} 已存在"
             )
+        await audit.record(
+            conn, claims=claims, action="create", resource_type="firmware", resource_id=fw.id,
+            details={"component": fw.component.value, "version": fw.version}, request=request,
+        )
+    return fw
 
 
 @app.get("/api/v1/firmware", response_model=list[Firmware], dependencies=[VIEWER])
@@ -215,15 +249,21 @@ async def list_firmware() -> list[Firmware]:
         return await repo.list_firmware(conn)
 
 
-@app.put(
-    "/api/v1/devices/{device_id}/firmware", response_model=DeviceFirmware, dependencies=[OPERATOR]
-)
-async def set_device_firmware(device_id: UUID, body: DeviceFirmwareSet) -> DeviceFirmware:
+@app.put("/api/v1/devices/{device_id}/firmware", response_model=DeviceFirmware)
+async def set_device_firmware(
+    device_id: UUID, body: DeviceFirmwareSet, request: Request, claims: dict = OPERATOR
+) -> DeviceFirmware:
     async with _pool(app).acquire() as conn:
         d = await repo.get_device(conn, device_id)
         if d is None:
             raise HTTPException(status_code=404, detail="device 不存在")
-        return await repo.set_device_firmware(conn, device_id, body.component.value, body.version)
+        df = await repo.set_device_firmware(conn, device_id, body.component.value, body.version)
+        await audit.record(
+            conn, claims=claims, action="set_firmware", resource_type="device",
+            resource_id=device_id,
+            details={"component": body.component.value, "version": body.version}, request=request,
+        )
+    return df
 
 
 @app.get(
@@ -262,6 +302,21 @@ async def get_device_status(device_id: UUID) -> DeviceStatusView:
 async def list_fleet_status(fleet_id: UUID) -> list[DeviceStatusView]:
     async with _pool(app).acquire() as conn:
         return await repo.list_fleet_status(conn, fleet_id)
+
+
+# ---- audit(G14 稽核查詢,admin only;分頁同 G12 慣例)----
+@app.get("/api/v1/audit", response_model=list[AuditEntry], dependencies=[ADMIN])
+async def list_audit(
+    response: Response,
+    resource_type: str | None = Query(default=None),
+    limit: int = Query(default=PAGE_LIMIT_DEFAULT, ge=1, le=PAGE_LIMIT_MAX),
+    offset: int = Query(default=0, ge=0),
+) -> list[AuditEntry]:
+    async with _pool(app).acquire() as conn:
+        total = await repo.count_audit(conn, resource_type)
+        items = await repo.list_audit(conn, resource_type, limit=limit, offset=offset)
+    _set_page_headers(response, total, limit, offset)
+    return items
 
 
 # ---- SSE 即時遙測串流 ----
