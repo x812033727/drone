@@ -119,7 +119,7 @@
 
 > Wave 0–6 已交付後,對「可商用 + 可直接部署」做全架構稽核,列**程式可達**的剩餘缺口(需外部認證/硬體者見 §5)。逐項以 PR 補齊,CI 綠自動合併。
 >
-> **完成進度(2026-07-13)**:✅ **P0 G1–G10 全數完成**(可直接部署門檻達標)。✅ **P1 已完成 15 項**:G12/G13/G14/G15/G16/G17/G18/G19/G20/G21/G22/G24/G25/G26/G29。⬜ **P1 剩餘(程式可達,較大/需欄位決策,待排程)**:G23 OTA 機載代理(設計齊、實作量大)、G27 MAVLink dialect/payload 定案(需欄位決策)、G28 派遣 proto FleetMission(尚無消費端)。🔒 **需使用者產品決策**:G11 org 多租戶隔離(需租戶模型)、G30 計費/用量/配額、G31 前端執行期注入、租戶/使用者管理、token 安全策略。
+> **完成進度(2026-07-13)**:✅ **P0 G1–G10 全數完成**(可直接部署門檻達標)。✅ **P1 已完成 16 項**:G12/G13/G14/G15/G16/G17/G18/G19/G20/G21/G22/G24/G25/G26/G27/G29。⬜ **P1 剩餘(程式可達,較大/待排程)**:G23 OTA 機載代理(設計齊、實作量大)、G28 派遣 proto FleetMission(尚無消費端)。🔒 **需使用者產品決策**:G11 org 多租戶隔離(需租戶模型)、G30 計費/用量/配額、G31 前端執行期注入、租戶/使用者管理、token 安全策略。
 
 ### P0 — 部署阻擋 / 對外裸奔(✅ 全數完成)
 | # | 缺口 | 狀態 |
@@ -136,9 +136,9 @@
 | G10 | web-console 缺寫入 UI + 前端 RBAC | ✅ #99 裝置/任務/派遣/RBAC/告警 |
 
 ### P1 — 生產/商用必要
-**✅ 已完成**:G12 API 分頁(#103,limit/offset+X-Total-Count)·G13 metrics/告警/SLO(#101)·G14 審計日誌(#106,audit_log 表+GET /audit admin 分頁+旁路 best-effort)·G15 DB 備份 CronJob(#100)·G16 migration pre-upgrade hook Job(#100)·G17 NetworkPolicy+PDB(#100)·G18 cosign keyless 簽章(#102)·G19 CHANGELOG+GitHub Release(#102)·G20 資料保留(#103,timescale retention/壓縮)·G21 ingest healthz+重試/DLQ(#103)·G22 機載憑證到期偵測+輪換提示(#107)·G24 遙測離線緩衝(#107,有界環形緩衝+FIFO 補發)·G25 dependabot 補目錄+npm(#87)·G26 OpenAPI 契約+守門(#102)·G29 依賴 lock(pip-tools)+ mypy(#105,quality-gates.yml)。
+**✅ 已完成**:G12 API 分頁(#103,limit/offset+X-Total-Count)·G13 metrics/告警/SLO(#101)·G14 審計日誌(#106,audit_log 表+GET /audit admin 分頁+旁路 best-effort)·G15 DB 備份 CronJob(#100)·G16 migration pre-upgrade hook Job(#100)·G17 NetworkPolicy+PDB(#100)·G18 cosign keyless 簽章(#102)·G19 CHANGELOG+GitHub Release(#102)·G20 資料保留(#103,timescale retention/壓縮)·G21 ingest healthz+重試/DLQ(#103)·G22 機載憑證到期偵測+輪換提示(#107)·G24 遙測離線緩衝(#107,有界環形緩衝+FIFO 補發)·G25 dependabot 補目錄+npm(#87)·G26 OpenAPI 契約+守門(#102)·G27 MAVLink dialect/payload schema 定案(SPRAY_TELEMETRY/BATTERY_DETAIL/PAYLOAD_STATUS 三訊息 rev 1 + payload descriptor schema 二進位/CRC/防寫定案,mavgen 往返 + jsonschema 驗證通過)·G29 依賴 lock(pip-tools)+ mypy(#105,quality-gates.yml)。
 
-**⬜ 剩餘(程式可達,較大或需欄位決策,待排程)**:G23 OTA 機載代理(設計已齊於 ota.md,實作量大;且與 firmware 雙 bank/Jetson 代燒方案交織,見 §5)·G27 MAVLink dialect/payload schema 定案(SPRAY_TELEMETRY/BATTERY_DETAIL/PAYLOAD_STATUS 欄位需拍板)·G28 cloud 派遣 proto FleetMission(尚無消費端,價值待派遣鏈成形)。
+**⬜ 剩餘(程式可達,較大或需欄位決策,待排程)**:G23 OTA 機載代理(設計已齊於 ota.md,實作量大;且與 firmware 雙 bank/Jetson 代燒方案交織,見 §5)·G28 cloud 派遣 proto FleetMission(尚無消費端,價值待派遣鏈成形)。
 
 **🔒 需使用者產品決策**:G11 org 多租戶隔離(需租戶模型)·G30 計費/用量/配額/限流(需計價維度)·G31 前端執行期環境注入。
 

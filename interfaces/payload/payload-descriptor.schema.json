@@ -2,55 +2,70 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://drone.example/interfaces/payload/payload-descriptor.schema.json",
   "title": "PayloadDescriptor",
-  "description": "快拆酬載(QR-S/QR-L)EEPROM 描述檔——佔位草稿,欄位未定案(Phase 1 啟用條件見 README.md)。EEPROM 實存緊湊二進位編碼,本 schema 用於工具鏈 JSON 形式。",
+  "description": "快拆酬載(QR-S/QR-L)EEPROM 描述檔——定案 rev 1(schema_version 1.x)。機上掛載偵測時讀取以自我介紹與資源需求宣告。EEPROM 實存為本物件的緊湊二進位編碼(deterministic CBOR)+ CRC,本 JSON Schema 為工具鏈(產測燒錄/除錯 dump/雲端登記)用的等價 JSON 形式。二進位佈局、CRC 策略與防寫規則見 eeprom 物件與 README.md。",
   "type": "object",
-  "required": ["schema_version", "payload_type", "model", "serial", "power", "mass"],
+  "required": [
+    "schema_version",
+    "payload_type",
+    "manufacturer",
+    "model",
+    "serial",
+    "interface",
+    "power",
+    "mass",
+    "eeprom"
+  ],
   "additionalProperties": false,
   "properties": {
     "schema_version": {
-      "type": "string",
-      "description": "描述檔 schema 版本(SemVer;version 規則見 README.md)",
-      "pattern": "^\\d+\\.\\d+\\.\\d+$"
+      "$ref": "#/$defs/semver",
+      "description": "描述檔 schema 版本(SemVer)。MINOR = 加欄位(舊讀取端忽略未知欄);MAJOR = 佈局變更(讀取端須同時支援 N 與 N-1)。本 rev = 1.x。"
     },
     "payload_type": {
       "type": "string",
-      "description": "酬載類型(與 mavlink DRONE_PAYLOAD_TYPE enum 對齊)",
+      "description": "酬載類型(與 mavlink DRONE_PAYLOAD_TYPE enum 對齊)。",
       "enum": ["gimbal_eo", "gimbal_dual", "sprayer", "cargo"]
     },
-    "model": { "type": "string", "description": "型號(廠內料號)", "maxLength": 32 },
-    "serial": { "type": "string", "description": "酬載序號(出廠燒錄,凍結區)", "maxLength": 32 },
-    "hw_rev": { "type": "string", "description": "硬體版次(如 revA)", "maxLength": 8 },
-    "fw_version": {
+    "manufacturer": { "type": "string", "description": "製造商名稱。", "minLength": 1, "maxLength": 32 },
+    "model": { "type": "string", "description": "型號(廠內料號)。", "minLength": 1, "maxLength": 32 },
+    "serial": { "type": "string", "description": "酬載序號(出廠燒錄,frozen 區)。", "minLength": 1, "maxLength": 32 },
+    "hw_rev": { "type": "string", "description": "硬體版次(如 revA)。", "maxLength": 8 },
+    "manufacture_date": {
       "type": "string",
-      "description": "酬載韌體版(可寫區,OTA 後更新;入 ota.md §5 相容性矩陣 payload 維度)",
-      "pattern": "^\\d+\\.\\d+\\.\\d+$"
+      "description": "出廠日期(ISO 8601 date,frozen 區)。",
+      "format": "date",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+    },
+    "fw_version": {
+      "$ref": "#/$defs/semver",
+      "description": "酬載韌體版(writable 區,OTA 後更新;入 ota.md §5 相容性矩陣 payload 維度)。"
     },
     "interface": {
       "type": "string",
-      "description": "快拆介面規格",
+      "description": "快拆介面規格。",
       "enum": ["QR-S", "QR-L"]
     },
     "power": {
       "type": "object",
-      "description": "供電需求宣告(機上供電預算檢查用)",
+      "description": "供電需求宣告(機上供電預算檢查用)。",
       "required": ["voltage_v", "peak_current_a"],
       "additionalProperties": false,
       "properties": {
-        "voltage_v": { "type": "number", "description": "工作電壓(V)" },
-        "peak_current_a": { "type": "number", "description": "峰值電流(A)" },
-        "avg_current_a": { "type": "number", "description": "平均電流(A)" }
+        "voltage_v": { "type": "number", "description": "工作電壓(V)。", "exclusiveMinimum": 0 },
+        "peak_current_a": { "type": "number", "description": "峰值電流(A)。", "exclusiveMinimum": 0 },
+        "avg_current_a": { "type": "number", "description": "平均電流(A)。", "minimum": 0 }
       }
     },
     "mass": {
       "type": "object",
-      "description": "質量特性(飛控質量/重心修正用)",
+      "description": "質量特性(飛控質量/重心修正用)。",
       "required": ["mass_kg"],
       "additionalProperties": false,
       "properties": {
-        "mass_kg": { "type": "number", "description": "質量(kg)" },
+        "mass_kg": { "type": "number", "description": "質量(kg)。", "exclusiveMinimum": 0 },
         "cg_offset_m": {
           "type": "array",
-          "description": "重心偏移 [x, y, z](m,機體座標,相對掛載面)",
+          "description": "重心偏移 [x, y, z](m,機體座標,相對掛載面)。",
           "items": { "type": "number" },
           "minItems": 3,
           "maxItems": 3
@@ -59,11 +74,156 @@
     },
     "comms": {
       "type": "object",
-      "description": "通訊資源宣告",
+      "description": "通訊資源宣告。",
       "additionalProperties": false,
       "properties": {
-        "dronecan_node_id": { "type": "integer", "minimum": 1, "maximum": 127 },
-        "rtsp_stream": { "type": "boolean", "description": "是否提供 RTSP 影像流(Ethernet)" }
+        "dronecan_node_id": {
+          "type": "integer",
+          "description": "DroneCAN 節點 id 需求(1-127);省略表不佔用 DroneCAN。",
+          "minimum": 1,
+          "maximum": 127
+        },
+        "rtsp_stream": { "type": "boolean", "description": "是否提供 RTSP 影像流(Ethernet)。" }
+      }
+    },
+    "eeprom": {
+      "type": "object",
+      "description": "EEPROM 二進位編碼、完整性(CRC)與防寫策略定案(rev 1)。firmware 讀寫端與產測燒錄治具須依此實作,始能跨端一致解讀。",
+      "required": ["device_size_bytes", "encoding", "header", "regions", "write_protect", "crc"],
+      "additionalProperties": false,
+      "properties": {
+        "device_size_bytes": {
+          "type": "integer",
+          "description": "EEPROM 元件容量(位元組);描述檔編碼後總長度須 ≤ 此值。",
+          "minimum": 64,
+          "maximum": 65536
+        },
+        "encoding": {
+          "type": "object",
+          "description": "二進位編碼定案:確定性 CBOR(deterministic encoding),同一描述檔跨工具產生相同位元組,CRC 方可比對。",
+          "required": ["format", "profile", "spec"],
+          "additionalProperties": false,
+          "properties": {
+            "format": { "const": "cbor", "description": "編碼格式:CBOR。" },
+            "profile": { "const": "core-deterministic", "description": "RFC 8949 §4.2.1 Core Deterministic Encoding(最短型別、map key 排序固定)。" },
+            "spec": { "const": "RFC 8949", "description": "CBOR 規範參照。" }
+          }
+        },
+        "header": {
+          "type": "object",
+          "description": "EEPROM 起始固定表頭,供讀取端快速辨識與佈局版本判定。",
+          "required": ["magic", "layout_version", "offset_bytes"],
+          "additionalProperties": false,
+          "properties": {
+            "magic": {
+              "const": "DPD1",
+              "description": "4-byte ASCII 魔數(Drone Payload Descriptor);MAJOR 佈局變更時遞增末碼(DPD2…)。"
+            },
+            "layout_version": {
+              "type": "integer",
+              "description": "二進位佈局版本(對齊 schema_version 之 MAJOR)。",
+              "minimum": 1
+            },
+            "offset_bytes": { "const": 0, "description": "表頭位於 EEPROM 起始。" }
+          }
+        },
+        "regions": {
+          "type": "object",
+          "description": "兩段式佈局:frozen 區出廠燒錄後永久唯讀(識別身分),writable 區允許受控更新(如韌體版)。",
+          "required": ["frozen", "writable"],
+          "additionalProperties": false,
+          "properties": {
+            "frozen": {
+              "$ref": "#/$defs/region",
+              "description": "凍結區:出廠燒錄後由防寫機制鎖定,承載身分/資源宣告等不可變欄位。"
+            },
+            "writable": {
+              "$ref": "#/$defs/region",
+              "description": "可寫區:承載出廠後允許更新的欄位。"
+            },
+            "writable_fields": {
+              "type": "array",
+              "description": "位於可寫區的欄位(JSON Pointer);其餘欄位皆在 frozen 區。預設僅韌體版可寫。",
+              "items": { "type": "string", "pattern": "^/" },
+              "default": ["/fw_version"],
+              "uniqueItems": true
+            }
+          }
+        },
+        "write_protect": {
+          "type": "object",
+          "description": "防寫策略:frozen 區於產測燒錄後上鎖,現場不可改寫。",
+          "required": ["mechanism", "frozen_locked"],
+          "additionalProperties": false,
+          "properties": {
+            "mechanism": {
+              "type": "string",
+              "description": "防寫實作:block_protect_register = EEPROM 內建區塊保護暫存器;wp_pin = 硬體 /WP 腳位;both = 兩者併用。",
+              "enum": ["block_protect_register", "wp_pin", "both"]
+            },
+            "frozen_locked": {
+              "const": true,
+              "description": "frozen 區是否已上鎖(定案燒錄後恆為 true)。"
+            }
+          }
+        },
+        "crc": {
+          "type": "object",
+          "description": "完整性策略定案:CRC-32/ISO-HDLC(標準 CRC-32,zlib/PNG 相容)。frozen 與 writable 兩區各自帶一枚 4-byte CRC,均以小端序存於各區尾端。讀取端先驗 CRC 再解 CBOR;writable 區每次寫入後重算其 CRC。",
+          "required": ["algorithm", "parameters", "endianness", "frozen_crc", "writable_crc"],
+          "additionalProperties": false,
+          "properties": {
+            "algorithm": { "const": "CRC-32/ISO-HDLC", "description": "CRC 演算法(別名 CRC-32、CRC-32/ADCCP;zlib crc32 相容)。" },
+            "parameters": {
+              "type": "object",
+              "description": "CRC 參數(明列供 firmware 逐位元一致實作)。",
+              "required": ["width", "poly", "init", "refin", "refout", "xorout"],
+              "additionalProperties": false,
+              "properties": {
+                "width": { "const": 32 },
+                "poly": { "const": "0x04C11DB7" },
+                "init": { "const": "0xFFFFFFFF" },
+                "refin": { "const": true },
+                "refout": { "const": true },
+                "xorout": { "const": "0xFFFFFFFF" },
+                "check": {
+                  "const": "0xCBF43926",
+                  "description": "對 ASCII \"123456789\" 的 CRC 驗證值(實作自檢用)。"
+                }
+              }
+            },
+            "endianness": { "const": "little", "description": "CRC 於 EEPROM 的位元組序。" },
+            "frozen_crc": {
+              "$ref": "#/$defs/crc32hex",
+              "description": "frozen 區 CBOR 位元組的 CRC-32(出廠燒錄,不可變)。"
+            },
+            "writable_crc": {
+              "$ref": "#/$defs/crc32hex",
+              "description": "writable 區 CBOR 位元組的 CRC-32(每次寫入後重算)。"
+            }
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "semver": {
+      "type": "string",
+      "description": "語意化版本 MAJOR.MINOR.PATCH。",
+      "pattern": "^\\d+\\.\\d+\\.\\d+$"
+    },
+    "crc32hex": {
+      "type": "string",
+      "description": "4-byte CRC-32,8 位十六進位(0x 前綴)。",
+      "pattern": "^0x[0-9A-Fa-f]{8}$"
+    },
+    "region": {
+      "type": "object",
+      "required": ["offset_bytes", "length_bytes"],
+      "additionalProperties": false,
+      "properties": {
+        "offset_bytes": { "type": "integer", "minimum": 0 },
+        "length_bytes": { "type": "integer", "minimum": 1 }
       }
     }
   }
