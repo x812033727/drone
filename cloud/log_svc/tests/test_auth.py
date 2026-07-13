@@ -7,10 +7,9 @@
 import importlib
 
 import jwt
+import log_svc.auth as auth
 import pytest
 from fastapi import HTTPException
-
-import log_svc.auth as auth
 
 
 @pytest.fixture(autouse=True)
