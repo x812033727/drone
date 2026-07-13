@@ -16,19 +16,23 @@
 
 凡因缺硬體只能做到 SITL/合成驗證者,於對應項目明確標註,不與需求正式驗證混淆。
 
-## 2. 現況基線(2026-07 盤點確認)
+## 2. 現況基線(2026-07 盤點確認,對齊 main @ S25)
 
 | 子系統 | 狀態 | 說明 |
 |--------|------|------|
-| 飛行資料鏈 | ✅ 端到端可運作 | `drone_agent`(遙測→MQTT)、`mission_exec`(任務狀態機)、`cloud/ingest`(→TimescaleDB→Grafana)、`dispatch` CLI |
-| 失效保護回歸 | ✅ SITL 實測 | F09–F12 + nightly SITL/uXRCE-DDS 煙霧 |
-| 契約層 | ✅ 成熟 | `interfaces/proto`(buf lint + 生成碼同步驗證) |
-| 雲端服務層 | ⭕ 未做 | 只有落庫 + 看板,無 fleet/mission 服務、無 REST API |
-| 操作端前端 | ⭕ 未做 | 僅 Grafana |
+| 飛行資料鏈 | ✅ 端到端可運作 | `drone_agent`(遙測→MQTT)、`mission_exec`(任務狀態機 + MissionCommand PAUSE/RESUME/ABORT + 斷點續飛)、`cloud/ingest`(→TimescaleDB→Grafana)、`dispatch` CLI |
+| 失效保護 + 任務場景回歸 | ✅ SITL 實測 | F05–F08 自動任務 + F09–F12 失效保護 + nightly SITL/uXRCE-DDS 煙霧 |
+| 契約層 | ✅ 成熟 | `interfaces/proto` v0.4(telemetry/mission/events/sensors,buf lint + 生成碼同步驗證)+ `mavlink/` 自訂 dialect + `payload/` schema |
+| 高頻感測橋 | ✅ 已做 | `onboard/ros2_ws/src/px4_mqtt_bridge`(DDS→MQTT 感測器橋) |
+| 影像管線 | ✅ POC + 錄存回放 | MediaMTX 常駐錄存棧 + sender(v4l2 源)+ 回放煙霧 |
+| 雲端服務層 | 🟡 起步 | `cloud/log_svc`(FastAPI:ULog 上傳/解析/異常開單)已建,確立 FastAPI 服務範式;**仍缺 fleet-svc / mission-svc / REST 讀取 API** |
+| 操作端前端 | ⭕ 未做 | 僅 Grafana;`gcs/` 只有 README |
 | 安全機制 | ⭕ Phase 0 明列豁免 | 無 mTLS/裝置憑證/ACL/API 認證 |
-| ROS2 感知節點 | ⭕ 未做 | 僅 `bridge_smoke` 煙霧 node |
-| 工程成熟度 | ⚠️ 部分 | 有 ruff+pytest+CI;缺 lock/型別/覆蓋率/掃描/release 流程 |
-| 自研飛控/韌體/GCS/硬體/結構 | ⭕ 純規劃 | README 骨架,無程式碼(屬 Phase 1+ 或硬體) |
+| ROS2 感知節點 | ⭕ 未做 | 有 `bridge_smoke` 煙霧 + `px4_mqtt_bridge`;**仍缺 obstacle_guard / precision_land 感知安全節點** |
+| 工程成熟度 | ⚠️ 部分 | 有 ruff+pytest+CI(含 cloud-smoke/proto)+ CLAUDE.md 慣例;缺 lock/型別/覆蓋率/掃描/release 流程 |
+| 自研飛控/韌體/GCS/硬體/結構 | ⭕ 純規劃 | README/骨架文件(含 OTA 規格、派遣契約、GCS 骨架),無實作碼(屬 Phase 1+ 或硬體) |
+
+> 註:`cloud/log_svc` 已採 **FastAPI + 釘版 requirements + Dockerfile + 純函式測試** 的結構,後續 fleet-svc / mission-svc **沿用此既有範式**,不另立新樣式。
 
 ## 3. 波次與進度
 
