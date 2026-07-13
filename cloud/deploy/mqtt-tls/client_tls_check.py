@@ -15,6 +15,13 @@ HOST, PORT, CA, BK_C, BK_K, D1_C, D1_K = (
 )
 
 
+async def _await_payload(bk: aiomqtt.Client, payload: str) -> bool:
+    async for msg in bk.messages:
+        if bytes(msg.payload).decode() == payload:
+            return True
+    return False
+
+
 async def main() -> None:
     backend_tls = aiomqtt.TLSParameters(ca_certs=CA, certfile=BK_C, keyfile=BK_K)
     device_tls = aiomqtt.TLSParameters(ca_certs=CA, certfile=D1_C, keyfile=D1_K)
@@ -25,13 +32,12 @@ async def main() -> None:
         await asyncio.sleep(0.3)
         async with aiomqtt.Client(HOST, PORT, identifier="dev-1", tls_params=device_tls) as d1:
             await d1.publish("fleet/dev-1/telemetry", payload, qos=1)
-        async with asyncio.timeout(5):
-            async for msg in bk.messages:
-                if bytes(msg.payload).decode() == payload:
-                    print("✓ aiomqtt backend(mTLS)收到 dev-1(mTLS)遙測")
-                    print("\nRESULT: PASS — 客戶端 mTLS 路徑(aiomqtt + 憑證)端到端通")
-                    return
-    raise SystemExit("✗ 未收到 dev-1 遙測")
+        # asyncio.wait_for:Python 3.10 相容(asyncio.timeout 屬 3.11+)
+        if not await asyncio.wait_for(_await_payload(bk, payload), timeout=5):
+            raise SystemExit("✗ 未收到 dev-1 遙測")
+
+    print("✓ aiomqtt backend(mTLS)收到 dev-1(mTLS)遙測")
+    print("\nRESULT: PASS — 客戶端 mTLS 路徑(aiomqtt + 憑證)端到端通")
 
 
 asyncio.run(main())
