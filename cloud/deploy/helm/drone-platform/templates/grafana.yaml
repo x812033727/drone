@@ -1,4 +1,44 @@
 {{- if .Values.grafana.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "drone.fullname" . }}-grafana-provisioning
+  labels:
+    {{- include "drone.labels" . | nindent 4 }}
+    app.kubernetes.io/component: grafana
+data:
+  # Datasource:PG 主機指向本 chart 的 timescaledb Service;密碼經 grafana deployment
+  # 既有的 PG_PASSWORD env 以 Grafana provisioning 的 $__env{} 語法注入(不落明文)。
+  datasource-timescaledb.yml: |
+    apiVersion: 1
+    datasources:
+      - name: TimescaleDB
+        uid: drone-tsdb
+        type: postgres
+        access: proxy
+        url: {{ include "drone.fullname" . }}-timescaledb:5432
+        user: drone
+        isDefault: true
+        jsonData:
+          database: drone
+          sslmode: disable
+          timescaledb: true
+          postgresVersion: 1600
+        secureJsonData:
+          password: $__env{PG_PASSWORD}
+  dashboard-provider.yml: |
+    apiVersion: 1
+    providers:
+      - name: drone-dashboards
+        folder: Fleet
+        type: file
+        options:
+          path: /etc/grafana/provisioning/dashboards
+          foldersFromFilesStructure: false
+  # fleet.json 由 compose 版原樣搬入 chart files/(見 files/grafana/fleet.json)。
+  fleet.json: |
+{{ .Files.Get "files/grafana/fleet.json" | indent 4 }}
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -22,6 +62,10 @@ spec:
         - name: grafana
           image: {{ .Values.grafana.image | quote }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
+          # 第三方 grafana 映像保守處理:禁特權升級 + 丟棄 capabilities(grafana uid 472,
+          # 監聽 3000,不需 cap);不強制 runAsNonRoot/uid。TODO。
+          securityContext:
+            {{- include "drone.thirdPartyContainerSecurityContext" . | nindent 12 }}
           env:
             # 私有部署預設關匿名(對比 dev compose);可用 grafana.anonymous 覆寫
             - name: GF_AUTH_ANONYMOUS_ENABLED
@@ -40,8 +84,27 @@ spec:
                   key: PG_PASSWORD
           ports:
             - containerPort: 3000
+          livenessProbe:
+            httpGet: { path: /api/health, port: 3000 }
+            initialDelaySeconds: 20
+            periodSeconds: 20
+            failureThreshold: 3
           resources:
             {{- toYaml .Values.grafana.resources | nindent 12 }}
+          volumeMounts:
+            - name: provisioning
+              mountPath: /etc/grafana/provisioning/datasources/timescaledb.yml
+              subPath: datasource-timescaledb.yml
+            - name: provisioning
+              mountPath: /etc/grafana/provisioning/dashboards/provider.yml
+              subPath: dashboard-provider.yml
+            - name: provisioning
+              mountPath: /etc/grafana/provisioning/dashboards/fleet.json
+              subPath: fleet.json
+      volumes:
+        - name: provisioning
+          configMap:
+            name: {{ include "drone.fullname" . }}-grafana-provisioning
 ---
 apiVersion: v1
 kind: Service
