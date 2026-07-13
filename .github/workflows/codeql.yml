@@ -1,0 +1,31 @@
+name: codeql
+
+# CodeQL 靜態安全掃描(Python)。跑在 main push + 每週排程,不掛每個 feature PR
+# 以免拖慢多 PR 節奏;結果進 repo 的 Security → Code scanning。
+# 對齊 docs/20-software/security.md §6 原始碼防護。
+on:
+  push:
+    branches: [main]
+  schedule:
+    - cron: "30 6 * * 1" # 每週一 06:30 UTC
+  workflow_dispatch:
+
+jobs:
+  analyze:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      security-events: write
+      actions: read
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - name: 初始化 CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: python
+          queries: security-and-quality
+      - name: 分析
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: "/language:python"
