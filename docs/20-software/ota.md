@@ -73,6 +73,25 @@
 | Phase 2 | 正式簽章鏈(security §8)、相容性矩陣強制檢查、灰度編排與 OTA 管理面板、酬載韌體 OTA | — |
 | Phase 3 | 私有部署環境的 OTA(客戶機房內鏡像倉)、認證所需變更管理紀錄 | — |
 
+## 7b. 機載代理實作現況(G23,onboard/drone_agent)
+
+[onboard/drone_agent/drone_agent/ota.py](../../onboard/drone_agent/drone_agent/ota.py)
+落地本文**機載代理側的程式可達部分**,標的為**軟體套件/設定 OTA**,以目錄
+slot + `current` symlink **模擬** A/B 分區(§3),驗證代理側編排邏輯:
+
+- **已實作並單元測試涵蓋**:斷點續傳下載(§1)、收檔後驗簽點(§4,SHA-256 + Ed25519
+  公鑰驗簽,壞簽章/無公鑰一律 fail-closed 拒絕)、A/B slot 套用與原子切換、健康檢查
+  失敗自動回滾(§3)、進度回報(at-least-once)、pause/resume/rollback 指令(§6 機載端)。
+- 指令與進度走 **JSON**(主題 `fleet/{id}/cmd/ota` 與 `fleet/{id}/ota/progress`),
+  刻意不動 proto 契約。公鑰來源 env `OTA_PUBLIC_KEY`(Ed25519 PEM);釋出私鑰存離線
+  HSM(security §4)。
+- **Phase 3(實體硬體代燒)尚未實作**,於程式對應位置以 `TODO` 標明:飛控雙 bank 交換 /
+  Jetson 代燒(§2 方案 A/B 實體 flash)、rootfs 分區實體寫入 + bootloader 啟動計數回退
+  (§3)。**Phase 1 TODO**:真實健康檢查(服務/DDS/雲連線,目前為佔位可注入)。
+  **Phase 2**:正式簽章鏈防降級(拒裝低於吊銷版本號)、相容性矩陣強制檢查(§5)、
+  灰度 ring 編排(§6)。詳見 [onboard/drone_agent/README.md](../../onboard/drone_agent/README.md)
+  「OTA 機載代理」節的對照表。
+
 ## 8. 版本紀錄
 
 | rev | 日期 | 變更 |
