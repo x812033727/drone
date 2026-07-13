@@ -257,3 +257,19 @@ body {
 /* ---- 分頁 ---- */
 .pager { display: flex; align-items: center; gap: 10px; margin-top: 12px; font-size: 13px; }
 .pager .muted { margin-right: auto; }
+
+/* ---- 告警檢視 ---- */
+.manager-head .filter {
+  display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--muted);
+}
+.manager-head .filter select {
+  background: var(--bg); color: var(--text); border: 1px solid var(--border);
+  border-radius: 6px; padding: 5px 8px; font-size: 13px; font-family: inherit;
+}
+.badge.k-cert { color: #d29922; border-color: #d29922; }
+.badge.k-ota { color: var(--accent); border-color: var(--accent); }
+.tab-badge {
+  display: inline-block; min-width: 16px; margin-left: 6px; padding: 0 5px;
+  font-size: 11px; line-height: 16px; text-align: center;
+  background: #f85149; color: #fff; border-radius: 999px; vertical-align: middle;
+}

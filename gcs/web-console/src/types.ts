@@ -218,6 +218,21 @@ export type CheckoutForm = {
   sandbox: boolean;
 };
 
+// ---- fleet-svc 告警契約(對 cloud/fleet_svc/fleet_svc/models.py 的 AlertEntry,openapi /api/v1/alerts)----
+// device_alerts:ingest 訂閱 fleet/+/alerts(憑證到期)與 fleet/+/ota/progress(OTA 進度)落表,
+// fleet-svc 依 org 隔離後查詢。kind 區分 cert(憑證到期)/ ota(OTA 進度)。
+export type AlertKind = "cert" | "ota";
+
+// GET /api/v1/alerts 的一筆告警。detail 依 kind 而異(OTA:phase/pct;cert:not_after/days_left…)。
+// 後端 kind 為自由字串,已知值見 AlertKind;detail 於回應恆存在(pydantic default_factory dict)。
+export type Alert = {
+  time: string; // ISO date-time
+  drone_id: string;
+  kind: string;
+  summary: string;
+  detail: Record<string, unknown>;
+};
+
 // 分頁列表回應:本體是陣列,total 走 X-Total-Count 標頭。
 export type Page<T> = {
   items: T[];
