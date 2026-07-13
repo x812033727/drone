@@ -20,6 +20,9 @@ from fleet_svc.models import (
     FirmwareCreate,
     Fleet,
     FleetCreate,
+    Org,
+    OrgCreate,
+    OrgUpdate,
 )
 
 # 在線判定門檻(秒):遙測 1 Hz,last_seen 超過此值視為離線
@@ -31,9 +34,11 @@ _DEVICE_COLS = (
 )
 _FLEET_COLS = "id, name, org_id, created_at"
 _FIRMWARE_COLS = "id, component, version, released_at, sbom_ref, created_at"
+_ORG_COLS = "org_id, name, plan, status, max_devices, max_fleets, created_at, updated_at"
 
 # PATCH 可更新的欄位白名單(防注入:欄位名不來自使用者輸入)
 _DEVICE_PATCH_FIELDS = ("name", "fleet_id", "model", "status")
+_ORG_PATCH_FIELDS = ("name", "plan", "status", "max_devices", "max_fleets")
 
 
 def build_device_patch(update: DeviceUpdate, start_index: int = 1) -> tuple[str, list[Any]]:
@@ -57,6 +62,32 @@ def build_device_patch(update: DeviceUpdate, start_index: int = 1) -> tuple[str,
     return ", ".join(sets), values
 
 
+def build_org_patch(update: OrgUpdate, start_index: int = 1) -> tuple[str, list[Any]]:
+    """把 OrgUpdate 的「有給」欄位組成 `col = $n` 片段與值(純函式,可單測)。
+
+    max_devices/max_fleets 顯式給 None 會被納入(→ SET = NULL,清除覆寫);
+    未給的欄位(exclude_unset)不動。enum(plan/status)→ 其字串值。
+    updated_at 由呼叫端在 SQL 內另行 set now(),不在此。
+    """
+    sets: list[str] = []
+    values: list[Any] = []
+    data = update.model_dump(exclude_unset=True)
+    idx = start_index
+    for field in _ORG_PATCH_FIELDS:
+        if field in data:
+            value = data[field]
+            if hasattr(value, "value"):  # enum → 其值
+                value = value.value
+            sets.append(f"{field} = ${idx}")
+            values.append(value)
+            idx += 1
+    return ", ".join(sets), values
+
+
+def _org(r: asyncpg.Record) -> Org:
+    return Org.model_validate(dict(r))
+
+
 def _device(r: asyncpg.Record) -> Device:
     return Device.model_validate(dict(r))
 
@@ -73,6 +104,74 @@ def _firmware(r: asyncpg.Record) -> Firmware:
 # org 語義:None = 不加 org 過濾(admin 跨 org / 內部呼叫);字串 = WHERE org_id = 該值。
 def _where(conds: list[str]) -> str:
     return (" WHERE " + " AND ".join(conds)) if conds else ""
+
+
+# ---- org 註冊表(租戶/計費控制面,admin only) ----
+async def create_org(conn: asyncpg.Connection, body: OrgCreate) -> Org:
+    """建立租戶。org_id 為主鍵;重複由呼叫端捕捉 UniqueViolation 轉 409。"""
+    r = await conn.fetchrow(
+        "INSERT INTO fleet.org (org_id, name, plan, status, max_devices, max_fleets) "
+        f"VALUES ($1, $2, $3, $4, $5, $6) RETURNING {_ORG_COLS}",
+        body.org_id,
+        body.name,
+        body.plan.value,
+        body.status.value,
+        body.max_devices,
+        body.max_fleets,
+    )
+    return _org(r)
+
+
+async def get_org(conn: asyncpg.Connection, org_id: str) -> Org | None:
+    """取單一租戶註冊列;不存在回 None(配額解析據此退回 env 全域預設)。"""
+    r = await conn.fetchrow(f"SELECT {_ORG_COLS} FROM fleet.org WHERE org_id = $1", org_id)
+    return _org(r) if r else None
+
+
+async def list_orgs(
+    conn: asyncpg.Connection,
+    status: str | None = None,
+    limit: int = 100,
+    offset: int = 0,
+) -> list[Org]:
+    conds: list[str] = []
+    params: list[Any] = []
+    if status is not None:
+        params.append(status)
+        conds.append(f"status = ${len(params)}")
+    params.append(limit)
+    lim = len(params)
+    params.append(offset)
+    off = len(params)
+    rows = await conn.fetch(
+        f"SELECT {_ORG_COLS} FROM fleet.org{_where(conds)} "
+        f"ORDER BY created_at DESC, org_id LIMIT ${lim} OFFSET ${off}",
+        *params,
+    )
+    return [_org(r) for r in rows]
+
+
+async def count_orgs(conn: asyncpg.Connection, status: str | None = None) -> int:
+    if status is not None:
+        return await conn.fetchval("SELECT count(*) FROM fleet.org WHERE status = $1", status)
+    return await conn.fetchval("SELECT count(*) FROM fleet.org")
+
+
+async def update_org(
+    conn: asyncpg.Connection, org_id: str, update: OrgUpdate
+) -> Org | None:
+    """套用 PATCH;無任何欄位則回目前列。updated_at 一律刷新為 now()。"""
+    set_clause, values = build_org_patch(update, start_index=1)
+    if not set_clause:
+        return await get_org(conn, org_id)
+    id_index = len(values) + 1
+    r = await conn.fetchrow(
+        f"UPDATE fleet.org SET {set_clause}, updated_at = now() "
+        f"WHERE org_id = ${id_index} RETURNING {_ORG_COLS}",
+        *values,
+        org_id,
+    )
+    return _org(r) if r else None
 
 
 # ---- fleet ----

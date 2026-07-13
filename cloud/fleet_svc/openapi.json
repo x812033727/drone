@@ -610,6 +610,199 @@
         "title": "HTTPValidationError",
         "type": "object"
       },
+      "Org": {
+        "description": "租戶註冊列。max_devices/max_fleets 為配額覆寫(None = 用 plan 預設)。",
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "max_devices": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Devices"
+          },
+          "max_fleets": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Fleets"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "org_id": {
+            "title": "Org Id",
+            "type": "string"
+          },
+          "plan": {
+            "$ref": "#/components/schemas/OrgPlan"
+          },
+          "status": {
+            "$ref": "#/components/schemas/OrgStatus"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "org_id",
+          "name",
+          "plan",
+          "status",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "Org",
+        "type": "object"
+      },
+      "OrgCreate": {
+        "description": "建立租戶。org_id 為租戶主鍵(對應 JWT `org` claim);plan 決定預設配額。\n\nmax_devices / max_fleets 為配額「覆寫」——省略/None 表示用 plan 預設。",
+        "properties": {
+          "max_devices": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Devices"
+          },
+          "max_fleets": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Fleets"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "org_id": {
+            "title": "Org Id",
+            "type": "string"
+          },
+          "plan": {
+            "$ref": "#/components/schemas/OrgPlan",
+            "default": "free"
+          },
+          "status": {
+            "$ref": "#/components/schemas/OrgStatus",
+            "default": "active"
+          }
+        },
+        "required": [
+          "org_id",
+          "name"
+        ],
+        "title": "OrgCreate",
+        "type": "object"
+      },
+      "OrgPlan": {
+        "description": "租戶方案:決定「未覆寫」時的預設配額(對應值在 limits.PLAN_QUOTAS)。",
+        "enum": [
+          "free",
+          "pro",
+          "enterprise"
+        ],
+        "title": "OrgPlan",
+        "type": "string"
+      },
+      "OrgStatus": {
+        "description": "租戶狀態:suspended 的寫入被服務層擋下(admin 平台管理者豁免)。",
+        "enum": [
+          "active",
+          "suspended"
+        ],
+        "title": "OrgStatus",
+        "type": "string"
+      },
+      "OrgUpdate": {
+        "description": "PATCH 租戶:所有欄位可選,只更新有給的(max_* 顯式給 null 可清除覆寫)。",
+        "properties": {
+          "max_devices": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Devices"
+          },
+          "max_fleets": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Fleets"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "plan": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OrgPlan"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "status": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OrgStatus"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "title": "OrgUpdate",
+        "type": "object"
+      },
       "UsageReport": {
         "description": "某租戶用量報表(GET /api/v1/usage)。\n\n- counters:當日(UTC)各計費指標計數(如 device_created / fleet_created)。\n- totals:歷來累計(跨所有日期)。\n- resources:當前現存資源數量(配額以此判定)。\n- limits:設定的配額上限(供前端顯示剩餘額度)。",
         "properties": {
@@ -1490,6 +1683,267 @@
           }
         ],
         "summary": "List Fleet Status"
+      }
+    },
+    "/api/v1/orgs": {
+      "get": {
+        "operationId": "list_orgs_api_v1_orgs_get",
+        "parameters": [
+          {
+            "description": "依狀態過濾:active / suspended",
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "依狀態過濾:active / suspended",
+              "title": "Status"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "maximum": 1000,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/Org"
+                  },
+                  "title": "Response List Orgs Api V1 Orgs Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Orgs"
+      },
+      "post": {
+        "operationId": "create_org_api_v1_orgs_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OrgCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Org"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Create Org"
+      }
+    },
+    "/api/v1/orgs/{org_id}": {
+      "get": {
+        "operationId": "get_org_api_v1_orgs__org_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "org_id",
+            "required": true,
+            "schema": {
+              "title": "Org Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Org"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Org"
+      },
+      "patch": {
+        "operationId": "update_org_api_v1_orgs__org_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "org_id",
+            "required": true,
+            "schema": {
+              "title": "Org Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OrgUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Org"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Update Org"
+      }
+    },
+    "/api/v1/orgs/{org_id}/usage": {
+      "get": {
+        "operationId": "get_org_usage_api_v1_orgs__org_id__usage_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "org_id",
+            "required": true,
+            "schema": {
+              "title": "Org Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UsageReport"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Org Usage"
       }
     },
     "/api/v1/status": {
