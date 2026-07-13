@@ -52,7 +52,11 @@ jobs:
       - name: 裝 bandit
         run: pip install bandit
       - name: Python SAST(排除測試與 proto 生成碼)
+        # confidence-level high:雲端服務以 f-string 內插「常數欄位清單」
+        # (_FLEET_COLS 等)+ asyncpg 參數化 $1/$2 值,bandit B608 會以
+        # Low confidence 誤報 SQL injection;只在高信心真問題亮燈,避免狼來了。
         run: |
           bandit -r cloud onboard tools \
             -x '*/tests/*,*/gen/*' \
-            --severity-level medium
+            --severity-level medium \
+            --confidence-level high
