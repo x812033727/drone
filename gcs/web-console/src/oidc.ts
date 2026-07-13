@@ -1,15 +1,16 @@
-// OIDC 授權碼 + PKCE 公開客戶端登入流程(SSO)。config 由 VITE_OIDC_* 提供;
-// 未設則停用(退回貼 token)。取得的 id_token 交由既有 auth/api 使用
-// (fleet-svc 以 JWT_JWKS_URL 對同一 IdP 的 JWKS 驗簽)。
+// OIDC 授權碼 + PKCE 公開客戶端登入流程(SSO)。設定走執行期 config(runtime config.js
+// → VITE_OIDC_* → 預設);未設則停用(退回貼 token)。取得的 id_token 交由既有 auth/api
+// 使用(fleet-svc 以 JWT_JWKS_URL 對同一 IdP 的 JWKS 驗簽)。
+
+import { config } from "./config";
 
 const CFG = {
-  authUrl: import.meta.env.VITE_OIDC_AUTH_URL,
-  tokenUrl: import.meta.env.VITE_OIDC_TOKEN_URL,
-  clientId: import.meta.env.VITE_OIDC_CLIENT_ID,
+  authUrl: config.oidcAuthUrl,
+  tokenUrl: config.oidcTokenUrl,
+  clientId: config.oidcClientId,
   redirectUri:
-    import.meta.env.VITE_OIDC_REDIRECT_URI ??
-    window.location.origin + window.location.pathname,
-  scope: import.meta.env.VITE_OIDC_SCOPE ?? "openid profile",
+    config.oidcRedirectUri ?? window.location.origin + window.location.pathname,
+  scope: config.oidcScope,
 };
 
 export function oidcEnabled(): boolean {

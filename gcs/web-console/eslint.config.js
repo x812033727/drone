@@ -3,7 +3,8 @@ import tseslint from "@typescript-eslint/eslint-plugin";
 import tsparser from "@typescript-eslint/parser";
 
 export default [
-  { ignores: ["dist/**", "node_modules/**"] },
+  // public/ 為靜態資產(如執行期 config.js 範例,於瀏覽器全域執行),非受檢原始碼。
+  { ignores: ["dist/**", "node_modules/**", "public/**"] },
   js.configs.recommended,
   {
     files: ["**/*.{ts,tsx}"],

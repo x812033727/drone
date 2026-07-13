@@ -7,6 +7,9 @@
   </head>
   <body>
     <div id="root"></div>
+    <!-- 執行期設定:須在 app bundle 前載入,設定 window.__APP_CONFIG__。
+         正式部署由容器 entrypoint 依環境變數產生;dev 用 public/config.js(全空=退回 VITE_/預設)。 -->
+    <script src="/config.js"></script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

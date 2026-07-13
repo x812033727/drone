@@ -45,24 +45,66 @@ VITE_DEV_API_TARGET=http://localhost:38091 npm run dev
 npm run lint && npm run typecheck && npm run build
 ```
 
-## 設定(建置期 env)
+## 設定(執行期注入 / 一份映像多環境)
+
+設定讀取採**執行期注入**,不再綁在 build。前端(`src/config.ts`)依序退回:
+
+1. **`window.__APP_CONFIG__`** —— 由容器啟動時 entrypoint 依**環境變數**產生的 `/config.js`
+   注入。**同一份 nginx 映像**改環境變數即可部署到不同環境(不同 OIDC/API/地圖),**免重 build**。
+2. **`import.meta.env.VITE_*`** —— build-time 內嵌,保留 dev(vite)與既有建置相容。
+3. 內建預設值。
+
+`index.html` 於 app bundle 前載入 `<script src="/config.js">`。空字串視為「未設定」而往下退回。
+
+### 可注入環境變數(容器)
+
+容器啟動時 `docker-entrypoint.d/40-render-app-config.sh`(由 nginx 官方 entrypoint 自動執行)
+讀下列變數產生 `/usr/share/nginx/html/config.js`。未設者留空 → 前端退回 `VITE_*` / 內建預設。
+
+| 環境變數 | 對應設定 | 預設(未設時) | 說明 |
+|----------|----------|----------------|------|
+| `APP_API_BASE` | `apiBase` | `/api/v1` | API 前綴(正式由 nginx 依前綴分流至 fleet/mission-svc) |
+| `APP_OIDC_AUTH_URL` | `oidcAuthUrl` | (停用 OIDC) | OIDC 授權端點 |
+| `APP_OIDC_TOKEN_URL` | `oidcTokenUrl` | (停用 OIDC) | OIDC token 端點 |
+| `APP_OIDC_CLIENT_ID` | `oidcClientId` | (停用 OIDC) | OIDC 公開客戶端 ID |
+| `APP_OIDC_REDIRECT_URI` | `oidcRedirectUri` | 目前頁面 origin+path | OIDC 回呼位址 |
+| `APP_OIDC_SCOPE` | `oidcScope` | `openid profile` | OIDC scope |
+| `APP_MAP_STYLE` | `mapStyle` | 內嵌 OSM raster | 私有部署可換離線/自建 tile 伺服器的 style URL |
+| `APP_CONFIG_PATH` | — | `/usr/share/nginx/html/config.js` | 產出檔路徑(通常不需改) |
+
+`oidcAuthUrl`/`oidcTokenUrl`/`oidcClientId` 三者齊備才啟用 SSO,否則退回貼 token。
+
+用法範例(一份映像、兩個環境):
+
+```bash
+docker run -e APP_API_BASE=/api/v1 \
+  -e APP_OIDC_AUTH_URL=https://idp.a.example/auth \
+  -e APP_OIDC_TOKEN_URL=https://idp.a.example/token \
+  -e APP_OIDC_CLIENT_ID=drone-web \
+  -e APP_MAP_STYLE=https://tiles.a.example/style.json \
+  web-console   # 換一組 env 即部署到另一環境,毋須重 build
+```
+
+### 建置期 env(dev / vite,仍相容)
 
 | 變數 | 預設 | 說明 |
 |------|------|------|
-| `VITE_API_BASE` | `/api/v1` | API 前綴(正式由 nginx 依前綴分流至 fleet/mission-svc) |
-| `VITE_MAP_STYLE` | 內嵌 OSM raster | 私有部署可換離線/自建 tile 伺服器的 style URL |
+| `VITE_API_BASE` / `VITE_OIDC_*` / `VITE_MAP_STYLE` | 同上 | build-time 內嵌;僅在無執行期注入時生效 |
 | `VITE_DEV_API_TARGET` | `http://localhost:38091` | 僅 dev:vite proxy 至 fleet-svc |
 | `VITE_DEV_MISSION_TARGET` | `http://localhost:38092` | 僅 dev:vite proxy 至 mission-svc(routes/missions) |
+
+dev(vite)以 `public/config.js`(各欄留空)提供 `/config.js`,故本地開發行為與過往一致
+(全數退回 `VITE_*` / 內建預設)。
 
 ## 未做(需設計決策,列 TODO)
 
 - 地圖點擊繪製航點(目前以表單輸入 lat/lon/alt 列)。
-- 執行期(而非建置期)注入 API base / OIDC 設定。
 - 租戶(org)管理 UI、token 靜默續期。
 - 韌體指派 UI(後端 `PUT /devices/{id}/firmware` 已存在,前端尚未接)。
 
 ## 部署
 
 `Dockerfile`(多階段:node 建置 → nginx)服務靜態檔並把 `/api` 反代 `fleetsvc:8091`
-(SSE 已關 buffering)。隨 compose `webconsole` 服務起(見 `cloud/deploy/compose`)。
-私有部署改 `VITE_MAP_STYLE` 指向離線 tile,即可資料與地圖皆不出機房。
+(SSE 已關 buffering)。啟動時 entrypoint 依環境變數產生 `/config.js`(見上「可注入環境變數」),
+故同一映像可多環境部署。隨 compose `webconsole` 服務起(見 `cloud/deploy/compose`)。
+私有部署設 `APP_MAP_STYLE`(或 build-time `VITE_MAP_STYLE`)指向離線 tile,即可資料與地圖皆不出機房。
