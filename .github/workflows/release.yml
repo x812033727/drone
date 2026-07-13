@@ -1,0 +1,99 @@
+name: release
+
+# 容器映像發布(客戶交付的 helm install 需要 registry 上有映像,否則 ImagePullBackOff)。
+# - push tag `v*` 或 workflow_dispatch:build + push 到 GHCR(+ provenance/SBOM attestation)
+# - pull_request(改到 Dockerfile/相依/本檔時):build-only 不推,驗證所有服務映像可建
+#
+# 映像命名對齊 Helm `drone.image` helper:ghcr.io/<owner>/drone/<svc>:<version>
+# ⚠️ GHCR package 預設 private;客戶免憑證拉取需在 GitHub 套件設定改 public,
+#    或在 values.yaml 設 imagePullSecrets(部署決策,非本流程可代)。
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "版本(不含 v 前綴,如 0.1.0)"
+        required: true
+  pull_request:
+    paths:
+      - "**/Dockerfile"
+      - ".github/workflows/release.yml"
+      - "cloud/*/requirements.txt"
+      - "gcs/web-console/package.json"
+      - "gcs/web-console/package-lock.json"
+
+permissions:
+  contents: read
+  packages: write
+  id-token: write
+  attestations: write
+
+jobs:
+  images:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - svc: fleet_svc
+            dockerfile: cloud/fleet_svc/Dockerfile
+          - svc: mission_svc
+            dockerfile: cloud/mission_svc/Dockerfile
+          - svc: log_svc
+            dockerfile: cloud/log_svc/Dockerfile
+          - svc: ingest
+            dockerfile: cloud/ingest/Dockerfile
+          - svc: web-console
+            dockerfile: gcs/web-console/Dockerfile
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: 決定版本與是否推送
+        id: meta
+        env:
+          EVENT: ${{ github.event_name }}
+          REF_NAME: ${{ github.ref_name }}
+          INPUT_VER: ${{ github.event.inputs.version }}
+          PR_NUM: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+          case "$EVENT" in
+            pull_request)
+              echo "push=false" >> "$GITHUB_OUTPUT"
+              echo "version=pr-${PR_NUM}" >> "$GITHUB_OUTPUT"
+              ;;
+            workflow_dispatch)
+              echo "push=true" >> "$GITHUB_OUTPUT"
+              echo "version=${INPUT_VER}" >> "$GITHUB_OUTPUT"
+              ;;
+            *)  # push tag v*
+              echo "push=true" >> "$GITHUB_OUTPUT"
+              echo "version=${REF_NAME#v}" >> "$GITHUB_OUTPUT"
+              ;;
+          esac
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: 登入 GHCR
+        if: steps.meta.outputs.push == 'true'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: build（tag/dispatch 時 push + 附掛 provenance/SBOM）
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ${{ matrix.dockerfile }}
+          push: ${{ steps.meta.outputs.push }}
+          tags: ghcr.io/${{ github.repository_owner }}/drone/${{ matrix.svc }}:${{ steps.meta.outputs.version }}
+          labels: |
+            org.opencontainers.image.title=drone-${{ matrix.svc }}
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.version=${{ steps.meta.outputs.version }}
+          provenance: ${{ steps.meta.outputs.push }}
+          sbom: ${{ steps.meta.outputs.push }}
