@@ -1,16 +1,24 @@
-"""snapshot() / is_stale() / flight_event() 純函式與 armed 邊緣偵測單元測試:
-不需 SITL,也不需 MQTT broker。"""
+"""snapshot() / is_stale() / flight_event() / append_bounded() 純函式、armed 邊緣
+偵測,以及離線緩衝 store-and-forward 補發順序的單元測試:不需 SITL、不需 MQTT
+broker(離線緩衝以 fake client 驅動)。"""
 
+import asyncio
+import json
 import time
+from collections import deque
 
+import aiomqtt
 import pytest
 from drone.v1 import events_pb2
 from drone_agent import __version__
+from drone_agent import publisher as publisher_mod
 from drone_agent.publisher import (
     _to_json,
+    append_bounded,
     flight_event,
     heartbeat,
     is_stale,
+    publish_loop,
     snapshot,
 )
 from drone_agent.state import TelemetryState
@@ -218,3 +226,112 @@ def test_heartbeat_json_wire_format() -> None:
     assert "\n" not in payload
     assert '"drone_id": "dev-1"' in payload
     assert '"uptime_s": "60"' in payload  # int64 依 proto3 JSON mapping 輸出為字串
+
+
+# ---- append_bounded:離線緩衝入列 / 上限丟最舊(G24)----
+
+
+def test_append_bounded_appends_within_limit() -> None:
+    buf: deque = deque()
+    assert append_bounded(buf, "a", 3) == 0
+    assert append_bounded(buf, "b", 3) == 0
+    assert list(buf) == ["a", "b"]  # 保留插入順序(FIFO)
+
+
+def test_append_bounded_drops_oldest_when_full() -> None:
+    """滿了丟**最舊**(左端),回傳丟棄筆數 1;新值入右端,順序仍為 FIFO。"""
+    buf: deque = deque(["a", "b", "c"])
+    dropped = append_bounded(buf, "d", 3)
+    assert dropped == 1
+    assert list(buf) == ["b", "c", "d"]  # 最舊 a 被丟,d 入列
+
+
+def test_append_bounded_zero_max_never_enqueues() -> None:
+    """上限 <= 0 視為不緩衝:item 不入列,直接算丟棄 1 筆。"""
+    buf: deque = deque()
+    assert append_bounded(buf, "x", 0) == 1
+    assert list(buf) == []
+
+
+def test_append_bounded_shrinks_overfull_buffer() -> None:
+    """若既有長度已超過新上限(如 env 調小),補一筆會一路丟到符合上限。"""
+    buf: deque = deque(["a", "b", "c", "d", "e"])
+    dropped = append_bounded(buf, "f", 3)
+    assert dropped == 3  # 丟 a,b,c 後才容得下 f
+    assert list(buf) == ["d", "e", "f"]
+
+
+# ---- publish_loop:斷線→重連補發順序(store-and-forward,fake client)----
+
+
+class _RecordingClient:
+    """記錄所有 publish 的 fake aiomqtt.Client(context manager)。"""
+
+    def __init__(self, published: list) -> None:
+        self.published = published
+
+    async def __aenter__(self) -> "_RecordingClient":
+        return self
+
+    async def __aexit__(self, *exc) -> bool:
+        return False
+
+    async def publish(self, topic, payload=None, qos=0) -> None:
+        self.published.append((topic, payload))
+
+
+class _FailFirstClient(_RecordingClient):
+    """第一次連線 publish 即拋 MqttError(模擬斷線),迫使外層重連。"""
+
+    async def publish(self, topic, payload=None, qos=0) -> None:
+        raise aiomqtt.MqttError("模擬斷線")
+
+
+def _buffered_snapshot(ms: int) -> object:
+    """取樣時間鎖成 ms 的快照(用來驗補發順序保留原取樣時間)。"""
+    state = TelemetryState(last_update_wall=ms / 1000.0, last_update_monotonic=1.0)
+    return snapshot(state, "dev-1")
+
+
+def test_publish_loop_replays_buffer_in_order_after_reconnect(monkeypatch) -> None:
+    """離線期堆積的 3 筆遙測,重連後**依原取樣順序** FIFO 補發;
+    publish 中途斷線的那筆不 popleft(重連補發),語意 at-least-once。"""
+    monkeypatch.setattr(publisher_mod, "RECONNECT_DELAY_S", 0.0)
+    published: list = []
+
+    # 第一個連線 fail(模擬斷線),之後的連線正常記錄
+    clients = iter([_FailFirstClient(published)])
+
+    def _client_factory(**_kwargs):
+        return next(clients, _RecordingClient(published))
+
+    monkeypatch.setattr(publisher_mod.aiomqtt, "Client", _client_factory)
+
+    buffer: deque = deque(_buffered_snapshot(ms) for ms in (1000, 2000, 3000))
+    state = TelemetryState()
+
+    async def scenario() -> None:
+        task = asyncio.create_task(
+            publish_loop(state, buffer, "h", 1883, "dev-1", rate=1000.0)
+        )
+        # 等到緩衝被補發清空(或逾時保護)
+        for _ in range(200):
+            await asyncio.sleep(0.005)
+            if not buffer:
+                break
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
+
+    asyncio.run(scenario())
+
+    tele = [payload for (topic, payload) in published if topic.endswith("/telemetry")]
+    times = [json.loads(p)["unix_time_ms"] for p in tele]
+    # 首筆 1000 因第一連線斷線被重試,故可能出現兩次(at-least-once);
+    # 去除相鄰重複後,順序必為原取樣順序 1000→2000→3000,且無漏筆
+    deduped = [t for i, t in enumerate(times) if i == 0 or t != times[i - 1]]
+    assert deduped == ["1000", "2000", "3000"]
+    assert times[0] == "1000"  # 斷線重試的那筆就是最舊的首筆
+    assert not buffer  # 全數補發完,緩衝清空
