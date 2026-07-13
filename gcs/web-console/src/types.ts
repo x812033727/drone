@@ -180,6 +180,44 @@ export type UsageReport = {
   limits: Record<string, number>;
 };
 
+// ---- fleet-svc 訂閱金流契約(綠界 ECPay,對 openapi 的 billing schema)----
+
+// POST /api/v1/billing/checkout 的請求本體(為本 org 指定欲付費啟用的方案;free 不可結帳)。
+export type BillingCheckoutRequest = {
+  plan: OrgPlan;
+};
+
+// 一筆結帳/付款交易(GET /billing/subscription 的最近交易)。
+export type BillingTransaction = {
+  id: number;
+  org_id: string;
+  plan: OrgPlan;
+  amount: number;
+  trade_no: string;
+  status: string; // pending / paid / failed
+  at: string;
+};
+
+// GET /api/v1/billing/subscription:本 org 目前方案/狀態/月費 + 最近交易。
+export type Subscription = {
+  org_id: string;
+  plan: OrgPlan;
+  status: OrgStatus;
+  price: number; // 目前方案月費(TWD)
+  sandbox: boolean; // 金流是否為沙箱模式(未設正式憑證)
+  recent_transactions: BillingTransaction[];
+};
+
+// POST /api/v1/billing/checkout 的回應:前端據此組表單 auto-submit 導向綠界結帳頁。
+// - action_url:綠界 AioCheckOut 端點(沙箱走測試環境)。
+// - params:表單欄位(含 CheckMacValue),原樣 POST 給綠界。
+// - sandbox:true 表示未設正式憑證,用綠界公開測試參數(不會真實扣款)。
+export type CheckoutForm = {
+  action_url: string;
+  params: Record<string, string>;
+  sandbox: boolean;
+};
+
 // 分頁列表回應:本體是陣列,total 走 X-Total-Count 標頭。
 export type Page<T> = {
   items: T[];
