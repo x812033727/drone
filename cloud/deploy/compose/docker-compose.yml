@@ -153,6 +153,17 @@ services:
       - mediamtx-recordings:/recordings
     restart: unless-stopped
 
+  webconsole:
+    build:
+      context: ../../..
+      dockerfile: gcs/web-console/Dockerfile
+    ports:
+      - "${WEBCONSOLE_PORT:-8080}:80"
+    depends_on:
+      fleetsvc:
+        condition: service_healthy
+    restart: unless-stopped
+
 volumes:
   timescale-data:
   ulog-archive:

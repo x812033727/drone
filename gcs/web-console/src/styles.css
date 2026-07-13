@@ -1,0 +1,61 @@
+:root {
+  --bg: #0f1419;
+  --panel: #1a2129;
+  --border: #2b3540;
+  --text: #e6edf3;
+  --muted: #8b98a5;
+  --online: #3fb950;
+  --offline: #6e7681;
+  --accent: #2f81f7;
+}
+
+* { box-sizing: border-box; }
+
+html, body, #root { height: 100%; margin: 0; }
+
+body {
+  font-family: system-ui, -apple-system, "Segoe UI", "Noto Sans TC", sans-serif;
+  background: var(--bg);
+  color: var(--text);
+}
+
+.app { display: flex; flex-direction: column; height: 100%; }
+
+.topbar {
+  display: flex; align-items: center; gap: 12px;
+  padding: 10px 16px; background: var(--panel);
+  border-bottom: 1px solid var(--border);
+}
+.topbar h1 { font-size: 16px; margin: 0; font-weight: 600; }
+.topbar .stat { color: var(--muted); font-size: 13px; }
+.topbar .conn { margin-left: auto; font-size: 12px; }
+.dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 5px; }
+.dot.on { background: var(--online); }
+.dot.off { background: var(--offline); }
+
+.main { display: flex; flex: 1; min-height: 0; }
+
+.sidebar {
+  width: 320px; overflow-y: auto; background: var(--panel);
+  border-right: 1px solid var(--border);
+}
+.map { flex: 1; min-width: 0; }
+
+.device {
+  padding: 10px 14px; border-bottom: 1px solid var(--border); cursor: pointer;
+}
+.device:hover { background: #222b35; }
+.device .row1 { display: flex; align-items: center; gap: 8px; }
+.device .serial { font-weight: 600; }
+.device .mode { color: var(--muted); font-size: 12px; margin-left: auto; }
+.device .row2 { color: var(--muted); font-size: 12px; margin-top: 4px; display: flex; gap: 12px; }
+.battery.low { color: #f85149; }
+
+.marker {
+  width: 16px; height: 16px; border-radius: 50%;
+  border: 2px solid #fff; box-shadow: 0 0 0 1px rgba(0,0,0,.4);
+}
+.marker.on { background: var(--online); }
+.marker.off { background: var(--offline); }
+
+.empty { padding: 20px 14px; color: var(--muted); font-size: 13px; }
