@@ -17,12 +17,26 @@ log = logging.getLogger("ingest")
 
 MQTT_HOST = os.environ.get("MQTT_HOST", "localhost")
 MQTT_PORT = int(os.environ.get("MQTT_PORT", "1883"))
+# mTLS client 憑證(C2b):三者皆設則走 TLS(對 mqtt-tls 8883 監聽器);
+# 未設則明文(向後相容)。ingest 用後端服務身分(backend 憑證,ACL 讀全機隊)。
+MQTT_TLS_CA = os.environ.get("MQTT_TLS_CA")
+MQTT_TLS_CERT = os.environ.get("MQTT_TLS_CERT")
+MQTT_TLS_KEY = os.environ.get("MQTT_TLS_KEY")
 PG_DSN = os.environ.get("PG_DSN", "postgresql://drone:dronedev@localhost:5432/drone")
 RECONNECT_S = 5
 PG_CONNECT_ATTEMPTS = 30  # 啟動時等 DB 就緒:最多 30 次、每 2 秒
 PG_CONNECT_RETRY_S = 2
 PG_COMMAND_TIMEOUT_S = 10  # DB black-hole 防護:單一指令逾時
 MQTT_MAX_QUEUED_IN = 10_000  # 入站佇列上限,滿了丟新訊息,避免 DB 慢時記憶體無限成長
+
+def _tls_from_env() -> "aiomqtt.TLSParameters | None":
+    """MQTT_TLS_CA/CERT/KEY 三者皆設 → mTLS 參數;否則 None(明文,向後相容)。"""
+    if MQTT_TLS_CA and MQTT_TLS_CERT and MQTT_TLS_KEY:
+        return aiomqtt.TLSParameters(
+            ca_certs=MQTT_TLS_CA, certfile=MQTT_TLS_CERT, keyfile=MQTT_TLS_KEY
+        )
+    return None
+
 
 def _insert_sql(table: str, columns: tuple[str, ...]) -> str:
     return (
@@ -112,6 +126,7 @@ async def run() -> None:
                 MQTT_PORT,
                 identifier="ingest",
                 max_queued_incoming_messages=MQTT_MAX_QUEUED_IN,
+                tls_params=_tls_from_env(),
             ) as client:
                 await client.subscribe("fleet/+/telemetry", qos=1)
                 await client.subscribe("fleet/+/mission/progress", qos=1)
