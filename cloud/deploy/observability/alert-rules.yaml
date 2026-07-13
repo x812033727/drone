@@ -1,0 +1,103 @@
+# Prometheus 告警規則 —— drone 雲端平台可觀測性(G13 / P1)
+#
+# 純規則檔,供客戶接自己的 Prometheus。放進 Prometheus 設定的 rule_files:
+#
+#   rule_files:
+#     - /etc/prometheus/rules/alert-rules.yaml
+#
+# 前提:Prometheus 需先抓取各服務的 /metrics(見 docs/50-project/phase1/slo.md)。
+# 本檔以 `job` 標籤區分服務,對齊 cloud/deploy/compose 的服務名:
+#   fleetsvc(:8091)、missionsvc(:8092)、logsvc(:8090)、ingest(:9090 metrics 埠)。
+# 客戶若用不同 job 名,請一併調整下方 `job=~"..."` 選擇器。
+#
+# 指標來源:
+# - FastAPI 服務(fleet/mission/log):http_requests_total{method,path,status}、
+#   http_request_duration_seconds_bucket、process_*、python_gc_*。
+# - ingest:ingest_messages_total{route,result}、ingest_db_writes_total{result}、
+#   ingest_messages_inflight、process_*。
+# - up{job=...}:Prometheus 抓取目標存活的內建指標。
+
+groups:
+  - name: drone-platform-availability
+    rules:
+      # 服務 down:抓取目標連續 2 分鐘 up==0(涵蓋四服務)。
+      - alert: ServiceDown
+        expr: up{job=~"fleetsvc|missionsvc|logsvc|ingest"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "服務不可用:{{ $labels.job }}({{ $labels.instance }})"
+          description: "{{ $labels.job }} 的 /metrics 已連續 2 分鐘抓取失敗;對照 99.5% 可用性 SLO。"
+
+  - name: drone-platform-http
+    rules:
+      # HTTP 5xx 率高:任一 FastAPI 服務 5 分鐘 5xx 佔比 > 5%(至少要有流量)。
+      - alert: HighHttp5xxRate
+        expr: |
+          (
+            sum by (job) (rate(http_requests_total{status=~"5.."}[5m]))
+            /
+            sum by (job) (rate(http_requests_total[5m]))
+          ) > 0.05
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "HTTP 5xx 率偏高:{{ $labels.job }}"
+          description: "{{ $labels.job }} 過去 5 分鐘 5xx 佔比 {{ $value | humanizePercentage }}(門檻 5%)。"
+
+      # API 延遲高:p95 請求延遲 5 分鐘 > 1s(對照延遲 SLO)。
+      - alert: HighApiLatencyP95
+        expr: |
+          histogram_quantile(
+            0.95,
+            sum by (job, le) (rate(http_request_duration_seconds_bucket[5m]))
+          ) > 1
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "API p95 延遲偏高:{{ $labels.job }}"
+          description: "{{ $labels.job }} 過去 5 分鐘 p95 延遲 {{ $value | humanizeDuration }}(門檻 1s)。"
+
+  - name: drone-platform-ingest
+    rules:
+      # ingest DB 寫入失敗率高:5 分鐘寫入失敗佔比 > 10%。
+      - alert: IngestDbWriteFailureRate
+        expr: |
+          (
+            sum(rate(ingest_db_writes_total{result="error"}[5m]))
+            /
+            clamp_min(sum(rate(ingest_db_writes_total[5m])), 1e-9)
+          ) > 0.1
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "ingest DB 寫入失敗率偏高"
+          description: "ingest 過去 5 分鐘落庫失敗佔比 {{ $value | humanizePercentage }}(門檻 10%);TimescaleDB 可能不可用或壅塞。"
+
+      # 遙測落庫停滯:仍有訊息解析成功,但 10 分鐘內完全沒有成功落庫。
+      # (區分「沒資料進來」與「資料進來卻寫不進 DB」——後者才是故障。)
+      - alert: TelemetryIngestionStalled
+        expr: |
+          sum(rate(ingest_messages_total{result="parsed"}[10m])) > 0
+          and
+          sum(rate(ingest_db_writes_total{result="ok"}[10m])) == 0
+        for: 10m
+        labels:
+          severity: critical
+        annotations:
+          summary: "遙測落庫停滯"
+          description: "ingest 仍在解析訊息,但過去 10 分鐘無任何成功落庫;端到端遙測管線中斷。"
+
+      # 入站佇列積壓:處理中訊息長時間偏高,代表 DB 慢或消費不及。
+      - alert: IngestBacklogHigh
+        expr: ingest_messages_inflight > 100
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "ingest 入站處理積壓"
+          description: "ingest_messages_inflight={{ $value }} 連續 5 分鐘 > 100;下游落庫可能跟不上入站速率。"

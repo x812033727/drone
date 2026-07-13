@@ -15,7 +15,7 @@ from uuid import UUID
 import asyncpg
 from fastapi import Depends, FastAPI, HTTPException, Query
 
-from mission_svc import dispatch, repo
+from mission_svc import dispatch, metrics, repo
 from mission_svc.auth import AUTH_ENABLED, require_role
 from mission_svc.consumer import run_consumer
 from mission_svc.migrate import apply_migrations
@@ -69,6 +69,7 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="mission-svc", lifespan=lifespan)
+metrics.instrument(app)  # /metrics(Prometheus)+ HTTP 指標 middleware(G13)
 
 if not AUTH_ENABLED:
     log.warning("⚠ JWT 認證未啟用(dev 模式,全放行)——正式部署須設 JWT_SECRET 或 JWT_JWKS_URL")

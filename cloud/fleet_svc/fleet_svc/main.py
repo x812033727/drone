@@ -18,7 +18,7 @@ import asyncpg
 from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
 
-from fleet_svc import repo
+from fleet_svc import metrics, repo
 from fleet_svc.auth import AUTH_ENABLED, authorize_token, require_role
 from fleet_svc.consumer import run_consumer
 from fleet_svc.hub import TelemetryHub
@@ -83,6 +83,7 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="fleet-svc", lifespan=lifespan)
+metrics.instrument(app)  # /metrics(Prometheus)+ HTTP 指標 middleware(G13)
 
 if not AUTH_ENABLED:
     log.warning("⚠ JWT 認證未啟用(dev 模式,全放行)——正式部署須設 JWT_SECRET 或 JWT_JWKS_URL")
