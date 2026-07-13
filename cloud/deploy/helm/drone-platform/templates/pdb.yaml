@@ -1,0 +1,24 @@
+{{- if .Values.pdb.enabled }}
+# G17b PodDisruptionBudget：多副本服務於節點排空/叢集升級時保最小可用數。
+# 僅對 replicas>1 的服務產生 PDB——單副本設 minAvailable:1 會擋住節點自願排空
+# （唯一 Pod 無法被驅逐），故略過（預設各服務 replicas=1，此檔渲染為空）。
+{{- range $svc := tuple "fleetsvc" "missionsvc" "ingest" "logsvc" "webconsole" }}
+{{- $cfg := index $.Values $svc }}
+{{- if gt (int $cfg.replicas) 1 }}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "drone.fullname" $ }}-{{ $svc }}
+  labels:
+    {{- include "drone.labels" $ | nindent 4 }}
+    app.kubernetes.io/component: {{ $svc }}
+spec:
+  minAvailable: {{ $.Values.pdb.minAvailable }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: {{ $.Release.Name }}
+      app.kubernetes.io/component: {{ $svc }}
+{{- end }}
+{{- end }}
+{{- end }}

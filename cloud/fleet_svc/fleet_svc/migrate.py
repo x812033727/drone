@@ -52,3 +52,42 @@ async def apply_migrations(
         log.info("已套用 migration:%s", version)
         newly.append(version)
     return newly
+
+
+async def _run_cli() -> None:
+    """CLI 入口:連 PG_DSN、套用 migration 後結束。供 Helm pre-upgrade hook Job 呼叫。
+
+    DB 未就緒時重試(同 main.py 的等待策略),避免 hook 在 DB 剛起時誤判失敗。
+    """
+    import asyncio
+    import os
+
+    dsn = os.environ.get("PG_DSN", "postgresql://drone:dronedev@localhost:5432/drone")
+    attempts, retry_s = 30, 2
+    conn: asyncpg.Connection | None = None
+    for attempt in range(1, attempts + 1):
+        try:
+            conn = await asyncpg.connect(dsn, command_timeout=30)
+            break
+        except (asyncpg.PostgresError, OSError) as e:
+            if attempt == attempts:
+                raise
+            log.warning("PostgreSQL 連線失敗(%d/%d):%s;重試", attempt, attempts, e)
+            await asyncio.sleep(retry_s)
+    assert conn is not None
+    try:
+        applied = await apply_migrations(conn)
+        log.info("migration 完成:本次套用 %d 檔:%s", len(applied), ", ".join(applied) or "(無)")
+    finally:
+        await conn.close()
+
+
+def main() -> None:
+    import asyncio
+
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
+    asyncio.run(_run_cli())
+
+
+if __name__ == "__main__":
+    main()

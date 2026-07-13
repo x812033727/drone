@@ -1,0 +1,93 @@
+{{- if .Values.backup.enabled }}
+# G15 TimescaleDB 備份：CronJob 定期 pg_dump（自訂格式 -Fc，含壓縮、可 pg_restore 選擇性還原）
+# 到本地備份 PVC，並清除超過 retentionDays 的舊檔。用 timescaledb 同一映像確保 pg_dump
+# 版本與 server 相符。異地/物件儲存見 backup.s3（預設關）與 README「備份/還原」段。
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "drone.fullname" . }}-backup
+  labels:
+    {{- include "drone.labels" . | nindent 4 }}
+    app.kubernetes.io/component: backup
+spec:
+  accessModes: ["ReadWriteOnce"]
+  {{- with .Values.backup.storageClassName }}
+  storageClassName: {{ . | quote }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.backup.storage }}
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ include "drone.fullname" . }}-backup
+  labels:
+    {{- include "drone.labels" . | nindent 4 }}
+    app.kubernetes.io/component: backup
+spec:
+  schedule: {{ .Values.backup.schedule | quote }}
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      activeDeadlineSeconds: 3600
+      template:
+        metadata:
+          labels:
+            {{- include "drone.labels" . | nindent 12 }}
+            app.kubernetes.io/component: backup
+        spec:
+          restartPolicy: OnFailure
+          # postgres 映像以 uid 999 執行；fsGroup 讓備份 PVC 可寫。
+          securityContext:
+            fsGroup: 999
+          {{- with .Values.imagePullSecrets }}
+          imagePullSecrets: {{- toYaml . | nindent 12 }}
+          {{- end }}
+          containers:
+            - name: pg-dump
+              image: {{ .Values.timescaledb.image | quote }}
+              imagePullPolicy: {{ .Values.image.pullPolicy }}
+              securityContext:
+                {{- include "drone.thirdPartyContainerSecurityContext" . | nindent 16 }}
+              env:
+                - name: PGPASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ include "drone.secretName" . }}
+                      key: PG_PASSWORD
+                - name: PGHOST
+                  value: {{ include "drone.fullname" . }}-timescaledb
+                - name: RETENTION_DAYS
+                  value: {{ .Values.backup.retentionDays | quote }}
+              command:
+                - /bin/sh
+                - -c
+                - |
+                  set -eu
+                  TS=$(date +%Y%m%d-%H%M%S)
+                  OUT="/backup/drone-${TS}.dump"
+                  echo "[backup] pg_dump -> ${OUT}"
+                  pg_dump -h "${PGHOST}" -U drone -d drone -Fc -f "${OUT}"
+                  echo "[backup] 清除超過 ${RETENTION_DAYS} 天的舊備份"
+                  find /backup -name 'drone-*.dump' -type f -mtime "+${RETENTION_DAYS}" -print -delete
+                  {{- if .Values.backup.s3.enabled }}
+                  # 異地外送（需映像內含 aws CLI 與憑證環境變數，見 README）
+                  echo "[backup] 外送 ${OUT} -> {{ .Values.backup.s3.bucket }}"
+                  aws s3 cp "${OUT}" "{{ .Values.backup.s3.bucket }}/"
+                  {{- end }}
+                  echo "[backup] 完成"
+              resources:
+                requests: { cpu: 100m, memory: 128Mi }
+                limits: { cpu: 500m, memory: 512Mi }
+              volumeMounts:
+                - name: backup
+                  mountPath: /backup
+          volumes:
+            - name: backup
+              persistentVolumeClaim:
+                claimName: {{ include "drone.fullname" . }}-backup
+{{- end }}
