@@ -24,6 +24,8 @@ mkdir -p "$CERTS"
 cp "$PKI_CA_DIR/certs/ca.cert.pem" "$CERTS/ca.cert.pem"
 cp "$PKI_CA_DIR/issued/localhost.server.cert.pem" "$CERTS/server.cert.pem"
 cp "$PKI_CA_DIR/issued/localhost.server.key.pem" "$CERTS/server.key.pem"
+"$PKI/gen_crl.sh" >/dev/null # crlfile 需存在才能起 broker(此處無吊銷=空 CRL)
+cp "$PKI_CA_DIR/crl/ca.crl.pem" "$CERTS/ca.crl.pem"
 # 容器內 mosquitto(uid 1883)需能讀掛入檔;測試 CA 放寬權限無妨
 chmod 644 "$CERTS"/*.pem
 
