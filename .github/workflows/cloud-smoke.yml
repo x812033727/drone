@@ -19,12 +19,12 @@ jobs:
       run:
         working-directory: cloud/deploy/compose
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: 起雲端最小棧(等待 healthcheck)
         run: docker compose up -d --build --wait --wait-timeout 180
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
 
@@ -106,7 +106,7 @@ jobs:
       run:
         working-directory: cloud/deploy/compose
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: 裝 ffmpeg
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg
