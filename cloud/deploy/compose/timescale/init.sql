@@ -118,6 +118,24 @@ CREATE TABLE flight_logs (
 );
 CREATE INDEX ON flight_logs (drone_id, time DESC);
 
+-- 告警閉環(ingest 訂閱 fleet/+/alerts 與 fleet/+/ota/progress → 此表)。
+-- 兩類 proto 契約外的純 JSON 告警統一落此表,kind 區分:
+--   kind='cert':裝置憑證將到期(cert_monitor.py 的 expiry_alert_json)。
+--   kind='ota' :OTA 進度/終態(ota.py 的 progress_dict;summary=state)。
+-- drone_id 一律取自主題(fleet/{drone_id}/...);OTA 進度 payload 本身不含 drone_id。
+-- summary = 該告警主旨(cert:alert 名;ota:state);detail = 其餘欄位(jsonb)。
+-- fleet-svc 以 GET /api/v1/alerts 供運維查詢(join fleet.device 做多租戶隔離)。
+-- 量小(天/事件級,非高頻),Phase 0 一般表即可,不設 hypertable/保留政策。
+CREATE TABLE device_alerts (
+    time     timestamptz NOT NULL,
+    drone_id text        NOT NULL,
+    kind     text        NOT NULL,   -- 'cert' | 'ota'
+    summary  text        NOT NULL,   -- cert:alert 名;ota:state
+    detail   jsonb                    -- 其餘欄位(days_remaining / update_id / version……)
+);
+CREATE INDEX ON device_alerts (drone_id, time DESC);
+CREATE INDEX ON device_alerts (time DESC);
+
 -- ============================================================================
 -- 資料保留 / 壓縮政策(G20)—— 只對高頻遙測/感測器 hypertable。
 --

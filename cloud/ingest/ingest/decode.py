@@ -2,9 +2,17 @@
 
 注意:proto3 JSON mapping 中 int64 序列化為字串,json_format.Parse 會處理;
 不要自己 json.loads 後取欄位。
+
+例外:告警閉環主題(``fleet/{id}/alerts`` 與 ``fleet/{id}/ota/progress``)刻意走
+**proto 契約之外的純 JSON**(見 onboard/drone_agent 的 cert_monitor.py / ota.py:
+events.proto 無憑證/OTA 型別,加型別會動 proto 守門)。這兩者以 ``json.loads`` 直接
+解析(非 json_format),且 ``ota/progress`` 的 payload **不含 drone_id**——drone_id
+取自主題(``fleet/{drone_id}/...``),故其 row 函式簽章多收一個 drone_id 參數。
 """
 
+import json
 from datetime import datetime, timezone
+from typing import Any
 
 from drone.v1 import device_pb2, events_pb2, mission_pb2, sensors_pb2, telemetry_pb2
 from google.protobuf import json_format
@@ -52,6 +60,16 @@ MISSION_COLUMNS = (
     "state",
 )
 
+# 告警閉環(cert 到期告警 + OTA 進度)統一落 device_alerts 表(kind 區分)。
+# detail 為 jsonb(落庫 SQL 以 ::jsonb 轉),存該類告警其餘欄位供運維檢視。
+DEVICE_ALERT_COLUMNS = (
+    "time",
+    "drone_id",
+    "kind",
+    "summary",
+    "detail",
+)
+
 # v0.4.0 高頻感測器流(fleet/{id}/sensors/*,QoS 0)
 SENSOR_ATTITUDE_COLUMNS = (
     "time",
@@ -92,6 +110,63 @@ SENSOR_LOCAL_POSITION_COLUMNS = (
 
 def _ms_to_dt(unix_time_ms: int) -> datetime:
     return datetime.fromtimestamp(unix_time_ms / 1000.0, tz=timezone.utc)
+
+
+def _json_obj(payload: bytes | str) -> dict[str, Any]:
+    """把純 JSON payload 解析成 dict;非物件/壞 JSON/非 UTF-8 一律 raise(呼叫端丟棄)。
+
+    告警/OTA 進度走 proto 契約外的純 JSON(見模組 docstring),故不用 json_format。
+    ``json.loads`` 直接吃 bytes(py3);壞 payload 的例外由 ingest handle() 統一吸收。
+    """
+    obj = json.loads(payload)
+    if not isinstance(obj, dict):
+        raise ValueError("alert/ota payload 必須是 JSON 物件")
+    return obj
+
+
+def _require_ms(obj: dict[str, Any]) -> int:
+    """取 unix_time_ms(告警/OTA 皆為 JSON number → int);缺漏/型別錯 raise。"""
+    ms = obj.get("unix_time_ms")
+    if not isinstance(ms, int) or isinstance(ms, bool):
+        raise ValueError("payload 缺 unix_time_ms(或非整數)")
+    return ms
+
+
+def device_alert_row(payload: bytes | str, drone_id: str) -> tuple:
+    """``fleet/{id}/alerts`` 純 JSON 告警 → device_alerts row(kind='cert')。
+
+    對齊 cert_monitor.py 的 expiry_alert_json:{drone_id, unix_time_ms, alert,
+    days_remaining, not_after_unix_ms}。drone_id 以**主題**為準(payload 內若有
+    亦忽略,主題才是裝置身分權威);summary=alert 名,其餘欄位入 detail(jsonb)。
+    """
+    obj = _json_obj(payload)
+    alert = obj.get("alert")
+    if not isinstance(alert, str) or not alert:
+        raise ValueError("alert payload 缺 alert 欄位(或非字串)")
+    time = _ms_to_dt(_require_ms(obj))
+    detail = {k: v for k, v in obj.items() if k not in ("drone_id", "unix_time_ms", "alert")}
+    return (time, drone_id, "cert", alert, json.dumps(detail, ensure_ascii=False))
+
+
+def ota_progress_row(payload: bytes | str, drone_id: str) -> tuple:
+    """``fleet/{id}/ota/progress`` 純 JSON 進度 → device_alerts row(kind='ota')。
+
+    對齊 ota.py 的 progress_dict:{update_id, component, version, state,
+    unix_time_ms, detail}。**payload 不含 drone_id**,取自主題;summary=state,
+    其餘(update_id/component/version/detail)入 detail(jsonb)供運維追 OTA 進度。
+    """
+    obj = _json_obj(payload)
+    state = obj.get("state")
+    if not isinstance(state, str) or not state:
+        raise ValueError("ota progress payload 缺 state 欄位(或非字串)")
+    time = _ms_to_dt(_require_ms(obj))
+    detail = {
+        "update_id": obj.get("update_id"),
+        "component": obj.get("component"),
+        "version": obj.get("version"),
+        "detail": obj.get("detail"),
+    }
+    return (time, drone_id, "ota", state, json.dumps(detail, ensure_ascii=False))
 
 
 def telemetry_row(payload: bytes | str) -> tuple:

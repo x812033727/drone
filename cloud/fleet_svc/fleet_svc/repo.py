@@ -10,6 +10,7 @@ from uuid import UUID
 import asyncpg
 
 from fleet_svc.models import (
+    AlertEntry,
     AuditEntry,
     BillingTransaction,
     Device,
@@ -609,3 +610,66 @@ async def count_audit(conn: asyncpg.Connection, resource_type: str | None = None
             "SELECT count(*) FROM fleet.audit_log WHERE resource_type = $1", resource_type
         )
     return await conn.fetchval("SELECT count(*) FROM fleet.audit_log")
+
+
+# ---- 告警閉環(cert 到期 / OTA 進度;ingest 落 public.device_alerts) ----
+# 多租戶(G11):device_alerts.drone_id = 裝置 serial。非 admin 一律 join fleet.device
+# 以 org_id 過濾(僅見本 org 裝置的告警;未註冊序號的告警對非 admin 不可見——安全預設)。
+# admin(org=None):不 join、看全部(含未註冊序號的告警)。
+_ALERT_COLS = "a.time, a.drone_id, a.kind, a.summary, a.detail"
+
+
+def _alert(r: asyncpg.Record) -> AlertEntry:
+    d = dict(r)
+    # jsonb 由 asyncpg 以字串回傳(未設 codec);轉回 dict 供模型(同 _audit)
+    detail = d.get("detail")
+    if isinstance(detail, str):
+        d["detail"] = json.loads(detail)
+    elif detail is None:
+        d["detail"] = {}
+    return AlertEntry.model_validate(d)
+
+
+def _alert_query(
+    select: str, org: str | None, kind: str | None
+) -> tuple[str, list[Any], int]:
+    """組告警查詢的 FROM/JOIN/WHERE 與參數;回 (sql_prefix, params, next_index)。
+
+    純字串組裝(欄位名非使用者輸入),供 list/count 共用。next_index 供呼叫端接續
+    綁 LIMIT/OFFSET 的佔位符。
+    """
+    params: list[Any] = []
+    conds: list[str] = []
+    join = ""
+    if org is not None:
+        join = " JOIN fleet.device d ON d.serial = a.drone_id"
+        params.append(org)
+        conds.append(f"d.org_id = ${len(params)}")
+    if kind is not None:
+        params.append(kind)
+        conds.append(f"a.kind = ${len(params)}")
+    sql = f"{select} FROM device_alerts a{join}{_where(conds)}"
+    return sql, params, len(params) + 1
+
+
+async def list_alerts(
+    conn: asyncpg.Connection,
+    org: str | None = None,
+    kind: str | None = None,
+    limit: int = 100,
+    offset: int = 0,
+) -> list[AlertEntry]:
+    sql, params, idx = _alert_query(f"SELECT {_ALERT_COLS}", org, kind)
+    params.append(limit)
+    params.append(offset)
+    rows = await conn.fetch(
+        f"{sql} ORDER BY a.time DESC LIMIT ${idx} OFFSET ${idx + 1}", *params
+    )
+    return [_alert(r) for r in rows]
+
+
+async def count_alerts(
+    conn: asyncpg.Connection, org: str | None = None, kind: str | None = None
+) -> int:
+    sql, params, _ = _alert_query("SELECT count(*)", org, kind)
+    return await conn.fetchval(sql, *params)

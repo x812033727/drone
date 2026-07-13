@@ -1,6 +1,41 @@
 {
   "components": {
     "schemas": {
+      "AlertEntry": {
+        "description": "一筆裝置告警(GET /api/v1/alerts)。kind 區分 cert(憑證到期)/ ota(OTA 進度)。",
+        "properties": {
+          "detail": {
+            "additionalProperties": true,
+            "title": "Detail",
+            "type": "object"
+          },
+          "drone_id": {
+            "title": "Drone Id",
+            "type": "string"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "summary": {
+            "title": "Summary",
+            "type": "string"
+          },
+          "time": {
+            "format": "date-time",
+            "title": "Time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "time",
+          "drone_id",
+          "kind",
+          "summary"
+        ],
+        "title": "AlertEntry",
+        "type": "object"
+      },
       "AuditEntry": {
         "description": "審計軌跡一筆(供 GET /api/v1/audit,admin 稽核檢視)。",
         "properties": {
@@ -352,6 +387,125 @@
           "version"
         ],
         "title": "DeviceFirmwareSet",
+        "type": "object"
+      },
+      "DeviceOtaRequest": {
+        "description": "觸發裝置 OTA(POST /devices/{id}/ota)。欄位對齊 ota.py parse_ota_command:\n\n- install 需 update_id + component/version/url/sha256/signature 齊備(size 選填);\n- pause/resume/rollback 只需 update_id(rollback 可帶 component)。\n簽章由離線 HSM 產(security.md §4),雲端只轉發不簽——sha256/signature 由呼叫端提供。",
+        "properties": {
+          "action": {
+            "$ref": "#/components/schemas/OtaAction",
+            "default": "install"
+          },
+          "component": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Component"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "sha256": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sha256"
+          },
+          "signature": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Signature"
+          },
+          "size": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Size"
+          },
+          "update_id": {
+            "minLength": 1,
+            "title": "Update Id",
+            "type": "string"
+          },
+          "url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Url"
+          },
+          "version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Version"
+          }
+        },
+        "required": [
+          "update_id"
+        ],
+        "title": "DeviceOtaRequest",
+        "type": "object"
+      },
+      "DeviceOtaResult": {
+        "description": "OTA 觸發回應:確認已發布 cmd/ota 到目標機主題(fire-and-forget;進度看 /alerts)。",
+        "properties": {
+          "action": {
+            "$ref": "#/components/schemas/OtaAction"
+          },
+          "device_id": {
+            "format": "uuid",
+            "title": "Device Id",
+            "type": "string"
+          },
+          "serial": {
+            "title": "Serial",
+            "type": "string"
+          },
+          "topic": {
+            "title": "Topic",
+            "type": "string"
+          },
+          "update_id": {
+            "title": "Update Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "device_id",
+          "serial",
+          "action",
+          "update_id",
+          "topic"
+        ],
+        "title": "DeviceOtaResult",
         "type": "object"
       },
       "DeviceStatus": {
@@ -887,6 +1041,17 @@
         "title": "OrgUpdate",
         "type": "object"
       },
+      "OtaAction": {
+        "description": "OTA 指令動作,對齊 ota.py 的 VALID_ACTIONS。",
+        "enum": [
+          "install",
+          "pause",
+          "resume",
+          "rollback"
+        ],
+        "title": "OtaAction",
+        "type": "string"
+      },
       "SubscriptionView": {
         "description": "本 org 目前訂閱狀態(GET /billing/subscription)。",
         "properties": {
@@ -1028,6 +1193,104 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/api/v1/alerts": {
+      "get": {
+        "operationId": "list_alerts_api_v1_alerts_get",
+        "parameters": [
+          {
+            "description": "過濾類型:cert(憑證到期)/ ota(OTA 進度)",
+            "in": "query",
+            "name": "kind",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "過濾類型:cert(憑證到期)/ ota(OTA 進度)",
+              "title": "Kind"
+            }
+          },
+          {
+            "description": "僅 admin:限定單一租戶(略則看全部)",
+            "in": "query",
+            "name": "org",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "僅 admin:限定單一租戶(略則看全部)",
+              "title": "Org"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "maximum": 1000,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/AlertEntry"
+                  },
+                  "title": "Response List Alerts Api V1 Alerts Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Alerts"
+      }
+    },
     "/api/v1/audit": {
       "get": {
         "operationId": "list_audit_api_v1_audit_get",
@@ -1562,6 +1825,61 @@
           }
         ],
         "summary": "Set Device Firmware"
+      }
+    },
+    "/api/v1/devices/{device_id}/ota": {
+      "post": {
+        "operationId": "trigger_device_ota_api_v1_devices__device_id__ota_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "device_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Device Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DeviceOtaRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeviceOtaResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Trigger Device Ota"
       }
     },
     "/api/v1/devices/{device_id}/status": {
