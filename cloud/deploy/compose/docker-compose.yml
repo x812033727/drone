@@ -214,8 +214,11 @@ services:
       dockerfile: gcs/web-console/Dockerfile
     ports:
       - "${WEBCONSOLE_PORT:-8080}:80"
+    # nginx 反代 /api → fleetsvc,/api/v1/{routes,missions} → missionsvc(見 nginx.conf)
     depends_on:
       fleetsvc:
+        condition: service_healthy
+      missionsvc:
         condition: service_healthy
     restart: unless-stopped
 
