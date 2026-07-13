@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { createDevice, createFleet, listDevices, listFleets, updateDevice } from "../api";
 import { AuthError } from "../auth";
 import type { Device, DeviceStatus, Fleet } from "../types";
+import { OtaForm } from "./OtaForm";
 import { useToasts } from "./Toasts";
 
 type Props = {
@@ -25,6 +26,7 @@ export function DeviceManager({ canWrite, onAuthError }: Props) {
   const [editing, setEditing] = useState<Device | null>(null);
   const [showDeviceForm, setShowDeviceForm] = useState(false);
   const [showFleetForm, setShowFleetForm] = useState(false);
+  const [otaTarget, setOtaTarget] = useState<Device | null>(null); // 推送 OTA 目標
 
   const reload = useCallback(async () => {
     setLoading(true);
@@ -146,6 +148,9 @@ export function DeviceManager({ canWrite, onAuthError }: Props) {
                         >
                           編輯
                         </button>
+                        <button className="btn ghost sm" onClick={() => setOtaTarget(d)}>
+                          推送 OTA
+                        </button>
                         <button
                           className="btn ghost sm danger"
                           disabled={d.status === "retired"}
@@ -182,6 +187,15 @@ export function DeviceManager({ canWrite, onAuthError }: Props) {
             setShowDeviceForm(false);
             void reload();
           }}
+          onAuthError={onAuthError}
+        />
+      )}
+      {otaTarget && (
+        <OtaForm
+          deviceId={otaTarget.id}
+          serial={otaTarget.serial}
+          onClose={() => setOtaTarget(null)}
+          onDone={() => setOtaTarget(null)}
           onAuthError={onAuthError}
         />
       )}
