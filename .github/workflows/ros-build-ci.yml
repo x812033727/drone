@@ -7,10 +7,12 @@ on:
     branches: [main]
     paths:
       - "onboard/ros2_ws/src/obstacle_guard/**"
+      - "onboard/ros2_ws/src/precision_land/**"
       - ".github/workflows/ros-build-ci.yml"
   pull_request:
     paths:
       - "onboard/ros2_ws/src/obstacle_guard/**"
+      - "onboard/ros2_ws/src/precision_land/**"
       - ".github/workflows/ros-build-ci.yml"
 
 jobs:
@@ -30,3 +32,13 @@ jobs:
           colcon build --packages-select obstacle_guard
           source install/setup.bash
           python3 -c "from obstacle_guard import node, safety; print('node/safety import OK')"
+      - name: colcon build precision_land
+        shell: bash
+        run: |
+          mkdir -p /tmp/ws-pland/src
+          cp -r onboard/ros2_ws/src/precision_land /tmp/ws-pland/src/
+          cd /tmp/ws-pland
+          source /opt/ros/humble/setup.bash
+          colcon build --packages-select precision_land
+          source install/setup.bash
+          python3 -c "from precision_land import node, state_machine; print('node/state_machine import OK')"
