@@ -1,0 +1,143 @@
+{{- if .Values.prometheus.enabled }}
+# 內建 Prometheus(監控閉環,P1):抓取各服務 /metrics + 載入 alert-rules。
+# scrape 走同 namespace 服務 DNS 短名;ingest 無 HTTP Service,故本檔額外建一個
+# 只給 metrics 埠(9090)的 Service 供抓取。規則檔與 cloud/deploy/observability/
+# alert-rules.yaml 同源(打包於 chart files/prometheus/)。
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "drone.fullname" . }}-prometheus
+  labels:
+    {{- include "drone.labels" . | nindent 4 }}
+    app.kubernetes.io/component: prometheus
+data:
+  prometheus.yml: |
+    global:
+      scrape_interval: {{ .Values.prometheus.scrapeInterval }}
+      evaluation_interval: {{ .Values.prometheus.scrapeInterval }}
+    rule_files:
+      - /etc/prometheus/rules/alert-rules.yaml
+    scrape_configs:
+      # job 名對齊 alert-rules.yaml 的 job=~"fleetsvc|missionsvc|logsvc|ingest" 選擇器。
+      - job_name: fleetsvc
+        metrics_path: /metrics
+        static_configs:
+          - targets: ["{{ include "drone.fullname" . }}-fleetsvc:8091"]
+      - job_name: missionsvc
+        metrics_path: /metrics
+        static_configs:
+          - targets: ["{{ include "drone.fullname" . }}-missionsvc:8092"]
+      - job_name: logsvc
+        metrics_path: /metrics
+        static_configs:
+          - targets: ["{{ include "drone.fullname" . }}-logsvc:8090"]
+      - job_name: ingest
+        metrics_path: /metrics
+        static_configs:
+          - targets: ["{{ include "drone.fullname" . }}-ingest-metrics:9090"]
+  # 告警規則(與 observability/alert-rules.yaml 同源;由 chart files/ 打包)。
+  alert-rules.yaml: |
+{{ .Files.Get "files/prometheus/alert-rules.yaml" | indent 4 }}
+---
+# ingest metrics 專用 Service:ingest 是 MQTT consumer(無 HTTP API Service),
+# 但其 prometheus_client 於容器內 :9090 開 /metrics(METRICS_PORT 預設 9090)。
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "drone.fullname" . }}-ingest-metrics
+  labels:
+    {{- include "drone.labels" . | nindent 4 }}
+    app.kubernetes.io/component: ingest
+spec:
+  selector:
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/component: ingest
+  ports:
+    - name: metrics
+      port: 9090
+      targetPort: 9090
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "drone.fullname" . }}-prometheus
+  labels:
+    {{- include "drone.labels" . | nindent 4 }}
+    app.kubernetes.io/component: prometheus
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: {{ .Release.Name }}
+      app.kubernetes.io/component: prometheus
+  template:
+    metadata:
+      labels:
+        {{- include "drone.labels" . | nindent 8 }}
+        app.kubernetes.io/component: prometheus
+      annotations:
+        # config/rules 變更時滾動重啟(configmap 內容進 checksum)
+        checksum/config: {{ .Files.Get "files/prometheus/alert-rules.yaml" | toString | sha256sum }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: prometheus
+          image: {{ .Values.prometheus.image | quote }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          # 第三方映像保守加固(prom/prometheus uid 65534/nobody):禁特權升級 + 丟 caps。
+          securityContext:
+            {{- include "drone.thirdPartyContainerSecurityContext" . | nindent 12 }}
+          args:
+            - --config.file=/etc/prometheus/prometheus.yml
+            - --storage.tsdb.path=/prometheus
+            - --storage.tsdb.retention.time={{ .Values.prometheus.retention }}
+            - --web.enable-lifecycle
+          ports:
+            - name: http
+              containerPort: 9090
+          readinessProbe:
+            httpGet: { path: /-/ready, port: 9090 }
+            initialDelaySeconds: 10
+            periodSeconds: 15
+          livenessProbe:
+            httpGet: { path: /-/healthy, port: 9090 }
+            initialDelaySeconds: 20
+            periodSeconds: 20
+            failureThreshold: 3
+          resources:
+            {{- toYaml .Values.prometheus.resources | nindent 12 }}
+          volumeMounts:
+            - name: config
+              mountPath: /etc/prometheus/prometheus.yml
+              subPath: prometheus.yml
+            - name: config
+              mountPath: /etc/prometheus/rules/alert-rules.yaml
+              subPath: alert-rules.yaml
+            - name: tsdb
+              mountPath: /prometheus
+      volumes:
+        - name: config
+          configMap:
+            name: {{ include "drone.fullname" . }}-prometheus
+        # 本地 TSDB(ephemeral):私有部署若需長期保存,改掛 PVC(見 README「監控」段)。
+        - name: tsdb
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "drone.fullname" . }}-prometheus
+  labels:
+    {{- include "drone.labels" . | nindent 4 }}
+    app.kubernetes.io/component: prometheus
+spec:
+  selector:
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/component: prometheus
+  ports:
+    - name: http
+      port: 9090
+      targetPort: 9090
+{{- end }}

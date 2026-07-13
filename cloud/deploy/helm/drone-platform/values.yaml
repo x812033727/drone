@@ -38,6 +38,33 @@ mtls:
   enabled: false
   certSecret: "" # 預建 Secret 名稱(mtls.enabled=true 時必填)
 
+# 訂閱金流(綠界 ECPay;fleet_svc/billing.py)。全部留空 = 沙箱模式(用綠界公開測試
+# 商店,不收真錢、不影響 cloud-smoke)。走正式收款才需填 merchantId/hashKey/hashIV。
+# 憑證(merchantId/hashKey/hashIV)敏感,寫入 Secret(見 secret.yaml);URL/price/stage
+# 非敏感,由本 values 直接注入 fleetsvc env。existingSecret 模式下憑證改由該 Secret 提供
+# (需含 ECPAY_MERCHANT_ID/ECPAY_HASH_KEY/ECPAY_HASH_IV 三鍵,缺鍵則退回沙箱)。
+ecpay:
+  merchantId: "" # 綠界商店代號(正式收款必填)→ Secret ECPAY_MERCHANT_ID
+  hashKey: "" # 綠界 HashKey → Secret ECPAY_HASH_KEY
+  hashIV: "" # 綠界 HashIV → Secret ECPAY_HASH_IV
+  # 綠界 server 回調本服務 /billing/callback 的公開 URL(務必外部可達,否則付款無法啟用方案)
+  returnUrl: ""
+  # 使用者付款後返回的前端 URL(可選)
+  clientBackUrl: ""
+  # "true" 時即使有正式憑證仍打綠界測試環境(預設關)
+  stage: ""
+  # 各方案月費(TWD;留空用程式預設 pro=3000 / enterprise=30000)
+  pricePro: ""
+  priceEnterprise: ""
+
+# 配額 / 限流旋鈕(fleet_svc/limits.py;預設寬鬆,dev / cloud-smoke 不觸發)。
+# maxDevices/maxFleets 為每租戶現存資源上限(超限回 402);rateLimitPerMin 為每租戶
+# 寫入端點每分鐘速率上限(超限回 429)。留空則用程式內建預設(10000/1000/6000)。
+quota:
+  maxDevices: "" # → env QUOTA_MAX_DEVICES
+  maxFleets: "" # → env QUOTA_MAX_FLEETS
+  rateLimitPerMin: "" # → env RATE_LIMIT_PER_MIN
+
 # 資料庫(遙測時序 + fleet/mission 關聯,同一 timescaledb 實例)
 timescaledb:
   image: timescale/timescaledb:2.17.2-pg16
@@ -93,6 +120,19 @@ grafana:
   anonymous: false # 私有部署預設關匿名(對比 dev compose)
   resources:
     requests: { cpu: 100m, memory: 128Mi }
+    limits: { cpu: 500m, memory: 512Mi }
+
+# 監控閉環(P1):內建 Prometheus 抓取各服務 /metrics + 載入 alert-rules。
+# 預設開;客戶若已有中央 Prometheus 可設 enabled=false,改用 observability/alert-rules.yaml
+# 接自己的抓取。scrape 走叢集內服務 DNS(同 namespace 短名);規則檔由 chart
+# files/prometheus/alert-rules.yaml 打包(與 cloud/deploy/observability/alert-rules.yaml 同源)。
+prometheus:
+  enabled: true
+  image: prom/prometheus:v2.55.1
+  scrapeInterval: 30s
+  retention: 15d
+  resources:
+    requests: { cpu: 100m, memory: 256Mi }
     limits: { cpu: 500m, memory: 512Mi }
 
 # 對外入口(僅 Web 指揮中心對外;服務層走叢集內網)
