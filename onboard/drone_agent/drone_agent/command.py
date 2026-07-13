@@ -41,6 +41,8 @@ import aiomqtt
 from drone.v1 import mission_pb2
 from google.protobuf import json_format
 
+from drone_agent.tls import from_env as _mqtt_tls
+
 logger = logging.getLogger(__name__)
 
 RECONNECT_DELAY_S = 3.0
@@ -354,14 +356,18 @@ async def command_loop(
     async def publish_failed(mission_id: str) -> None:
         """另開短連線補發 STATE_FAILED(訂閱連線可能已斷/已換代)。"""
         payload = failed_progress_json(mission_id, drone_id, int(time.time() * 1000))
-        async with aiomqtt.Client(hostname=mqtt_host, port=mqtt_port) as client:
+        async with aiomqtt.Client(
+            hostname=mqtt_host, port=mqtt_port, tls_params=_mqtt_tls()
+        ) as client:
             await client.publish(progress_topic, payload=payload, qos=1)
 
     runner = MissionRunner(timeout_s=timeout_s, on_failed=publish_failed)
 
     while True:
         try:
-            async with aiomqtt.Client(hostname=mqtt_host, port=mqtt_port) as client:
+            async with aiomqtt.Client(
+                hostname=mqtt_host, port=mqtt_port, tls_params=_mqtt_tls()
+            ) as client:
 
                 async def publish_reject(mission_id: str) -> None:
                     """互斥拒絕的 FAILED 走訂閱連線(MqttError 上拋觸發重連)。"""

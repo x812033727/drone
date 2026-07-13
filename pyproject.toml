@@ -23,3 +23,17 @@ testpaths = [
 # importlib 匯入模式:各服務 tests/ 無 __init__.py 且常有同名檔(test_models.py 等),
 # 預設 prepend 模式會 "import file mismatch" 衝突;importlib 以完整路徑匯入,不衝突。
 addopts = ["--import-mode=importlib"]
+
+[tool.coverage.run]
+branch = true
+source = ["onboard", "cloud", "tools"]
+omit = [
+    "*/tests/*",
+    "*/conftest.py",
+    "interfaces/proto/gen/*",
+    "*/__init__.py",
+]
+
+[tool.coverage.report]
+show_missing = true
+# 起步不設硬門檻,先建立覆蓋率可見度;穩定後再於 ci.yml 加 --cov-fail-under

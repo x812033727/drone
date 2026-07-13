@@ -1,0 +1,45 @@
+# Dependabot:依賴與基底映像的每週 CVE/更新追蹤(商用供應鏈治理起步)。
+# 對齊 docs/20-software/security.md §6「依賴掃描」。分組更新以降低 PR 噪音。
+version: 2
+updates:
+  # Python 依賴(各子系統 requirements.txt / pyproject)
+  - package-ecosystem: "pip"
+    directories:
+      - "/tools"
+      - "/tools/sitl_scenarios"
+      - "/onboard/drone_agent"
+      - "/onboard/mission_exec"
+      - "/cloud/ingest"
+      - "/cloud/log_svc"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    groups:
+      python-deps:
+        patterns: ["*"]
+    commit-message:
+      prefix: "deps"
+
+  # GitHub Actions 版本
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 3
+    groups:
+      actions:
+        patterns: ["*"]
+    commit-message:
+      prefix: "ci"
+
+  # 容器基底映像(FROM 行 CVE 追蹤)
+  - package-ecosystem: "docker"
+    directories:
+      - "/cloud/ingest"
+      - "/cloud/log_svc"
+      - "/onboard/ros2_ws/docker"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 3
+    commit-message:
+      prefix: "docker"

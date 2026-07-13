@@ -27,6 +27,7 @@ from google.protobuf.json_format import MessageToJson
 from google.protobuf.message import Message
 
 from drone_agent.state import TelemetryState
+from drone_agent.tls import from_env as _mqtt_tls
 
 logger = logging.getLogger(__name__)
 
@@ -128,7 +129,9 @@ async def publish_loop(
     was_stale = False  # 跨 MQTT 重連保留,log 只在狀態轉換時各記一次
     while True:
         try:
-            async with aiomqtt.Client(hostname=mqtt_host, port=mqtt_port) as client:
+            async with aiomqtt.Client(
+                hostname=mqtt_host, port=mqtt_port, tls_params=_mqtt_tls()
+            ) as client:
                 logger.info("MQTT 已連線 %s:%d,主題 %s(%.1f Hz)", mqtt_host, mqtt_port, topic, rate)
                 while True:
                     stale = is_stale(state, time.monotonic(), stale_timeout)

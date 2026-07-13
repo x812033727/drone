@@ -1,0 +1,53 @@
+name: supply-chain
+
+# 依賴弱點掃描(pip-audit)。Phase 0 起步為 non-blocking(continue-on-error):
+# 先建立可見度與 SBOM 級別的追蹤,不擋合併;Wave 6 起對高危轉 blocking
+# (對齊 docs/20-software/security.md §6 分階段落地)。
+on:
+  push:
+    branches: [main]
+  pull_request:
+    paths:
+      - "**/requirements.txt"
+      - "**/pyproject.toml"
+      - ".github/workflows/supply-chain.yml"
+  schedule:
+    - cron: "0 6 * * 1" # 每週一 06:00 UTC(台北 14:00)
+  workflow_dispatch:
+
+jobs:
+  pip-audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+      - name: 安裝 pip-audit
+        run: pip install pip-audit
+      - name: 掃描各子系統 requirements(non-blocking)
+        continue-on-error: true
+        run: |
+          set +e
+          status=0
+          for f in tools/requirements.txt \
+                   tools/sitl_scenarios/requirements.txt \
+                   onboard/drone_agent/requirements.txt \
+                   cloud/ingest/requirements.txt \
+                   cloud/log_svc/requirements.txt; do
+            if [ -f "$f" ]; then
+              echo "::group::pip-audit $f"
+              pip-audit -r "$f" --desc || status=1
+              echo "::endgroup::"
+            fi
+          done
+          # mission_exec 為可安裝套件:審計其依賴
+          if [ -f onboard/mission_exec/pyproject.toml ]; then
+            echo "::group::pip-audit onboard/mission_exec"
+            pip-audit onboard/mission_exec/ --desc || status=1
+            echo "::endgroup::"
+          fi
+          if [ "$status" -ne 0 ]; then
+            echo "::warning::pip-audit 發現弱點(Phase 0 non-blocking,不擋合併;請追蹤)"
+          fi

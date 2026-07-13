@@ -1,0 +1,32 @@
+name: sbom
+
+# 軟體物料單(SBOM)產出並歸檔——歐盟 CRA 與美國政府採購前置
+# (docs/20-software/security.md §6)。SPDX + CycloneDX 兩格式,上傳為 artifact。
+on:
+  push:
+    branches: [main]
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: SPDX SBOM
+        uses: anchore/sbom-action@v0
+        with:
+          path: .
+          format: spdx-json
+          artifact-name: drone-sbom.spdx.json
+      - name: CycloneDX SBOM
+        uses: anchore/sbom-action@v0
+        with:
+          path: .
+          format: cyclonedx-json
+          artifact-name: drone-sbom.cyclonedx.json

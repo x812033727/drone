@@ -56,6 +56,7 @@
 - [團隊組成](docs/50-project/team.md)
 - [供應鏈與製造策略](docs/50-project/supply-chain.md)
 - [Phase 0 詳細執行計畫](docs/50-project/phase0/README.md)
+- [軟體平台商用化路線圖(Phase 0→1 軟體)](docs/50-project/phase1/commercialization-roadmap.md)
 - [Phase 0 採購計畫](docs/50-project/phase0/procurement.md)
 - [Phase 0 開發機組裝與首飛檢查表](docs/50-project/phase0/build-and-first-flight.md)
 - [Phase 0 飛行測試計畫(F01–F20)](docs/50-project/phase0/flight-test-plan.md)
