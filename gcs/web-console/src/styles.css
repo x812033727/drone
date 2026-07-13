@@ -59,3 +59,29 @@ body {
 .marker.off { background: var(--offline); }
 
 .empty { padding: 20px 14px; color: var(--muted); font-size: 13px; }
+
+.topbar .logout {
+  background: transparent; color: var(--muted); border: 1px solid var(--border);
+  border-radius: 6px; padding: 4px 10px; cursor: pointer; font-size: 12px;
+}
+.topbar .logout:hover { color: var(--text); border-color: var(--muted); }
+
+.login-overlay {
+  position: fixed; inset: 0; background: rgba(0,0,0,.7);
+  display: flex; align-items: center; justify-content: center; z-index: 1000;
+}
+.login-box {
+  background: var(--panel); border: 1px solid var(--border); border-radius: 10px;
+  padding: 24px; width: min(440px, 90vw); display: flex; flex-direction: column; gap: 10px;
+}
+.login-box h2 { margin: 0; font-size: 18px; }
+.login-box p { margin: 0; color: var(--muted); font-size: 13px; }
+.login-box textarea {
+  background: var(--bg); color: var(--text); border: 1px solid var(--border);
+  border-radius: 6px; padding: 8px; font-family: monospace; font-size: 12px; resize: vertical;
+}
+.login-box button {
+  background: var(--accent); color: #fff; border: none; border-radius: 6px;
+  padding: 8px; cursor: pointer; font-size: 14px;
+}
+.login-box button:disabled { opacity: .5; cursor: not-allowed; }

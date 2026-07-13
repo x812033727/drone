@@ -19,7 +19,7 @@ from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
 
 from fleet_svc import repo
-from fleet_svc.auth import AUTH_ENABLED, require_role
+from fleet_svc.auth import AUTH_ENABLED, authorize_token, require_role
 from fleet_svc.consumer import run_consumer
 from fleet_svc.hub import TelemetryHub
 from fleet_svc.migrate import apply_migrations
@@ -255,7 +255,9 @@ async def _sse_events(request: Request, hub: TelemetryHub):
 
 
 @app.get("/api/v1/stream")
-async def stream(request: Request) -> StreamingResponse:
+async def stream(request: Request, token: str | None = Query(default=None)) -> StreamingResponse:
+    # EventSource 無法帶 header,SSE 以查詢參數 token 認證(需 viewer)
+    authorize_token(token, "viewer")
     return StreamingResponse(
         _sse_events(request, app.state.hub),
         media_type="text/event-stream",
