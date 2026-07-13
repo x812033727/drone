@@ -1,0 +1,32 @@
+name: ros-build-ci
+
+# ROS 2 node colcon build 守門(在 ros:humble 容器內)。路徑觸發。
+# 運行行為(對障礙實際減速)由 nightly SITL 驗;此處驗建置 + node 可載入。
+on:
+  push:
+    branches: [main]
+    paths:
+      - "onboard/ros2_ws/src/obstacle_guard/**"
+      - ".github/workflows/ros-build-ci.yml"
+  pull_request:
+    paths:
+      - "onboard/ros2_ws/src/obstacle_guard/**"
+      - ".github/workflows/ros-build-ci.yml"
+
+jobs:
+  colcon-build:
+    runs-on: ubuntu-latest
+    container: ros:humble
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: colcon build obstacle_guard
+        shell: bash
+        run: |
+          mkdir -p /tmp/ws/src
+          cp -r onboard/ros2_ws/src/obstacle_guard /tmp/ws/src/
+          cd /tmp/ws
+          source /opt/ros/humble/setup.bash
+          colcon build --packages-select obstacle_guard
+          source install/setup.bash
+          python3 -c "from obstacle_guard import node, safety; print('node/safety import OK')"

@@ -1,0 +1,17 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>obstacle_guard</name>
+  <version>0.1.0</version>
+  <description>避障保守限速 node(P1):訂感知距離 → 用已測 P0 安全邏輯算速度上限 → 發布。
+    只發速度限制、絕不姿態級指令;感知 stale watchdog → 保守停。</description>
+  <maintainer email="x812033727@gmail.com">drone onboard</maintainer>
+  <license>Proprietary</license>
+
+  <exec_depend>rclpy</exec_depend>
+  <exec_depend>std_msgs</exec_depend>
+
+  <export>
+    <build_type>ament_python</build_type>
+  </export>
+</package>
