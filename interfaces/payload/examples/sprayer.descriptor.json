@@ -1,0 +1,60 @@
+{
+  "schema_version": "1.0.0",
+  "payload_type": "sprayer",
+  "manufacturer": "Acme AgTech",
+  "model": "PB1-SPRAY-16L",
+  "serial": "PB1S16-2606-000031",
+  "hw_rev": "revB",
+  "manufacture_date": "2026-06-18",
+  "fw_version": "1.4.0",
+  "interface": "QR-L",
+  "power": {
+    "voltage_v": 24.0,
+    "peak_current_a": 18.0,
+    "avg_current_a": 6.5
+  },
+  "mass": {
+    "mass_kg": 2.85,
+    "cg_offset_m": [-0.03, 0.0, -0.11]
+  },
+  "comms": {
+    "dronecan_node_id": 55
+  },
+  "eeprom": {
+    "device_size_bytes": 1024,
+    "encoding": {
+      "format": "cbor",
+      "profile": "core-deterministic",
+      "spec": "RFC 8949"
+    },
+    "header": {
+      "magic": "DPD1",
+      "layout_version": 1,
+      "offset_bytes": 0
+    },
+    "regions": {
+      "frozen": { "offset_bytes": 8, "length_bytes": 760 },
+      "writable": { "offset_bytes": 768, "length_bytes": 252 },
+      "writable_fields": ["/fw_version"]
+    },
+    "write_protect": {
+      "mechanism": "wp_pin",
+      "frozen_locked": true
+    },
+    "crc": {
+      "algorithm": "CRC-32/ISO-HDLC",
+      "parameters": {
+        "width": 32,
+        "poly": "0x04C11DB7",
+        "init": "0xFFFFFFFF",
+        "refin": true,
+        "refout": true,
+        "xorout": "0xFFFFFFFF",
+        "check": "0xCBF43926"
+      },
+      "endianness": "little",
+      "frozen_crc": "0x7E11A93D",
+      "writable_crc": "0xC4B802F1"
+    }
+  }
+}

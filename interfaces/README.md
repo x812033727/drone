@@ -4,9 +4,9 @@
 
 ```
 interfaces/
-├── mavlink/        # 自訂 MAVLink dialect XML(酬載狀態、噴灑遙測、電池詳情)——目錄骨架已建(見其 README),Phase 1 啟用
+├── mavlink/        # 自訂 MAVLink dialect XML(PAYLOAD_STATUS/SPRAY_TELEMETRY/BATTERY_DETAIL)——欄位定案 rev 1(mavgen 驗證通過,見其 README),Phase 1 硬體落地待排
 ├── proto/          # Protobuf schema(機-雲遙測與指令:MQTT/gRPC 用)——Phase 0 已實作
-└── payload/        # 酬載描述檔 schema(QR-S/QR-L 介面的 EEPROM 內容定義)——目錄骨架已建(見其 README),Phase 1 啟用
+└── payload/        # 酬載描述檔 schema(QR-S/QR-L 介面的 EEPROM 內容定義)——schema 定案 rev 1(二進位編碼/CRC/防寫已定,附範例;見其 README),Phase 1 硬體落地待排
 ```
 
 ## 規則

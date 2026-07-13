@@ -1,36 +1,136 @@
 <?xml version="1.0"?>
 <!--
-  drone_custom.xml — 自訂 MAVLink dialect(佔位骨架,Phase 1 啟用條件見 README.md)
+  drone_custom.xml — 自訂 MAVLink dialect(定案 rev 1;Phase 1 啟用條件見 README.md)
 
   message ID 私有區段:24150-24199(interfaces/README 規則 3)
   分配表(用過的 ID 永不回收):
-    24150  PAYLOAD_STATUS   酬載狀態(草稿,未釋出)
-    24151  SPRAY_TELEMETRY  噴灑遙測(預留,PB-1)
-    24152  BATTERY_DETAIL   電池詳情(預留,SMBus 全欄位)
+    24150  PAYLOAD_STATUS   酬載通用狀態(定案 rev 1)
+    24151  SPRAY_TELEMETRY  噴灑作業遙測(定案 rev 1,PB-1)
+    24152  BATTERY_DETAIL   智慧電池電芯級詳情(定案 rev 1,SMBus)
     24153-24199  未分配
+
+  慣例:欄位型別/單位/命名遵循 upstream common.xml 風格;訊息一經釋出欄位只增不改
+  (MAVLink 無 proto3 式相容,改欄位 = 新訊息 + 舊訊息保留一個相容期)。
+  無效值(unknown)沿用 common.xml 慣例:整數用型別最大值(UINT8_MAX/UINT16_MAX/
+  INT16_MAX),浮點用 NaN。
 -->
 <mavlink>
   <include>common.xml</include>
-  <version>0</version>
+  <version>1</version>
   <dialect>1</dialect>
   <enums>
-    <!-- 佔位:酬載類型 enum(QR-S/QR-L 掛載模組,對 interfaces/payload 描述檔) -->
+    <!-- 酬載類型(與 payload 描述檔 payload_type 欄位對齊) -->
     <enum name="DRONE_PAYLOAD_TYPE">
-      <description>酬載類型(草稿;與 payload 描述檔 payload_type 欄位對齊)</description>
-      <entry value="0" name="DRONE_PAYLOAD_TYPE_NONE"><description>未掛載</description></entry>
-      <entry value="1" name="DRONE_PAYLOAD_TYPE_GIMBAL_EO"><description>可見光雲台</description></entry>
-      <entry value="2" name="DRONE_PAYLOAD_TYPE_GIMBAL_DUAL"><description>雙光雲台(EO+IR)</description></entry>
-      <entry value="3" name="DRONE_PAYLOAD_TYPE_SPRAYER"><description>噴灑系統(PB-1)</description></entry>
-      <entry value="4" name="DRONE_PAYLOAD_TYPE_CARGO"><description>貨箱(PB-1)</description></entry>
+      <description>快拆酬載類型(QR-S/QR-L 掛載模組;與 interfaces/payload 描述檔 payload_type 對齊)。</description>
+      <entry value="0" name="DRONE_PAYLOAD_TYPE_NONE"><description>未掛載。</description></entry>
+      <entry value="1" name="DRONE_PAYLOAD_TYPE_GIMBAL_EO"><description>可見光雲台。</description></entry>
+      <entry value="2" name="DRONE_PAYLOAD_TYPE_GIMBAL_DUAL"><description>雙光雲台(EO+IR)。</description></entry>
+      <entry value="3" name="DRONE_PAYLOAD_TYPE_SPRAYER"><description>噴灑系統(PB-1)。</description></entry>
+      <entry value="4" name="DRONE_PAYLOAD_TYPE_CARGO"><description>貨箱(PB-1)。</description></entry>
+    </enum>
+
+    <!-- PAYLOAD_STATUS.state:酬載通用作業狀態機 -->
+    <enum name="DRONE_PAYLOAD_STATE">
+      <description>酬載通用作業狀態(PAYLOAD_STATUS.state);與酬載類型無關的粗粒度狀態機。</description>
+      <entry value="0" name="DRONE_PAYLOAD_STATE_UNKNOWN"><description>狀態未知(尚未回報或通訊未建立)。</description></entry>
+      <entry value="1" name="DRONE_PAYLOAD_STATE_BOOT"><description>開機自檢中,尚未就緒。</description></entry>
+      <entry value="2" name="DRONE_PAYLOAD_STATE_STANDBY"><description>待命(通電、已就緒、未作業)。</description></entry>
+      <entry value="3" name="DRONE_PAYLOAD_STATE_ACTIVE"><description>作業中(執行酬載主功能:錄影/噴灑/投放等)。</description></entry>
+      <entry value="4" name="DRONE_PAYLOAD_STATE_ERROR"><description>故障,功能不可用(細節見 fault_flags)。</description></entry>
+      <entry value="5" name="DRONE_PAYLOAD_STATE_SHUTDOWN"><description>關機/斷電流程中。</description></entry>
+    </enum>
+
+    <!-- PAYLOAD_STATUS.fault_flags:酬載通用故障旗標 -->
+    <enum name="DRONE_PAYLOAD_FAULT_FLAGS" bitmask="true">
+      <description>酬載通用故障旗標點陣(PAYLOAD_STATUS.fault_flags);0 = 無故障。</description>
+      <entry value="1" name="DRONE_PAYLOAD_FAULT_OVER_TEMPERATURE"><description>溫度超出安全上限。</description></entry>
+      <entry value="2" name="DRONE_PAYLOAD_FAULT_COMM_LOST"><description>與酬載模組通訊中斷。</description></entry>
+      <entry value="4" name="DRONE_PAYLOAD_FAULT_POWER"><description>供電異常(欠壓/過流/供電預算不足)。</description></entry>
+      <entry value="8" name="DRONE_PAYLOAD_FAULT_CONFIG"><description>設定或描述檔錯誤(EEPROM CRC 失敗/型號不相容)。</description></entry>
+      <entry value="16" name="DRONE_PAYLOAD_FAULT_CALIBRATION_REQUIRED"><description>需校正才能作業。</description></entry>
+      <entry value="32" name="DRONE_PAYLOAD_FAULT_HARDWARE"><description>硬體故障(致動器/感測器)。</description></entry>
+    </enum>
+
+    <!-- SPRAY_TELEMETRY.pump_state:噴灑泵狀態 -->
+    <enum name="DRONE_SPRAY_PUMP_STATE">
+      <description>噴灑泵運轉狀態(SPRAY_TELEMETRY.pump_state)。</description>
+      <entry value="0" name="DRONE_SPRAY_PUMP_OFF"><description>泵停止。</description></entry>
+      <entry value="1" name="DRONE_SPRAY_PUMP_PRIMING"><description>灌注/排氣中(尚未穩定流量)。</description></entry>
+      <entry value="2" name="DRONE_SPRAY_PUMP_ACTIVE"><description>正常噴灑中。</description></entry>
+      <entry value="3" name="DRONE_SPRAY_PUMP_FLUSHING"><description>清洗管路中。</description></entry>
+      <entry value="4" name="DRONE_SPRAY_PUMP_FAULT"><description>泵故障(見 spray_flags)。</description></entry>
+    </enum>
+
+    <!-- SPRAY_TELEMETRY.spray_flags:噴灑系統旗標 -->
+    <enum name="DRONE_SPRAY_FLAGS" bitmask="true">
+      <description>噴灑系統狀態旗標點陣(SPRAY_TELEMETRY.spray_flags);0 = 正常。</description>
+      <entry value="1" name="DRONE_SPRAY_FLAG_TANK_LOW"><description>藥箱餘量低(觸及低量門檻)。</description></entry>
+      <entry value="2" name="DRONE_SPRAY_FLAG_TANK_EMPTY"><description>藥箱空(液位感測器判定)。</description></entry>
+      <entry value="4" name="DRONE_SPRAY_FLAG_PUMP_FAULT"><description>泵故障。</description></entry>
+      <entry value="8" name="DRONE_SPRAY_FLAG_FLOW_ANOMALY"><description>流量異常(量測值偏離設定值:阻塞/洩漏/斷噴)。</description></entry>
+      <entry value="16" name="DRONE_SPRAY_FLAG_CLOSED_LOOP_ACTIVE"><description>流量閉迴路控制作用中(依地速自動調整流量)。</description></entry>
+      <entry value="32" name="DRONE_SPRAY_FLAG_NOZZLE_FAULT"><description>噴頭故障(至少一支堵塞或失效)。</description></entry>
+    </enum>
+
+    <!-- BATTERY_DETAIL.fault_flags:智慧電池故障旗標 -->
+    <enum name="DRONE_BATTERY_FAULT_FLAGS" bitmask="true">
+      <description>智慧電池故障旗標點陣(BATTERY_DETAIL.fault_flags);0 = 無故障。補充 common.xml MAV_BATTERY_FAULT,含電芯級與 BMS 專屬故障。</description>
+      <entry value="1" name="DRONE_BATTERY_FAULT_OVER_TEMPERATURE"><description>電池過溫。</description></entry>
+      <entry value="2" name="DRONE_BATTERY_FAULT_UNDER_TEMPERATURE"><description>電池低溫(充放電受限)。</description></entry>
+      <entry value="4" name="DRONE_BATTERY_FAULT_OVER_VOLTAGE"><description>電芯或電池組過壓。</description></entry>
+      <entry value="8" name="DRONE_BATTERY_FAULT_UNDER_VOLTAGE"><description>電芯或電池組欠壓。</description></entry>
+      <entry value="16" name="DRONE_BATTERY_FAULT_CELL_IMBALANCE"><description>電芯壓差超標(不平衡)。</description></entry>
+      <entry value="32" name="DRONE_BATTERY_FAULT_OVER_CURRENT"><description>放電/充電過流。</description></entry>
+      <entry value="64" name="DRONE_BATTERY_FAULT_COMM_LOST"><description>與 BMS(SMBus)通訊中斷。</description></entry>
+      <entry value="128" name="DRONE_BATTERY_FAULT_END_OF_LIFE"><description>健康度低於報廢門檻(需汰換)。</description></entry>
     </enum>
   </enums>
+
   <messages>
-    <!-- 佔位草稿:欄位未定案,釋出前需一輪評審(README「Phase 1 啟用條件」2) -->
+    <!-- 酬載通用狀態摘要(1 Hz)。所有掛載酬載共用;類型專屬遙測另發專用訊息。 -->
     <message id="24150" name="PAYLOAD_STATUS">
-      <description>酬載狀態摘要(1 Hz;草稿)</description>
-      <field type="uint8_t" name="payload_type" enum="DRONE_PAYLOAD_TYPE">酬載類型</field>
-      <field type="uint8_t" name="health">健康狀態(0=OK,非 0=故障碼,碼表待定)</field>
-      <field type="uint8_t" name="mode">酬載工作模式(依酬載類型解讀,待定)</field>
+      <description>酬載通用狀態摘要,不分酬載類型(1 Hz)。GCS 儀表與 drone-agent 轉遙測消費;類型專屬數據(如噴灑)另以專用訊息回報。</description>
+      <field type="uint32_t" name="time_boot_ms" units="ms">時間戳(自系統開機起)。</field>
+      <field type="uint32_t" name="fault_flags" enum="DRONE_PAYLOAD_FAULT_FLAGS" display="bitmask">故障旗標點陣;0 = 無故障。</field>
+      <field type="uint32_t" name="firmware_version">酬載韌體版本,封裝為 (major &lt;&lt; 24) | (minor &lt;&lt; 16) | (patch &lt;&lt; 8) | type,type 為 0=dev 1=alpha 2=beta 3=rc 255=official(比照 common.xml AUTOPILOT_VERSION 慣例);0 = 未知。</field>
+      <field type="int16_t" name="temperature" units="cdegC" invalid="INT16_MAX">酬載內部溫度;INT16_MAX 表未知。</field>
+      <field type="uint8_t" name="payload_type" enum="DRONE_PAYLOAD_TYPE">酬載類型。</field>
+      <field type="uint8_t" name="payload_id">酬載實例編號(0 起;多掛點機型用以區分,單掛點固定 0)。</field>
+      <field type="uint8_t" name="state" enum="DRONE_PAYLOAD_STATE">酬載通用作業狀態。</field>
+      <field type="uint8_t" name="vendor_status">廠商自定子狀態/工作模式(依 payload_type 解讀;無定義時為 0)。</field>
+    </message>
+
+    <!-- 噴灑作業遙測(PB-1;作業中 2 Hz,待命 1 Hz)。 -->
+    <message id="24151" name="SPRAY_TELEMETRY">
+      <description>噴灑作業遙測(PB-1 農噴酬載)。GCS 農噴面板與作業紀錄消費;作業中建議 2 Hz,待命 1 Hz。</description>
+      <field type="uint32_t" name="time_boot_ms" units="ms">時間戳(自系統開機起)。</field>
+      <field type="float" name="flow_rate" units="ml/s">目前液體流量。</field>
+      <field type="float" name="flow_rate_setpoint" units="ml/s">目標流量設定值(閉迴路控制目標);NaN 表無設定值(手動/定速)。</field>
+      <field type="float" name="volume_remaining" units="ml">藥箱剩餘藥量;NaN 表無液位感測。</field>
+      <field type="float" name="volume_consumed" units="ml">本次作業已噴出累計藥量。</field>
+      <field type="float" name="application_rate" units="ml/m2">單位面積施用量(等效 L/ha:1 ml/m2 = 10 L/ha);NaN 表未量測。</field>
+      <field type="float" name="pump_pressure" units="bar">泵出口壓力;NaN 表無壓力感測。</field>
+      <field type="float" name="boom_width" units="m">目前作用噴桿幅寬(有效噴幅)。</field>
+      <field type="uint16_t" name="spray_flags" enum="DRONE_SPRAY_FLAGS" display="bitmask">噴灑系統旗標點陣;0 = 正常。</field>
+      <field type="uint8_t" name="pump_state" enum="DRONE_SPRAY_PUMP_STATE">噴灑泵狀態。</field>
+      <field type="uint8_t" name="nozzles_active">目前作用中噴頭數量。</field>
+    </message>
+
+    <!-- 智慧電池電芯級詳情(SMBus BMS;0.2-1 Hz)。補充 common.xml BATTERY_STATUS。 -->
+    <message id="24152" name="BATTERY_DETAIL">
+      <description>智慧電池電芯級詳情(SMBus BMS 讀出)。補充 common.xml BATTERY_STATUS 未涵蓋的電芯級電壓、循環數、健康度與 BMS 故障;GCS 電池頁與維保開單消費。低頻回報(0.2-1 Hz)。</description>
+      <field type="uint32_t" name="time_boot_ms" units="ms">時間戳(自系統開機起)。</field>
+      <field type="uint32_t" name="fault_flags" enum="DRONE_BATTERY_FAULT_FLAGS" display="bitmask">BMS 故障旗標點陣;0 = 無故障。</field>
+      <field type="uint32_t" name="capacity_full_charge" units="mAh">目前滿充容量(隨老化衰減);0 表未知。</field>
+      <field type="uint32_t" name="capacity_remaining" units="mAh">目前剩餘容量;0 表未知。</field>
+      <field type="uint16_t[14]" name="cell_voltages" units="mV" invalid="[UINT16_MAX]">各電芯電壓(索引 0 起,共 14 槽支援至 14S);未使用之槽位填 UINT16_MAX。</field>
+      <field type="uint16_t" name="cycle_count">充放電循環數;UINT16_MAX 表未知。</field>
+      <field type="int16_t" name="temperature" units="cdegC" invalid="INT16_MAX">電池組溫度(BMS 主溫度);INT16_MAX 表未知。</field>
+      <field type="int16_t" name="current" units="cA">電池組電流(放電為正、充電為負);INT16_MAX 表未知。</field>
+      <field type="uint8_t" name="id">電池編號(對應 common.xml BATTERY_STATUS.id,同機多顆電池區分)。</field>
+      <field type="uint8_t" name="cell_count">本電池有效電芯數(cell_voltages 前 N 槽有效);UINT8_MAX 表未知。</field>
+      <field type="uint8_t" name="state_of_health" units="%" invalid="UINT8_MAX">健康度 SoH(0-100);UINT8_MAX 表未知。</field>
+      <field type="uint8_t" name="state_of_charge" units="%" invalid="UINT8_MAX">剩餘電量 SoC(0-100,相對滿充);UINT8_MAX 表未知。</field>
     </message>
   </messages>
 </mavlink>
