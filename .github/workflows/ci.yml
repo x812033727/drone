@@ -19,7 +19,7 @@ jobs:
       - name: 安裝工具與測試依賴
         # 各子系統 requirements 存在才裝(本 workflow 需在堆疊合併的任何中間狀態都可跑)
         run: |
-          pip install ruff pytest
+          pip install ruff pytest pytest-cov
           # tools/flight_ops 與 tools/sitl_scenarios 目前無獨立 requirements
           # (執行依賴由 tools/requirements.txt 供給,單測不需 SITL);
           # 之後若拆出各自的 requirements.txt,此迴圈已條件式涵蓋
@@ -42,7 +42,8 @@ jobs:
       - name: Ruff 靜態檢查
         run: ruff check .
 
-      - name: Pytest
-        # 測試尚未合入前 pytest 收不到測試會回 exit code 5,暫予容忍;
-        # 全部測試 PR 合入後,請把這行改回單純的 `pytest -q`。
-        run: pytest -q || [ $? -eq 5 ]
+      - name: Pytest（含覆蓋率量測）
+        # 覆蓋率起步為「量測/可見度」(term 摘要 + xml),不設硬門檻;
+        # SITL 場景與整合 CLI 屬 nightly 驗證,拉低總覆蓋屬預期。
+        # 穩定後可對純邏輯模組加 --cov-fail-under。
+        run: pytest -q --cov --cov-report=term-missing --cov-report=xml

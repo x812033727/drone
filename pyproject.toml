@@ -20,3 +20,17 @@ testpaths = [
     "cloud",
     "tools",
 ]
+
+[tool.coverage.run]
+branch = true
+source = ["onboard", "cloud", "tools"]
+omit = [
+    "*/tests/*",
+    "*/conftest.py",
+    "interfaces/proto/gen/*",
+    "*/__init__.py",
+]
+
+[tool.coverage.report]
+show_missing = true
+# 起步不設硬門檻,先建立覆蓋率可見度;穩定後再於 ci.yml 加 --cov-fail-under
