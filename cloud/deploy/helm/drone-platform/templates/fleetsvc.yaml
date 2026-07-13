@@ -44,6 +44,25 @@ spec:
             - name: MQTT_PORT
               value: {{ include "drone.mqttPort" . | quote }}
             {{- include "drone.mqttTlsEnv" . | nindent 12 }}
+            # 綠界金流:憑證(ECPAY_MERCHANT_ID/HASH_KEY/HASH_IV)由上方 envFrom secretRef
+            # 注入;URL/price/stage 非敏感,由 values.ecpay 直接帶入(全空=沙箱)。
+            - name: ECPAY_RETURN_URL
+              value: {{ .Values.ecpay.returnUrl | quote }}
+            - name: ECPAY_CLIENT_BACK_URL
+              value: {{ .Values.ecpay.clientBackUrl | quote }}
+            - name: ECPAY_STAGE
+              value: {{ .Values.ecpay.stage | quote }}
+            - name: ECPAY_PRICE_PRO
+              value: {{ .Values.ecpay.pricePro | quote }}
+            - name: ECPAY_PRICE_ENTERPRISE
+              value: {{ .Values.ecpay.priceEnterprise | quote }}
+            # 配額 / 限流旋鈕(values.quota;全空=用程式寬鬆預設)
+            - name: QUOTA_MAX_DEVICES
+              value: {{ .Values.quota.maxDevices | quote }}
+            - name: QUOTA_MAX_FLEETS
+              value: {{ .Values.quota.maxFleets | quote }}
+            - name: RATE_LIMIT_PER_MIN
+              value: {{ .Values.quota.rateLimitPerMin | quote }}
           ports:
             - containerPort: 8091
           readinessProbe:

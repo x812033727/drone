@@ -26,6 +26,15 @@ data:
           postgresVersion: 1600
         secureJsonData:
           password: $__env{PG_PASSWORD}
+      {{- if .Values.prometheus.enabled }}
+      - name: Prometheus
+        uid: drone-prometheus
+        type: prometheus
+        access: proxy
+        url: http://{{ include "drone.fullname" . }}-prometheus:9090
+        jsonData:
+          httpMethod: POST
+      {{- end }}
   dashboard-provider.yml: |
     apiVersion: 1
     providers:

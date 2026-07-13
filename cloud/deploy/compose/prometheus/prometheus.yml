@@ -1,0 +1,29 @@
+# Prometheus 抓取設定(compose 版監控閉環)。抓各服務 /metrics + 載入 alert-rules。
+# 只在 `docker compose --profile monitoring up` 時隨 prometheus 服務啟用;
+# 預設 `docker compose up`(cloud-smoke 用)不起 prometheus,不影響煙霧。
+# target 名對齊 docker-compose.yml 的服務名;job 名對齊 observability/alert-rules.yaml。
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+rule_files:
+  - /etc/prometheus/rules/alert-rules.yaml
+
+scrape_configs:
+  - job_name: fleetsvc
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["fleetsvc:8091"]
+  - job_name: missionsvc
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["missionsvc:8092"]
+  - job_name: logsvc
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["logsvc:8090"]
+  - job_name: ingest
+    metrics_path: /metrics
+    static_configs:
+      # ingest 是 MQTT consumer(無 HTTP API),prometheus_client 於 :9090 開 /metrics。
+      - targets: ["ingest:9090"]

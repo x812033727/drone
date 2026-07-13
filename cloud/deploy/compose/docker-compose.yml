@@ -134,6 +134,20 @@ services:
       JWT_JWKS_URL: ${JWT_JWKS_URL:-}
       JWT_AUDIENCE: ${JWT_AUDIENCE:-}
       JWT_ISSUER: ${JWT_ISSUER:-}
+      # 綠界金流(billing.py;全空=沙箱模式,用綠界公開測試商店,不影響 cloud-smoke)。
+      # 走正式收款才填 MERCHANT_ID/HASH_KEY/HASH_IV + RETURN_URL(需外部可達)。
+      ECPAY_MERCHANT_ID: ${ECPAY_MERCHANT_ID:-}
+      ECPAY_HASH_KEY: ${ECPAY_HASH_KEY:-}
+      ECPAY_HASH_IV: ${ECPAY_HASH_IV:-}
+      ECPAY_RETURN_URL: ${ECPAY_RETURN_URL:-}
+      ECPAY_CLIENT_BACK_URL: ${ECPAY_CLIENT_BACK_URL:-}
+      ECPAY_STAGE: ${ECPAY_STAGE:-}
+      ECPAY_PRICE_PRO: ${ECPAY_PRICE_PRO:-}
+      ECPAY_PRICE_ENTERPRISE: ${ECPAY_PRICE_ENTERPRISE:-}
+      # 配額 / 限流(limits.py;全空=程式寬鬆預設,dev/cloud-smoke 不觸發)
+      QUOTA_MAX_DEVICES: ${QUOTA_MAX_DEVICES:-}
+      QUOTA_MAX_FLEETS: ${QUOTA_MAX_FLEETS:-}
+      RATE_LIMIT_PER_MIN: ${RATE_LIMIT_PER_MIN:-}
     ports:
       # 只綁 loopback:Phase 0 無認證,不對外網開(security.md §8 內網豁免)
       - "127.0.0.1:${FLEETSVC_PORT:-8091}:8091"
@@ -238,7 +252,30 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
+  # 監控閉環(P1):抓各服務 /metrics + 載入 alert-rules。
+  # ⚠️ 以 profile "monitoring" 隔離:預設 `docker compose up`(cloud-smoke 用)**不起**
+  # 本服務,故不進 --wait 等待、不影響煙霧落庫斷言。啟監控:
+  #   docker compose --profile monitoring up -d
+  # Prometheus UI 只綁 loopback(security.md §8 內網豁免);正式對外請走反代 + 認證。
+  prometheus:
+    image: prom/prometheus:v2.55.1
+    profiles: ["monitoring"]
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=${PROM_RETENTION:-15d}
+      - --web.enable-lifecycle
+    ports:
+      - "127.0.0.1:${PROM_PORT:-9464}:9090"
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      # 規則檔單一來源:直接掛 observability/alert-rules.yaml(免複製)
+      - ../observability/alert-rules.yaml:/etc/prometheus/rules/alert-rules.yaml:ro
+      - prometheus-data:/prometheus
+    restart: unless-stopped
+
 volumes:
   timescale-data:
   ulog-archive:
   mediamtx-recordings:
+  prometheus-data:

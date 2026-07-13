@@ -47,7 +47,12 @@
 | `JWT_SECRET` / `JWT_JWKS_URL` | 空 | fleet/mission API 認證。**空 = 停用(dev 全放行)**;正式設 HS256 密鑰或 OIDC JWKS URL。另有 `JWT_AUDIENCE` / `JWT_ISSUER` |
 | `VIDEO_PUBLISH_USER` / `VIDEO_PUBLISH_PASS` | `publisher` / `dronedev-publish` | **MediaMTX 推流帳密**(RTSP publish);關匿名後推流必帶 |
 | `VIDEO_READ_USER` / `VIDEO_READ_PASS` | `reader` / `dronedev-read` | MediaMTX 拉流帳密(RTSP read) |
-| 埠覆寫 | 見下 | `MQTT_PORT` `PG_PORT` `GRAFANA_PORT` `RTSP_PORT` `PLAYBACK_PORT` `MTX_API_PORT` `LOGSVC_PORT` `FLEETSVC_PORT` `MISSIONSVC_PORT` `WEBCONSOLE_PORT` |
+| `ECPAY_MERCHANT_ID` / `ECPAY_HASH_KEY` / `ECPAY_HASH_IV` | 空 | **綠界金流憑證**。**全空 = 沙箱模式**(用綠界公開測試商店,不收真錢、不影響 cloud-smoke);三者齊備才走正式收款 |
+| `ECPAY_RETURN_URL` | 空 | 綠界 server 回調本服務 `/billing/callback` 的公開 URL。**正式收款必填且需外部可達**(綠界要能 POST 到此,localhost 無效) |
+| `ECPAY_CLIENT_BACK_URL` / `ECPAY_STAGE` / `ECPAY_PRICE_PRO` / `ECPAY_PRICE_ENTERPRISE` | 空 | 付款後前端返回 URL(選)/`true` 強制打綠界測試環境 / 各方案月費 TWD 覆寫(空=pro 3000、enterprise 30000) |
+| `QUOTA_MAX_DEVICES` / `QUOTA_MAX_FLEETS` | 空(=10000 / 1000) | 每租戶現存資源上限;超限回 **402**。空=程式寬鬆預設(dev/cloud-smoke 不觸發) |
+| `RATE_LIMIT_PER_MIN` | 空(=6000) | 每租戶寫入端點每分鐘速率上限;超限回 **429 + Retry-After** |
+| 埠覆寫 | 見下 | `MQTT_PORT` `PG_PORT` `GRAFANA_PORT` `RTSP_PORT` `PLAYBACK_PORT` `MTX_API_PORT` `LOGSVC_PORT` `FLEETSVC_PORT` `MISSIONSVC_PORT` `WEBCONSOLE_PORT` `PROM_PORT`(監控,見 §1.7) |
 
 `make dev` 用的隔離埠:MQTT `31883` · PG `35432` · Grafana `33100` · RTSP `38554` ·
 playback `39996` · mtx-api `39997` · logsvc `38090`(project 名 `drone-dev`)。
@@ -117,8 +122,34 @@ git pull && cd cloud/deploy/compose
 docker compose up -d --build --wait          # 滾動重建(migration 啟動自跑;image tag 已釘 1.12.3 等)
 docker compose logs --tail 200               # 觀察
 # 回滾:checkout 前一版 tag 後重跑 up;資料在具名 volume(timescale-data/ulog-archive/
-#       mediamtx-recordings)不隨 up 清除,down 勿加 -v
+#       mediamtx-recordings/prometheus-data)不隨 up 清除,down 勿加 -v
 ```
+
+### 1.7 監控閉環(Prometheus,可選 profile)
+
+各服務已內建 `/metrics`(fleetsvc:8091、missionsvc:8092、logsvc:8090、ingest:9090)。
+compose 附一個 `prometheus` 服務抓取它們並載入
+[alert-rules.yaml](../../../cloud/deploy/observability/alert-rules.yaml)。以 profile
+`monitoring` **隔離**:預設 `docker compose up`(含 cloud-smoke)**不起** Prometheus,故不影響
+煙霧;要監控才顯式加 profile:
+
+```bash
+cd cloud/deploy/compose
+docker compose --profile monitoring up -d            # 連同 prometheus 一起起
+# Prometheus UI(只綁 loopback,正式對外請走反代 + 認證):
+open http://127.0.0.1:${PROM_PORT:-9464}          # Status → Targets 應四個 job 皆 UP
+```
+
+scrape 設定 [prometheus/prometheus.yml](../../../cloud/deploy/compose/prometheus/prometheus.yml)
+(job 名對齊 alert-rules.yaml 的 `fleetsvc|missionsvc|logsvc|ingest`);規則檔直接掛
+observability 單一來源,免複製。Grafana 亦可加 Prometheus datasource 查這些指標。
+
+### 1.8 OTA 軟體更新(機載 agent 設定)
+
+雲端派發軟體套件 OTA(G23)於**機載 drone-agent** 端啟用,設定見
+[onboard/deploy/systemd/drone-agent.env.example](../../../onboard/deploy/systemd/drone-agent.env.example):
+`EXTRA_ARGS` 加 `--enable-ota` 訂閱 `fleet/{drone_id}/cmd/ota`,並**務必**設 `OTA_PUBLIC_KEY`
+指向 Ed25519 **公鑰** PEM 檔路徑(未設 = fail-closed 拒絕所有安裝)。私鑰只在雲端簽章側,絕不佈到機上。
 
 ---
 
@@ -148,6 +179,10 @@ Chart 在 [cloud/deploy/helm/drone-platform](../../../cloud/deploy/helm/drone-pl
 | `secrets.pgPassword` / `secrets.grafanaAdminPassword` | `change-me-*` | **務必覆寫**或用 `secrets.existingSecret` |
 | `secrets.jwtSecret` / `secrets.jwtJwksUrl` | 空 | 設其一啟用 API 認證(HS256 或 OIDC/RS256);空 = dev 全放行(NOTES.txt 會告警) |
 | `mtls.enabled` / `mtls.certSecret` | `false` / 空 | 啟用機-雲 mTLS(broker 走 8883 + per-device ACL + CRL,服務帶 backend 憑證) |
+| `ecpay.merchantId` / `ecpay.hashKey` / `ecpay.hashIV` | 空 | **綠界金流憑證**(敏感;寫入 Secret,`existingSecret` 模式改由該 Secret 提供 `ECPAY_*` 三鍵)。**全空 = 沙箱**;齊備才走正式收款 |
+| `ecpay.returnUrl` / `ecpay.clientBackUrl` / `ecpay.stage` / `ecpay.pricePro` / `ecpay.priceEnterprise` | 空 | 非敏感,由 values 注入 fleetsvc env。`returnUrl` 為綠界回調 `/billing/callback` 的公開 URL,**需外部可達** |
+| `quota.maxDevices` / `quota.maxFleets` / `quota.rateLimitPerMin` | 空(=10000/1000/6000) | 每租戶配額(超限 402)與寫入限流(超限 429);空=程式寬鬆預設 |
+| `prometheus.enabled` | `true` | 內建 Prometheus 抓各服務 `/metrics` + 載入 alert-rules。已有中央 Prometheus 可設 `false` |
 | `grafana.anonymous` | `false` | 私有部署預設關匿名(對比 dev compose) |
 | `ingress.enabled` / `ingress.host` / `ingress.tls` | `false` / `drone.example.com` / `[]` | 對外 Web 指揮中心 + TLS |
 | 各服務 `replicas` / `resources` / `storage` | 見 values | 依規模調整;timescaledb/logsvc 為 StatefulSet+PVC |
