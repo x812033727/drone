@@ -1,0 +1,193 @@
+{{- if .Values.networkPolicy.enabled }}
+{{- $fullname := include "drone.fullname" . }}
+{{- $instance := .Release.Name }}
+# G17a NetworkPolicy：預設拒絕所有 ingress，再逐服務放行必要流量（policyTypes 僅 Ingress，
+# 不限制 egress，故 DNS/對外連線不受影響）。需 CNI 支援（Calico/Cilium…）；不支援的叢集
+# 套用後不生效但不影響安裝。多條 NetworkPolicy 為聯集（OR）語義。
+# 注意：mosquitto 的外部裝置(drone)連線、logsvc 的外部 ULog 上傳走叢集外來源，
+# 若有需求須另加 from ipBlock/namespaceSelector 規則（本檔只放行叢集內服務間流量）。
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $fullname }}-default-deny-ingress
+  labels:
+    {{- include "drone.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/instance: {{ $instance }}
+  policyTypes:
+    - Ingress
+---
+# timescaledb ← ingest / fleetsvc / missionsvc / logsvc / grafana / migrate / backup
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $fullname }}-allow-timescaledb
+  labels:
+    {{- include "drone.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/instance: {{ $instance }}
+      app.kubernetes.io/component: timescaledb
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        {{- range $c := tuple "ingest" "fleetsvc" "missionsvc" "logsvc" "grafana" "migrate" "backup" }}
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/instance: {{ $instance }}
+              app.kubernetes.io/component: {{ $c }}
+        {{- end }}
+      ports:
+        - protocol: TCP
+          port: 5432
+---
+# mosquitto ← ingest / fleetsvc / missionsvc（叢集內服務；外部裝置連線須另加規則）
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $fullname }}-allow-mosquitto
+  labels:
+    {{- include "drone.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/instance: {{ $instance }}
+      app.kubernetes.io/component: mosquitto
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        {{- range $c := tuple "ingest" "fleetsvc" "missionsvc" }}
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/instance: {{ $instance }}
+              app.kubernetes.io/component: {{ $c }}
+        {{- end }}
+      ports:
+        - protocol: TCP
+          port: {{ include "drone.mqttPort" . }}
+---
+# fleetsvc ← webconsole（含 SSE /stream）
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $fullname }}-allow-fleetsvc
+  labels:
+    {{- include "drone.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/instance: {{ $instance }}
+      app.kubernetes.io/component: fleetsvc
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/instance: {{ $instance }}
+              app.kubernetes.io/component: webconsole
+      ports:
+        - protocol: TCP
+          port: 8091
+---
+# missionsvc ← webconsole
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $fullname }}-allow-missionsvc
+  labels:
+    {{- include "drone.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/instance: {{ $instance }}
+      app.kubernetes.io/component: missionsvc
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/instance: {{ $instance }}
+              app.kubernetes.io/component: webconsole
+      ports:
+        - protocol: TCP
+          port: 8092
+---
+# logsvc ← webconsole（叢集內；外部 ULog 上傳須另加來源規則）
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $fullname }}-allow-logsvc
+  labels:
+    {{- include "drone.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/instance: {{ $instance }}
+      app.kubernetes.io/component: logsvc
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/instance: {{ $instance }}
+              app.kubernetes.io/component: webconsole
+      ports:
+        - protocol: TCP
+          port: 8090
+---
+# webconsole ← Ingress 控制器 / port-forward（:80）
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $fullname }}-allow-webconsole
+  labels:
+    {{- include "drone.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/instance: {{ $instance }}
+      app.kubernetes.io/component: webconsole
+  policyTypes:
+    - Ingress
+  ingress:
+    # from 省略 = 放行所有來源（預設，讓任意 namespace 的 Ingress 控制器/port-forward 連入）；
+    # 設 ingressControllerNamespace 則收斂為僅該 namespace。
+    - ports:
+        - protocol: TCP
+          port: 80
+      {{- if .Values.networkPolicy.ingressControllerNamespace }}
+      from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Values.networkPolicy.ingressControllerNamespace }}
+      {{- end }}
+{{- if .Values.grafana.enabled }}
+---
+# grafana ← 全部來源（:3000；經 port-forward/使用者瀏覽）
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $fullname }}-allow-grafana
+  labels:
+    {{- include "drone.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/instance: {{ $instance }}
+      app.kubernetes.io/component: grafana
+  policyTypes:
+    - Ingress
+  ingress:
+    - ports:
+        - protocol: TCP
+          port: 3000
+{{- end }}
+{{- end }}

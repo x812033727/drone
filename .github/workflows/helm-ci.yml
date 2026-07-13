@@ -34,3 +34,8 @@ jobs:
         run: |
           helm template drone cloud/deploy/helm/drone-platform \
             --set mtls.enabled=true --set mtls.certSecret=drone-mqtt-certs > /dev/null
+      - name: helm template(運維:NetworkPolicy + 多副本 PDB)
+        run: |
+          helm template drone cloud/deploy/helm/drone-platform \
+            --set networkPolicy.enabled=true \
+            --set fleetsvc.replicas=2 --set missionsvc.replicas=2 > /dev/null

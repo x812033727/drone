@@ -101,3 +101,52 @@ ingress:
   host: drone.example.com
   annotations: {}
   tls: [] # [{secretName: drone-tls, hosts: [drone.example.com]}]
+
+# ── 生產運維(P1)──────────────────────────────────────────────────────────
+
+# G15 TimescaleDB 備份:CronJob 定期 pg_dump(自訂格式 -Fc)到本地備份 PVC,
+# 依 retentionDays 清舊檔。異地/物件儲存(S3/GCS)屬部署決策——本 chart 只做
+# 本地 PVC 版;要外送見下方 s3 註解 hook 與 README「備份/還原」段。
+backup:
+  enabled: true
+  schedule: "0 3 * * *" # 每日 03:00(叢集時區)
+  retentionDays: 7 # 保留天數,超過者由 CronJob 內 find -mtime 清除
+  storage: 10Gi # 備份 PVC 容量
+  storageClassName: ""
+  # 物件儲存外送(選用):預設關。開啟後 CronJob 於 pg_dump 完成後把備份檔上傳到
+  # 指定 bucket(需自備含 aws CLI 的映像與憑證 Secret),資料異地保存。此處只留
+  # 旗標與參數 hook,實際上傳指令與映像屬部署決策,範例見 README。
+  s3:
+    enabled: false
+    bucket: "" # 例:s3://my-drone-backups/timescaledb
+    # 憑證建議以 existingSecret 掛環境變數(AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY),
+    # 或用 IRSA/Workload Identity。本 chart 不代管雲端憑證。
+
+# G16 資料庫 migration:改由 Helm pre-upgrade hook Job 先跑(fleet_svc/mission_svc
+# 各自 python -m <svc>.migrate),避免多副本 app 同時啟動自跑 migration 的競態。
+# app 啟動時仍會自跑 migration 作為 fallback(冪等:schema_migrations 去重),
+# 故 useHook=false 時退回純 app 自跑亦可運作。
+migration:
+  useHook: true
+  # Helm hook 時機。預設僅 pre-upgrade:本 chart 內建 timescaledb,pre-install
+  # 階段 DB 尚未建立,若掛 pre-upgrade hook 會連不到 DB 而卡死安裝;故「首次安裝」
+  # 的 migration 由 app 啟動自跑(replicas 預設 1,無競態)。若改接「外部既有 DB」,
+  # 可加 "pre-install" 讓安裝也走 hook。
+  hooks:
+    - pre-upgrade
+  backoffLimit: 3
+  activeDeadlineSeconds: 600
+
+# G17a NetworkPolicy:預設 deny-all ingress + 僅放行必要服務間流量。預設關(需 CNI
+# 支援 NetworkPolicy,如 Calico/Cilium;無支援的叢集開了不生效但不影響安裝)。
+networkPolicy:
+  enabled: false
+  # webconsole 需被 Ingress 控制器(通常在他 namespace)連入 :80,故其 ingress 規則
+  # 預設放行所有來源;若要收斂成僅特定 namespace,設 ingressControllerNamespace。
+  ingressControllerNamespace: ""
+
+# G17b PodDisruptionBudget:多副本服務設 minAvailable,節點排空/升級時保可用。
+# 預設開,但只對 replicas>1 的服務產生 PDB(單副本設 PDB 會擋節點排空,故略過)。
+pdb:
+  enabled: true
+  minAvailable: 1

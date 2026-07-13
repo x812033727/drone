@@ -1,0 +1,67 @@
+{{- if .Values.migration.useHook }}
+# G16 migration Helm hook Job：於 pre-upgrade（預設）先把 fleet/mission 的 SQL migration
+# 套用完，再滾動更新 app，避免多副本 app 同時啟動自跑 migration 的競態。
+# 兩服務映像不同，故以 initContainer（fleet）+ 主容器（mission）串接於同一 Job，
+# 依序執行、任一失敗即 Job 失敗（hook 失敗會中止 helm upgrade）。
+# app 啟動仍會冪等自跑 migration 作 fallback（schema_migrations 去重）。
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "drone.fullname" . }}-migrate
+  labels:
+    {{- include "drone.labels" . | nindent 4 }}
+    app.kubernetes.io/component: migrate
+  annotations:
+    "helm.sh/hook": {{ join "," .Values.migration.hooks | quote }}
+    "helm.sh/hook-weight": "-5"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  backoffLimit: {{ .Values.migration.backoffLimit }}
+  activeDeadlineSeconds: {{ .Values.migration.activeDeadlineSeconds }}
+  template:
+    metadata:
+      labels:
+        {{- include "drone.labels" . | nindent 8 }}
+        app.kubernetes.io/component: migrate
+    spec:
+      restartPolicy: Never
+      securityContext:
+        {{- include "drone.podSecurityContext" . | nindent 8 }}
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      initContainers:
+        - name: migrate-fleet
+          image: {{ include "drone.image" (list . "fleet_svc") | quote }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext:
+            {{- include "drone.containerSecurityContext" . | nindent 12 }}
+          command: ["python", "-m", "fleet_svc.migrate"]
+          env:
+            - name: PG_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "drone.secretName" . }}
+                  key: PG_PASSWORD
+            - name: PG_DSN
+              value: {{ include "drone.pgDsn" . | quote }}
+          resources:
+            {{- toYaml .Values.fleetsvc.resources | nindent 12 }}
+      containers:
+        - name: migrate-mission
+          image: {{ include "drone.image" (list . "mission_svc") | quote }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext:
+            {{- include "drone.containerSecurityContext" . | nindent 12 }}
+          command: ["python", "-m", "mission_svc.migrate"]
+          env:
+            - name: PG_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "drone.secretName" . }}
+                  key: PG_PASSWORD
+            - name: PG_DSN
+              value: {{ include "drone.pgDsn" . | quote }}
+          resources:
+            {{- toYaml .Values.missionsvc.resources | nindent 12 }}
+{{- end }}
