@@ -123,6 +123,18 @@
 >
 > **運營化補完(2026-07-13 續)**:✅ org/租戶/配額管理後端(#118,fleet.org plan/status/配額覆寫 + admin /orgs CRUD + suspended 擋寫)· ✅ 租戶管理 + 用量檢視 UI(#119,admin gating)· ✅ **綠界 ECPay 訂閱金流(#120)**:checkout + CheckMacValue 驗章(綠界官方測試向量 known-answer 驗證)+ webhook 啟用方案 + billing_transaction,零硬編憑證(沙箱/正式走 env)· ✅ precision_land 精準降落(#117,Wave5 P3)。**商業化全可運營;綠界正式上線僅需填 ECPAY_* env。**
 
+### 第二輪整合稽核(2026-07-13,對新功能之間的接線)
+> 大量新功能上線後再稽核「跨元件斷點」,補足如下:
+> - ✅ **跨 org 派遣安全漏洞**(#123):mission_svc 建任務未驗證目標機所有權 → 讀 fleet.device 的 org 擋跨 org(404),真 PG 驗證。
+> - ✅ **ECPay 部署注入點**(#124):Helm secret/values + compose 加 ECPAY_*/配額 env(先前客戶部署金流靜默跑沙箱)。
+> - ✅ **OTA 雲端觸發端**(#125):fleet_svc `POST /devices/{id}/ota` + `tools/dispatch_ota.py`(payload round-trip 餵回 ota.py 驗證);先前機載訂了雲端無從觸發。
+> - ✅ **告警閉環**(#125 後端 + #126 前端):ingest 訂閱 `fleet/+/alerts`+`ota/progress`→device_alerts 表→fleet_svc `GET /alerts`(多租戶)→web-console 告警分頁;先前 cert/OTA 告警發了無人收。
+> - ✅ **Prometheus scrape**(#124):compose(profile 隔離)+ Helm prometheus.yaml,scrape 四服務 /metrics + 載入 alert-rules;先前 /metrics 與告警規則無人消費。
+> - ✅ **前端自助訂閱**(#122):web-console 升級/結帳 UI 導向綠界;先前 billing 後端可達、operator 無入口。
+> - ✅ **cloud/common 去重**(#127,Wave1 A1):抽 drone_common(auth 純邏輯/migrate/audit),保守拆分保住測試耦合、行為零改變。
+>
+> **仍餘 P2(低價值/需決策/需硬體,刻意延後)**:①FleetMission 派遣 proto(#109)無消費端——前瞻契約,現行派遣走 mission.proto 已運作,無使用場景故不強接;②per-org 限流(#115)為 per-process,replicas>1 近似——精確全域限流需 Redis(部署基礎設施決策),DB-backed 用量/配額本身正確;③影像串流整合進 console——video_pipeline 屬 POC,真實機載相機/Jetson 為 Phase 1 硬體,無真實影像源前整合價值有限。
+
 ### P0 — 部署阻擋 / 對外裸奔(✅ 全數完成)
 | # | 缺口 | 狀態 |
 |---|------|------|
