@@ -3,8 +3,8 @@ fastapi==0.139.0
 uvicorn==0.51.0
 python-multipart==0.0.32   # FastAPI UploadFile(multipart)解析
 asyncpg==0.31.0
-pyjwt[crypto]>=2.9,<3      # JWT 認證 + RBAC(HS256 dev / JWKS RS256 生產,對齊 fleet-svc)
-prometheus-client==0.22.1  # /metrics 可觀測性(G13,對齊 fleet/mission/ingest)
+pyjwt[crypto]>=2.13.0,<3      # JWT 認證 + RBAC(HS256 dev / JWKS RS256 生產,對齊 fleet-svc)
+prometheus-client==0.25.0  # /metrics 可觀測性(G13,對齊 fleet/mission/ingest)
 
 # tools/ulog_report.py 子程序依賴(Dockerfile COPY tools/ulog_report.py 進映像)
 pyulog==1.2.3
