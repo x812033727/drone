@@ -133,6 +133,11 @@
 > - ✅ **前端自助訂閱**(#122):web-console 升級/結帳 UI 導向綠界;先前 billing 後端可達、operator 無入口。
 > - ✅ **cloud/common 去重**(#127,Wave1 A1):抽 drone_common(auth 純邏輯/migrate/audit),保守拆分保住測試耦合、行為零改變。
 >
+>
+> **後續補完(#129/#130)**:✅ 韌體管理 + OTA 推送 UI(#129,後端 #125 有端點無前端 → 補齊,OTA 操作閉環端到端通:console 推送→端點→機載→進度走告警分頁)。✅ **限流改 DB-backed 精確**(#130,`rate_limit_counter` fixed-window 原子 upsert,多副本精確,真 PG 200×2 併發驗 final=400 唯一)——解掉原「需 Redis」的 per-process 近似,**免引入 Redis**。
+>
+> **僅餘 2 項刻意延後(誠實)**:①FleetMission 派遣 proto(#109)無消費端——前瞻契約,現行派遣走 mission.proto 已運作,無使用場景故不強接(要接需重構可運作的派遣流,零功能增益);②影像串流整合進 console——video_pipeline 屬 POC、無真實相機(Jetson+相機為 Phase 1 硬體),為不存在的 feed 做 WHEP/WebRTC 瀏覽器整合屬低價值臆測,待真實影像源到位再做。
+>
 > **仍餘 P2(低價值/需決策/需硬體,刻意延後)**:①FleetMission 派遣 proto(#109)無消費端——前瞻契約,現行派遣走 mission.proto 已運作,無使用場景故不強接;②per-org 限流(#115)為 per-process,replicas>1 近似——精確全域限流需 Redis(部署基礎設施決策),DB-backed 用量/配額本身正確;③影像串流整合進 console——video_pipeline 屬 POC,真實機載相機/Jetson 為 Phase 1 硬體,無真實影像源前整合價值有限。
 
 ### P0 — 部署阻擋 / 對外裸奔(✅ 全數完成)
