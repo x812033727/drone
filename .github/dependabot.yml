@@ -19,6 +19,13 @@ updates:
         patterns: ["*"]
     commit-message:
       prefix: "deps"
+    ignore:
+      # numpy 2.3+ 要求 Python >= 3.11(2.5+ 需 3.12);本專案 CI/執行基線是
+      # Python 3.10,pyulog 拉進來的 numpy 守在 2.2.x。升上去會讓 group PR
+      # 永久紅(安裝期 "No matching distribution / Requires-Python" 或映像內
+      # 無 cp3xx wheel 而退回無編譯器的源碼建置)。待整體升 3.12 再解除。
+      - dependency-name: "numpy"
+        versions: [">=2.3"]
 
   # GitHub Actions 版本
   - package-ecosystem: "github-actions"
@@ -43,3 +50,8 @@ updates:
     open-pull-requests-limit: 3
     commit-message:
       prefix: "docker"
+    ignore:
+      # ros2_ws/docker 從源碼建 PX4 v1.15.4,綁定已驗證的 Ubuntu 22.04 LTS
+      # 工具鏈;跳 25.04/26.04 的新 GCC 會有未驗證的編譯風險,守在 <=24.04。
+      - dependency-name: "ubuntu"
+        versions: [">=25.04"]
