@@ -11,14 +11,15 @@ import asyncio
 import json
 import logging
 import os
+import urllib.parse
 from contextlib import asynccontextmanager
 from uuid import UUID
 
 import asyncpg
 from fastapi import Depends, FastAPI, HTTPException, Query, Request, Response
-from fastapi.responses import StreamingResponse
+from fastapi.responses import PlainTextResponse, StreamingResponse
 
-from fleet_svc import audit, limits, metrics, repo
+from fleet_svc import audit, billing, limits, metrics, repo
 from fleet_svc.auth import (
     AUTH_ENABLED,
     Principal,
@@ -33,6 +34,9 @@ from fleet_svc.hub import TelemetryHub
 from fleet_svc.migrate import apply_migrations
 from fleet_svc.models import (
     AuditEntry,
+    BillingCheckoutRequest,
+    BillingTransaction,
+    CheckoutForm,
     Device,
     DeviceCreate,
     DeviceFirmware,
@@ -45,7 +49,10 @@ from fleet_svc.models import (
     FleetCreate,
     Org,
     OrgCreate,
+    OrgPlan,
+    OrgStatus,
     OrgUpdate,
+    SubscriptionView,
     UsageReport,
 )
 
@@ -479,6 +486,112 @@ async def get_org_usage(org_id: str, claims: dict = ADMIN) -> UsageReport:
             "max_devices": limits.effective_limit(org_row, "max_devices"),
             "max_fleets": limits.effective_limit(org_row, "max_fleets"),
         },
+    )
+
+
+# ---- 訂閱金流(綠界 ECPay:結帳 / 回調 / 訂閱狀態)----
+# checkout:operator/admin 為「自己 org」發起訂閱 → 產綠界表單參數(含 CheckMacValue)。
+# callback:綠界 server POST 回調,**驗 CheckMacValue** 後啟用 org 方案並記交易,回 `1|OK`。
+# subscription:本 org 目前方案/狀態/最近交易。憑證走 env,未設=沙箱(綠界公開測試參數)。
+@app.post("/api/v1/billing/checkout", response_model=CheckoutForm)
+async def billing_checkout(
+    body: BillingCheckoutRequest, request: Request, principal: Principal = OPERATOR
+) -> CheckoutForm:
+    # 租戶邊界:一律為呼叫者自己的 org 結帳(不採信 client 傳入 org);free 方案無需付費。
+    plan = body.plan.value
+    if plan == "free":
+        raise HTTPException(status_code=400, detail="free 方案無需付費;請選擇 pro / enterprise")
+    amount = billing.plan_price(plan)
+    if amount <= 0:
+        raise HTTPException(status_code=400, detail=f"方案 {plan} 未設定有效金額")
+    cfg = billing.load_config()
+    trade_no = billing.new_trade_no()
+    params = billing.build_checkout_params(
+        cfg, org_id=principal.org, plan=plan, amount=amount, trade_no=trade_no
+    )
+    async with _pool(app).acquire() as conn:
+        try:
+            await repo.create_billing_txn(
+                conn, org_id=principal.org, plan=plan, amount=amount, trade_no=trade_no
+            )
+        except asyncpg.UniqueViolationError:  # trade_no 碰撞(極罕見)→ 讓客戶端重試
+            raise HTTPException(status_code=409, detail="訂單號碰撞,請重試")
+        await audit.record(
+            conn, claims=principal.claims, action="checkout", resource_type="billing",
+            resource_id=trade_no,
+            details={"org_id": principal.org, "plan": plan, "amount": amount,
+                     "sandbox": cfg.sandbox},
+            request=request,
+        )
+    return CheckoutForm(action_url=cfg.action_url, params=params, sandbox=cfg.sandbox)
+
+
+@app.post("/api/v1/billing/callback", response_class=PlainTextResponse)
+async def billing_callback(request: Request) -> PlainTextResponse:
+    # 綠界 server 端回調(application/x-www-form-urlencoded)。無 JWT:以 CheckMacValue 認證。
+    # 自行解析 raw body(零依賴,免 python-multipart);驗章失敗一律拒絕(不啟用任何方案)。
+    raw = await request.body()
+    parsed = urllib.parse.parse_qs(raw.decode("utf-8"), keep_blank_values=True)
+    params: dict[str, str] = {k: v[0] for k, v in parsed.items()}
+    cfg = billing.load_config()
+    if not billing.verify_callback(params, cfg):
+        # 章不符 → 可能偽造;回非 1|OK 讓綠界視為失敗並重送(不動任何狀態)。
+        raise HTTPException(status_code=400, detail="CheckMacValue 驗證失敗")
+
+    trade_no = params.get("MerchantTradeNo", "")
+    rtn_code = params.get("RtnCode", "")
+    org_id = params.get("CustomField1", "")
+    plan = params.get("CustomField2", "")
+    paid = rtn_code == "1"  # 綠界:RtnCode=1 表示付款成功
+
+    async with _pool(app).acquire() as conn:
+        txn = await repo.get_billing_txn(conn, trade_no)
+        if txn is None:  # 未知訂單:驗章已過但查無 pending 紀錄 → 記審計後回 1|OK(不重送)
+            await audit.record(
+                conn, claims={"sub": "ecpay"}, action="callback_unknown",
+                resource_type="billing", resource_id=trade_no,
+                details={"rtn_code": rtn_code}, request=request,
+            )
+            return PlainTextResponse("1|OK")
+        if txn.status == "paid":  # 冪等:綠界重送已處理訂單 → 不重複啟用
+            return PlainTextResponse("1|OK")
+        if paid:
+            # 以訂單自身(可信 pending 紀錄)的 org/plan 為準,CustomField 僅供對照。
+            await repo.set_billing_txn_status(conn, trade_no, "paid")
+            await repo.activate_org_plan(conn, txn.org_id, txn.plan.value)
+            await audit.record(
+                conn, claims={"sub": "ecpay"}, action="activate", resource_type="billing",
+                resource_id=trade_no,
+                details={"org_id": txn.org_id, "plan": txn.plan.value,
+                         "amount": txn.amount, "cf_org": org_id, "cf_plan": plan},
+                request=request,
+            )
+        else:
+            await repo.set_billing_txn_status(conn, trade_no, "failed")
+            await audit.record(
+                conn, claims={"sub": "ecpay"}, action="payment_failed",
+                resource_type="billing", resource_id=trade_no,
+                details={"rtn_code": rtn_code}, request=request,
+            )
+    return PlainTextResponse("1|OK")
+
+
+@app.get("/api/v1/billing/subscription", response_model=SubscriptionView)
+async def billing_subscription(principal: Principal = VIEWER) -> SubscriptionView:
+    # 本 org 目前方案/狀態/最近交易(一律查呼叫者自己的 org)。
+    cfg = billing.load_config()
+    async with _pool(app).acquire() as conn:
+        org_row = await repo.get_org(conn, principal.org)
+        txns: list[BillingTransaction] = await repo.list_billing_txns(conn, principal.org, limit=10)
+    plan = org_row.plan if org_row else OrgPlan.free
+    status = org_row.status if org_row else OrgStatus.active
+    return SubscriptionView(
+        org_id=principal.org,
+        plan=plan,
+        status=status,
+        price=billing.plan_price(plan.value),
+        sandbox=cfg.sandbox,
+        recent_transactions=txns,
     )
 
 

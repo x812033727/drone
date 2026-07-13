@@ -11,6 +11,7 @@ import asyncpg
 
 from fleet_svc.models import (
     AuditEntry,
+    BillingTransaction,
     Device,
     DeviceCreate,
     DeviceFirmware,
@@ -172,6 +173,91 @@ async def update_org(
         org_id,
     )
     return _org(r) if r else None
+
+
+# ---- 訂閱金流(綠界 ECPay):billing_transaction + 付款成功啟用方案 ----
+_BILLING_COLS = "id, org_id, plan, amount, trade_no, status, at"
+
+
+def _billing(r: asyncpg.Record) -> BillingTransaction:
+    return BillingTransaction.model_validate(dict(r))
+
+
+async def create_billing_txn(
+    conn: asyncpg.Connection,
+    *,
+    org_id: str,
+    plan: str,
+    amount: int,
+    trade_no: str,
+    status: str = "pending",
+) -> BillingTransaction:
+    """結帳發起時落一筆交易(預設 pending);trade_no 唯一,重複由呼叫端捕捉。"""
+    r = await conn.fetchrow(
+        "INSERT INTO fleet.billing_transaction (org_id, plan, amount, trade_no, status) "
+        f"VALUES ($1, $2, $3, $4, $5) RETURNING {_BILLING_COLS}",
+        org_id,
+        plan,
+        amount,
+        trade_no,
+        status,
+    )
+    return _billing(r)
+
+
+async def get_billing_txn(
+    conn: asyncpg.Connection, trade_no: str
+) -> BillingTransaction | None:
+    """依綠界 MerchantTradeNo 取交易(回調對帳/冪等判定用)。"""
+    r = await conn.fetchrow(
+        f"SELECT {_BILLING_COLS} FROM fleet.billing_transaction WHERE trade_no = $1",
+        trade_no,
+    )
+    return _billing(r) if r else None
+
+
+async def set_billing_txn_status(
+    conn: asyncpg.Connection, trade_no: str, status: str
+) -> BillingTransaction | None:
+    """更新交易狀態(pending→paid/failed),刷新 updated_at。不存在回 None。"""
+    r = await conn.fetchrow(
+        "UPDATE fleet.billing_transaction SET status = $1, updated_at = now() "
+        f"WHERE trade_no = $2 RETURNING {_BILLING_COLS}",
+        status,
+        trade_no,
+    )
+    return _billing(r) if r else None
+
+
+async def list_billing_txns(
+    conn: asyncpg.Connection, org: str, limit: int = 10
+) -> list[BillingTransaction]:
+    """某租戶最近交易(時間新→舊;訂閱狀態頁用)。"""
+    rows = await conn.fetch(
+        f"SELECT {_BILLING_COLS} FROM fleet.billing_transaction "
+        "WHERE org_id = $1 ORDER BY at DESC, id DESC LIMIT $2",
+        org,
+        limit,
+    )
+    return [_billing(r) for r in rows]
+
+
+async def activate_org_plan(conn: asyncpg.Connection, org_id: str, plan: str) -> Org:
+    """付款成功後啟用租戶方案:upsert org 為指定 plan + status=active。
+
+    org 尚未在註冊表(自助結帳的新租戶)亦建立;name 暫用 org_id(admin 可後續 PATCH 更名)。
+    既有租戶則更新 plan/status,不動配額覆寫(max_*)與名稱。
+    """
+    r = await conn.fetchrow(
+        "INSERT INTO fleet.org (org_id, name, plan, status) "
+        "VALUES ($1, $1, $2, 'active') "
+        "ON CONFLICT (org_id) DO UPDATE SET plan = EXCLUDED.plan, "
+        "status = 'active', updated_at = now() "
+        f"RETURNING {_ORG_COLS}",
+        org_id,
+        plan,
+    )
+    return _org(r)
 
 
 # ---- fleet ----
