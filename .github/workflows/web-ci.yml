@@ -1,0 +1,36 @@
+name: web-ci
+
+# Web 主控台前端守門:lint + typecheck + build。路徑觸發,不影響其他子系統。
+on:
+  push:
+    branches: [main]
+    paths:
+      - "gcs/web-console/**"
+      - ".github/workflows/web-ci.yml"
+  pull_request:
+    paths:
+      - "gcs/web-console/**"
+      - ".github/workflows/web-ci.yml"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: gcs/web-console
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: gcs/web-console/package-lock.json
+      - name: 安裝依賴
+        run: npm ci
+      - name: Lint
+        run: npm run lint
+      - name: 型別檢查
+        run: npm run typecheck
+      - name: 建置
+        run: npm run build
