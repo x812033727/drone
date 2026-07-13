@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
+import re
 from datetime import date, datetime
 from enum import Enum
 from uuid import UUID
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 class DeviceStatus(str, Enum):
@@ -132,6 +133,80 @@ class DeviceFirmware(BaseModel):
     component: Component
     version: str
     installed_at: datetime
+
+
+# ---- OTA 觸發(雲端發起端;對齊 onboard/drone_agent/drone_agent/ota.py 的 cmd/ota 契約)----
+class OtaAction(str, Enum):
+    """OTA 指令動作,對齊 ota.py 的 VALID_ACTIONS。"""
+
+    install = "install"
+    pause = "pause"
+    resume = "resume"
+    rollback = "rollback"
+
+
+_SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
+
+
+class DeviceOtaRequest(BaseModel):
+    """觸發裝置 OTA(POST /devices/{id}/ota)。欄位對齊 ota.py parse_ota_command:
+
+    - install 需 update_id + component/version/url/sha256/signature 齊備(size 選填);
+    - pause/resume/rollback 只需 update_id(rollback 可帶 component)。
+    簽章由離線 HSM 產(security.md §4),雲端只轉發不簽——sha256/signature 由呼叫端提供。
+    """
+
+    action: OtaAction = OtaAction.install
+    update_id: str = Field(min_length=1)
+    component: Component | None = None
+    version: str | None = None
+    url: str | None = None
+    size: int | None = Field(default=None, ge=0)
+    sha256: str | None = None
+    signature: str | None = None
+
+    @field_validator("sha256")
+    @classmethod
+    def _sha256(cls, v: str | None) -> str | None:
+        if v is None:
+            return v
+        v = v.lower()
+        if not _SHA256_RE.match(v):
+            raise ValueError("sha256 需為 64 字元小寫 hex")
+        return v
+
+    @model_validator(mode="after")
+    def _require_install_fields(self) -> DeviceOtaRequest:
+        if self.action is OtaAction.install:
+            missing = [
+                f
+                for f in ("component", "version", "url", "sha256", "signature")
+                if not getattr(self, f)
+            ]
+            if missing:
+                raise ValueError(f"install 指令缺必要欄位:{', '.join(missing)}")
+        return self
+
+
+class DeviceOtaResult(BaseModel):
+    """OTA 觸發回應:確認已發布 cmd/ota 到目標機主題(fire-and-forget;進度看 /alerts)。"""
+
+    device_id: UUID
+    serial: str
+    action: OtaAction
+    update_id: str
+    topic: str
+
+
+# ---- 告警閉環(cert 到期 / OTA 進度;ingest 落 device_alerts,fleet-svc 查詢)----
+class AlertEntry(BaseModel):
+    """一筆裝置告警(GET /api/v1/alerts)。kind 區分 cert(憑證到期)/ ota(OTA 進度)。"""
+
+    time: datetime
+    drone_id: str
+    kind: str
+    summary: str
+    detail: dict = Field(default_factory=dict)
 
 
 class DeviceStatusView(BaseModel):

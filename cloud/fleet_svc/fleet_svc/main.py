@@ -19,7 +19,7 @@ import asyncpg
 from fastapi import Depends, FastAPI, HTTPException, Query, Request, Response
 from fastapi.responses import PlainTextResponse, StreamingResponse
 
-from fleet_svc import audit, billing, limits, metrics, repo
+from fleet_svc import audit, billing, limits, metrics, ota, repo
 from fleet_svc.auth import (
     AUTH_ENABLED,
     Principal,
@@ -33,6 +33,7 @@ from fleet_svc.consumer import run_consumer
 from fleet_svc.hub import TelemetryHub
 from fleet_svc.migrate import apply_migrations
 from fleet_svc.models import (
+    AlertEntry,
     AuditEntry,
     BillingCheckoutRequest,
     BillingTransaction,
@@ -41,6 +42,8 @@ from fleet_svc.models import (
     DeviceCreate,
     DeviceFirmware,
     DeviceFirmwareSet,
+    DeviceOtaRequest,
+    DeviceOtaResult,
     DeviceStatusView,
     DeviceUpdate,
     Firmware,
@@ -350,6 +353,37 @@ async def list_device_firmware(
         return await repo.list_device_firmware(conn, device_id)
 
 
+# ---- OTA 觸發(雲端發起端;發布 cmd/ota 到目標機,對齊 onboard ota.py 契約)----
+@app.post("/api/v1/devices/{device_id}/ota", response_model=DeviceOtaResult)
+async def trigger_device_ota(
+    device_id: UUID, body: DeviceOtaRequest, request: Request, principal: Principal = OPERATOR
+) -> DeviceOtaResult:
+    # 多租戶(G11,安全關鍵):只能對**本 org** 的裝置觸發 OTA(跨 org 回 404,不洩存在性)。
+    # 目標主題 fleet/{serial}/cmd/ota——serial 即機上 drone_id(同遙測/派遣慣例)。
+    # dev 模式(認證停用)= admin,故 cloud-smoke / 內網不受租戶約束。
+    async with _pool(app).acquire() as conn:
+        await _guard_write(conn, principal)  # 擋 suspended 租戶寫入(admin 豁免)
+        d = await repo.get_device(conn, device_id, read_org(principal))
+        if d is None:
+            raise HTTPException(status_code=404, detail="device 不存在")
+        cmd_json = ota.build_ota_command_json(body)
+        await ota.publish_ota_command(MQTT_HOST, MQTT_PORT, d.serial, cmd_json)
+        await audit.record(
+            conn, claims=principal.claims, action=f"ota_{body.action.value}",
+            resource_type="device", resource_id=device_id,
+            details={"serial": d.serial, "update_id": body.update_id,
+                     "component": body.component.value if body.component else None,
+                     "version": body.version}, request=request,
+        )
+    return DeviceOtaResult(
+        device_id=device_id,
+        serial=d.serial,
+        action=body.action,
+        update_id=body.update_id,
+        topic=f"fleet/{d.serial}/cmd/ota",
+    )
+
+
 # ---- status(裝置 + 最新遙測)----
 @app.get("/api/v1/status", response_model=list[DeviceStatusView])
 async def list_all_status(principal: Principal = VIEWER) -> list[DeviceStatusView]:
@@ -374,6 +408,25 @@ async def list_fleet_status(
 ) -> list[DeviceStatusView]:
     async with _pool(app).acquire() as conn:
         return await repo.list_fleet_status(conn, fleet_id, read_org(principal))
+
+
+# ---- 告警閉環(cert 到期 / OTA 進度查詢;ingest 落 device_alerts)----
+@app.get("/api/v1/alerts", response_model=list[AlertEntry])
+async def list_alerts(
+    response: Response,
+    kind: str | None = Query(default=None, description="過濾類型:cert(憑證到期)/ ota(OTA 進度)"),
+    org: str | None = Query(default=None, description="僅 admin:限定單一租戶(略則看全部)"),
+    limit: int = Query(default=PAGE_LIMIT_DEFAULT, ge=1, le=PAGE_LIMIT_MAX),
+    offset: int = Query(default=0, ge=0),
+    principal: Principal = VIEWER,
+) -> list[AlertEntry]:
+    # 多租戶(G11):非 admin 一律限本 org 裝置的告警;admin 可跨/指定 org。
+    scope = read_org(principal, org)
+    async with _pool(app).acquire() as conn:
+        total = await repo.count_alerts(conn, org=scope, kind=kind)
+        items = await repo.list_alerts(conn, org=scope, kind=kind, limit=limit, offset=offset)
+    _set_page_headers(response, total, limit, offset)
+    return items
 
 
 # ---- usage(G30 用量報表)----

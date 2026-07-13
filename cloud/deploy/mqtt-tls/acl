@@ -7,6 +7,11 @@ pattern write fleet/%u/telemetry
 pattern write fleet/%u/mission/progress
 pattern write fleet/%u/events
 pattern write fleet/%u/sensors/#
+# 告警閉環:裝置回報自己的憑證告警(cert_monitor.py)與 OTA 進度(ota.py);
+# 序號隔離(%u),不得代發他機。後端(backend)以 fleet/# 訂閱落庫。
+pattern write fleet/%u/alerts
+pattern write fleet/%u/ota/progress
+# 下行 cmd(含 cmd/mission、cmd/mission_ctrl、cmd/ota):裝置只訂自己的。
 pattern read fleet/%u/cmd/#
 
 # 後端服務帳號(cert CN=backend):全機隊讀 + 下行 cmd 寫。

@@ -64,6 +64,12 @@ SENSOR_GPS_SQL = _insert_sql("sensor_gps", decode.SENSOR_GPS_COLUMNS)
 SENSOR_LOCAL_POSITION_SQL = _insert_sql(
     "sensor_local_position", decode.SENSOR_LOCAL_POSITION_COLUMNS
 )
+# 告警閉環:detail 欄為 jsonb,需 ::jsonb 轉(payload 純 JSON,同 fleet_svc audit 慣例);
+# 故不走 _insert_sql（那產無轉型的 $n），改手寫把最後一欄 cast 成 jsonb。
+DEVICE_ALERT_SQL = (
+    "INSERT INTO device_alerts (time, drone_id, kind, summary, detail) "
+    "VALUES ($1, $2, $3, $4, $5::jsonb)"
+)
 
 # 主題路由:取主題「末兩段」查表,查不到再退回末一段(涵蓋既有主題,行為不變)。
 # 末一段:fleet/{id}/telemetry、fleet/{id}/events(末兩段含 {id},查不到)
@@ -76,6 +82,15 @@ ROUTES: dict[str, tuple[str, Callable[[bytes | str], tuple]]] = {
     "sensors/attitude": (SENSOR_ATTITUDE_SQL, decode.sensor_attitude_row),
     "sensors/gps": (SENSOR_GPS_SQL, decode.sensor_gps_row),
     "sensors/local_position": (SENSOR_LOCAL_POSITION_SQL, decode.sensor_local_position_row),
+}
+
+# 告警閉環路由(proto 契約外的純 JSON;payload 可能不含 drone_id,故 row 函式多收
+# 主題解出的 drone_id)。與 ROUTES 分開因簽章不同——ROUTES 的 row 只吃 payload,
+# 這裡吃 (payload, drone_id)。查表鍵同樣走「末兩段」優先、退回末一段:
+# fleet/{id}/alerts → 末一段 alerts;fleet/{id}/ota/progress → 末兩段 ota/progress。
+TOPIC_ROUTES: dict[str, tuple[str, Callable[[bytes | str, str], tuple]]] = {
+    "alerts": (DEVICE_ALERT_SQL, decode.device_alert_row),
+    "ota/progress": (DEVICE_ALERT_SQL, decode.ota_progress_row),
 }
 
 
@@ -91,6 +106,18 @@ async def _handle(pool: asyncpg.Pool, message: aiomqtt.Message) -> None:
     topic = message.topic.value
     parts = topic.split("/")
     key2 = "/".join(parts[-2:])
+    payload = bytes(message.payload)
+
+    # 1) 告警閉環(payload 純 JSON,drone_id 取自主題 fleet/{drone_id}/...)。
+    troute = TOPIC_ROUTES.get(key2) or TOPIC_ROUTES.get(parts[-1])
+    if troute is not None:
+        t_key = key2 if key2 in TOPIC_ROUTES else parts[-1]
+        drone_id = parts[1] if len(parts) >= 3 else ""
+        t_sql, t_row = troute
+        await _decode_and_write(pool, t_sql, lambda: t_row(payload, drone_id), topic, t_key)
+        return
+
+    # 2) 既有 proto3 JSON 遙測/任務/事件/心跳/感測器路由(row 只吃 payload)。
     route = ROUTES.get(key2) or ROUTES.get(parts[-1])
     # metrics 的 route 標籤:用有匹配到的主題末段,無匹配則 "unknown"(不含機隊 id,控基數)
     route_key = key2 if key2 in ROUTES else parts[-1] if parts[-1] in ROUTES else "unknown"
@@ -99,18 +126,28 @@ async def _handle(pool: asyncpg.Pool, message: aiomqtt.Message) -> None:
         log.warning("未知主題,略過:%s", topic)
         return
     sql, to_row = route
+    await _decode_and_write(pool, sql, lambda: to_row(payload), topic, route_key)
 
+
+async def _decode_and_write(
+    pool: asyncpg.Pool,
+    sql: str,
+    make_row: Callable[[], tuple],
+    topic: str,
+    route_key: str,
+) -> None:
+    """解析 row(壞 payload 記錄後丟棄,不中斷迴圈)→ 落庫(含重試/DLQ)。
+
+    解析與落庫的共用尾段;proto 路由與告警路由差別僅在 make_row 如何取得 row。
+    """
     try:
-        payload = bytes(message.payload)
-        row = to_row(payload)
+        row = make_row()
     except Exception:
-        # 壞 payload(JSON 解析失敗、enum 超界、時間戳超界、非 UTF-8……)
+        # 壞 payload(JSON 解析失敗、enum 超界、時間戳超界、非 UTF-8、缺必要欄位……)
         # 一律記錄後丟棄,不中斷訂閱迴圈
         metrics.messages_total.labels(route=route_key, result="decode_error").inc()
-        raw = bytes(message.payload) if isinstance(message.payload, (bytes, bytearray)) else b""
-        log.exception("payload 解析失敗,丟棄 topic=%s payload=%r", topic, raw[:200])
+        log.exception("payload 解析失敗,丟棄 topic=%s", topic)
         return
-
     metrics.messages_total.labels(route=route_key, result="parsed").inc()
     await _write_row(pool, sql, row, topic, route_key)
 
@@ -209,6 +246,10 @@ async def run() -> None:
                 await client.subscribe("fleet/+/heartbeat", qos=1)
                 # v0.4.0 高頻感測器流:QoS 0 容失(與 1 Hz 摘要 QoS 1 區隔)
                 await client.subscribe("fleet/+/sensors/+", qos=0)
+                # 告警閉環(proto 契約外純 JSON,QoS 1 at-least-once):
+                # cert 到期告警(cert_monitor.py)+ OTA 進度(ota.py)——原雲端無訂閱者。
+                await client.subscribe("fleet/+/alerts", qos=1)
+                await client.subscribe("fleet/+/ota/progress", qos=1)
                 log.info("已連上 MQTT %s:%s,開始收訊", MQTT_HOST, MQTT_PORT)
                 health.set_mqtt(True)  # 訂閱完成 → readiness 就緒
                 async for message in client.messages:

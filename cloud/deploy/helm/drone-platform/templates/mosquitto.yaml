@@ -23,6 +23,8 @@ data:
     pattern write fleet/%u/mission/progress
     pattern write fleet/%u/events
     pattern write fleet/%u/sensors/#
+    pattern write fleet/%u/alerts
+    pattern write fleet/%u/ota/progress
     pattern read fleet/%u/cmd/#
     user backend
     topic readwrite fleet/#
