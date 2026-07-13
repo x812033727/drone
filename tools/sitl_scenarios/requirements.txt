@@ -2,6 +2,6 @@
 # 另需(runner.py 複用 mission_exec,S11 起;於 repo 根執行):
 #   pip install -e onboard/mission_exec
 #   pip install -e interfaces/proto/gen/python
-mavsdk>=3.15,<4
+mavsdk>=3.15.3,<4
 # F09 被動 MAVLink 觀測(14550 只收不發)
-pymavlink>=2.4
+pymavlink>=2.4.49
