@@ -64,7 +64,7 @@ flowchart TB
 
 ## 6. 任務派遣協議(契約草案)
 
-「任務派遣與排程」(§3,Phase 2)的雲端側協議設計。機-雲線上契約仍以 [interfaces/](../../interfaces/README.md) proto 為單一事實來源,本節定義**雲端內部的派遣生命週期**與其對既有訊息的映射;正式 schema 於 interfaces v0.5 落地(見 interfaces/README「v0.5 規劃預告」)。
+「任務派遣與排程」(§3,Phase 2)的雲端側協議設計。機-雲線上契約仍以 [interfaces/](../../interfaces/README.md) proto 為單一事實來源,本節定義**雲端內部的派遣生命週期**與其對既有訊息的映射;正式 schema 已於 interfaces **v0.6** 落地為 `drone/v1/dispatch.proto`(`FleetMission` / `MissionAssignment`,見 [interfaces/README](../../interfaces/README.md))。
 
 ### 6.1 派遣生命週期
 
@@ -110,3 +110,4 @@ MQTT QoS 1 為 **at-least-once**(S12 既定語意,見 [interfaces/README](../../
 | 1 | 2026-07-11 | 小幅修訂(不升版):§3 補禁航區圖資分發列(REQ-NAV-06)與 ULog 規格引註([firmware §6](firmware.md)) |
 | 1 | 2026-07-12 | 形式化:補 rev 檔頭與版本紀錄(內容不變) |
 | 1 | 2026-07-12 | 新增 §6 任務派遣協議(契約草案):生命週期/proto 映射/冪等去重(D13) |
+| 1 | 2026-07-13 | §6 契約落地:新增 `interfaces/proto/drone/v1/dispatch.proto`(`FleetMission` / `MissionAssignment`,interfaces v0.6),更新引文由「草案/v0.5 規劃」為「已落地/v0.6」(不改語意) |
