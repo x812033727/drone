@@ -5,11 +5,34 @@ metadata:
   labels:
     {{- include "drone.labels" . | nindent 4 }}
 data:
+{{- if .Values.mtls.enabled }}
+  # mTLS:8883 雙向 TLS + cert CN→username + per-device ACL + CRL(對 cloud/deploy/mqtt-tls)
+  mosquitto.conf: |
+    listener 8883
+    allow_anonymous false
+    cafile /mosquitto/certs/ca.cert.pem
+    certfile /mosquitto/certs/server.cert.pem
+    keyfile /mosquitto/certs/server.key.pem
+    require_certificate true
+    crlfile /mosquitto/certs/ca.crl.pem
+    use_identity_as_username true
+    acl_file /mosquitto/config/acl
+    persistence false
+  acl: |
+    pattern write fleet/%u/telemetry
+    pattern write fleet/%u/mission/progress
+    pattern write fleet/%u/events
+    pattern write fleet/%u/sensors/#
+    pattern read fleet/%u/cmd/#
+    user backend
+    topic readwrite fleet/#
+{{- else }}
   mosquitto.conf: |
     listener 1883
-    # Phase 0/1 內網:anonymous。C2(mTLS+ACL)落地後改為憑證驗證 + per-device ACL。
+    # Phase 0/1 內網:anonymous。設 mtls.enabled=true 啟用憑證驗證 + per-device ACL。
     allow_anonymous true
     persistence false
+{{- end }}
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -35,17 +58,30 @@ spec:
           image: {{ .Values.mosquitto.image | quote }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           ports:
-            - containerPort: 1883
+            - containerPort: {{ include "drone.mqttPort" . }}
           resources:
             {{- toYaml .Values.mosquitto.resources | nindent 12 }}
           volumeMounts:
             - name: config
               mountPath: /mosquitto/config/mosquitto.conf
               subPath: mosquitto.conf
+            {{- if .Values.mtls.enabled }}
+            - name: config
+              mountPath: /mosquitto/config/acl
+              subPath: acl
+            - name: mqtt-certs
+              mountPath: /mosquitto/certs
+              readOnly: true
+            {{- end }}
       volumes:
         - name: config
           configMap:
             name: {{ include "drone.fullname" . }}-mosquitto
+        {{- if .Values.mtls.enabled }}
+        - name: mqtt-certs
+          secret:
+            secretName: {{ .Values.mtls.certSecret }}
+        {{- end }}
 ---
 apiVersion: v1
 kind: Service
@@ -59,5 +95,5 @@ spec:
     app.kubernetes.io/instance: {{ .Release.Name }}
     app.kubernetes.io/component: mosquitto
   ports:
-    - port: 1883
-      targetPort: 1883
+    - port: {{ include "drone.mqttPort" . }}
+      targetPort: {{ include "drone.mqttPort" . }}

@@ -37,3 +37,38 @@ helm.sh/chart: {{ printf "%s-%s" .Chart.Name .Chart.Version | replace "+" "_" }}
 {{- define "drone.pgDsn" -}}
 postgresql://drone:$(PG_PASSWORD)@{{ include "drone.fullname" . }}-timescaledb:5432/drone
 {{- end -}}
+
+{{/* MQTT 埠:mTLS 走 8883,否則 1883 */}}
+{{- define "drone.mqttPort" -}}
+{{- if .Values.mtls.enabled -}}8883{{- else -}}1883{{- end -}}
+{{- end -}}
+
+{{/* mTLS client env(服務以 backend 憑證連線;mtls 停用時為空) */}}
+{{- define "drone.mqttTlsEnv" -}}
+{{- if .Values.mtls.enabled }}
+- name: MQTT_TLS_CA
+  value: /mqtt-certs/ca.cert.pem
+- name: MQTT_TLS_CERT
+  value: /mqtt-certs/backend.cert.pem
+- name: MQTT_TLS_KEY
+  value: /mqtt-certs/backend.key.pem
+{{- end }}
+{{- end -}}
+
+{{/* mTLS 憑證 volume(掛 certSecret) */}}
+{{- define "drone.mqttCertVolume" -}}
+{{- if .Values.mtls.enabled }}
+- name: mqtt-certs
+  secret:
+    secretName: {{ .Values.mtls.certSecret }}
+{{- end }}
+{{- end -}}
+
+{{/* mTLS 憑證 volumeMount */}}
+{{- define "drone.mqttCertMount" -}}
+{{- if .Values.mtls.enabled }}
+- name: mqtt-certs
+  mountPath: /mqtt-certs
+  readOnly: true
+{{- end }}
+{{- end -}}

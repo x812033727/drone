@@ -35,6 +35,19 @@ spec:
             - name: MQTT_HOST
               value: {{ include "drone.fullname" . }}-mosquitto
             - name: MQTT_PORT
-              value: "1883"
+              value: {{ include "drone.mqttPort" . | quote }}
+            {{- include "drone.mqttTlsEnv" . | nindent 12 }}
           resources:
             {{- toYaml .Values.ingest.resources | nindent 12 }}
+          {{- if .Values.mtls.enabled }}
+          volumeMounts:
+            - name: mqtt-certs
+              mountPath: /mqtt-certs
+              readOnly: true
+          {{- end }}
+      {{- if .Values.mtls.enabled }}
+      volumes:
+        - name: mqtt-certs
+          secret:
+            secretName: {{ .Values.mtls.certSecret }}
+      {{- end }}
