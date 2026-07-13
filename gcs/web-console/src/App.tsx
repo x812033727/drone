@@ -1,7 +1,9 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { fetchStatus, subscribeStream } from "./api";
+import { AuthError, clearToken, getToken, setToken } from "./auth";
 import { FleetList } from "./components/FleetList";
 import { FleetMap } from "./components/FleetMap";
+import { Login } from "./components/Login";
 import type { DeviceStatusView } from "./types";
 
 const ONLINE_MS = 10_000; // 與 fleet-svc repo.ONLINE_THRESHOLD_S 對齊
@@ -10,6 +12,8 @@ export function App() {
   const [devices, setDevices] = useState<Record<string, DeviceStatusView>>({});
   const [connected, setConnected] = useState(false);
   const [selected, setSelected] = useState<string | null>(null);
+  const [authRequired, setAuthRequired] = useState(false);
+  const [authVersion, setAuthVersion] = useState(0); // 登入後 bump → 重訂閱/重載
   const [, setTick] = useState(0);
 
   // 權威來源:定期拉 /status(含尚未上線的已註冊機)
@@ -19,22 +23,25 @@ export function App() {
       fetchStatus()
         .then((rows) => {
           if (cancelled) return;
+          setAuthRequired(false);
           setDevices((prev) => {
             const next = { ...prev };
             for (const d of rows) next[d.serial] = { ...next[d.serial], ...d };
             return next;
           });
         })
-        .catch(() => {});
+        .catch((err) => {
+          if (err instanceof AuthError) setAuthRequired(true);
+        });
     load();
     const t = setInterval(load, 5000);
     return () => {
       cancelled = true;
       clearInterval(t);
     };
-  }, []);
+  }, [authVersion]);
 
-  // 即時層:SSE 遙測合併(比輪詢更即時)
+  // 即時層:SSE 遙測合併(比輪詢更即時)。SSE 錯誤不強制登入(靠 REST 401 驅動)。
   useEffect(() => {
     return subscribeStream((e) => {
       setConnected(true);
@@ -60,12 +67,25 @@ export function App() {
         };
       });
     });
-  }, []);
+  }, [authVersion]);
 
   // last_seen 老化 → 定期 re-render 讓 online 退場
   useEffect(() => {
     const t = setInterval(() => setTick((n) => n + 1), 2000);
     return () => clearInterval(t);
+  }, []);
+
+  const onLogin = useCallback((token: string) => {
+    setToken(token);
+    setAuthRequired(false);
+    setDevices({});
+    setAuthVersion((v) => v + 1);
+  }, []);
+
+  const onLogout = useCallback(() => {
+    clearToken();
+    setDevices({});
+    setAuthRequired(true);
   }, []);
 
   const list = useMemo(() => {
@@ -82,6 +102,7 @@ export function App() {
 
   return (
     <div className="app">
+      {authRequired && <Login onSubmit={onLogin} />}
       <header className="topbar">
         <h1>無人機機隊指揮中心</h1>
         <span className="stat">
@@ -91,6 +112,11 @@ export function App() {
           <span className={`dot ${connected ? "on" : "off"}`} />
           {connected ? "即時串流已連線" : "等待串流"}
         </span>
+        {getToken() && (
+          <button className="logout" onClick={onLogout}>
+            登出
+          </button>
+        )}
       </header>
       <div className="main">
         <aside className="sidebar">

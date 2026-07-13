@@ -71,22 +71,30 @@ def _decode(token: str) -> dict:
     )
 
 
+def authorize_token(token: str | None, min_role: str) -> dict:
+    """驗證 raw token 字串並檢查角色。供 REST(Bearer)與 SSE(查詢參數)共用。
+
+    EventSource 無法帶 Authorization header,故 SSE 端以查詢參數 token 走此函式。
+    """
+    if not AUTH_ENABLED:
+        return {"sub": "dev", "roles": ["admin"]}  # dev 模式放行
+    if not token:
+        raise HTTPException(status_code=401, detail="缺少 token")
+    try:
+        claims = _decode(token)
+    except jwt.PyJWTError as e:
+        raise HTTPException(status_code=401, detail=f"token 無效:{e}")
+    if role_rank(extract_roles(claims)) < ROLE_ORDER[min_role]:
+        raise HTTPException(status_code=403, detail=f"需要 {min_role} 以上角色")
+    return claims
+
+
 def require_role(min_role: str):
     """FastAPI 依賴工廠:要求 bearer token 帶 >= min_role 的角色。"""
 
     async def dependency(
         cred: HTTPAuthorizationCredentials | None = Depends(_bearer),
     ) -> dict:
-        if not AUTH_ENABLED:
-            return {"sub": "dev", "roles": ["admin"]}  # dev 模式放行
-        if cred is None:
-            raise HTTPException(status_code=401, detail="缺少 Bearer token")
-        try:
-            claims = _decode(cred.credentials)
-        except jwt.PyJWTError as e:
-            raise HTTPException(status_code=401, detail=f"token 無效:{e}")
-        if role_rank(extract_roles(claims)) < ROLE_ORDER[min_role]:
-            raise HTTPException(status_code=403, detail=f"需要 {min_role} 以上角色")
-        return claims
+        return authorize_token(cred.credentials if cred else None, min_role)
 
     return dependency
