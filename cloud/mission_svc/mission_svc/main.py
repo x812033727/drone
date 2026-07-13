@@ -15,7 +15,7 @@ from uuid import UUID
 import asyncpg
 from fastapi import Depends, FastAPI, HTTPException, Query, Request, Response
 
-from mission_svc import audit, dispatch, metrics, repo
+from mission_svc import audit, dispatch, limits, metrics, repo
 from mission_svc.auth import (
     AUTH_ENABLED,
     Principal,
@@ -32,6 +32,7 @@ from mission_svc.models import (
     MissionCreate,
     Route,
     RouteCreate,
+    UsageReport,
 )
 
 log = logging.getLogger("mission_svc")
@@ -85,7 +86,9 @@ if not AUTH_ENABLED:
 # 依賴回 Principal(含租戶 org),端點據此做多租戶隔離(G11)並供審計取 actor
 # (claims 在 principal.claims)。注入 Principal 不增加 OpenAPI 參數;同一 Depends 快取。
 VIEWER = Depends(require_principal("viewer"))
-OPERATOR = Depends(require_principal("operator"))
+# 寫入端點(create/dispatch/command)用帶限流的 operator 依賴(G30):非 admin 每租戶
+# 寫入速率受限,超限 429 + Retry-After;讀取(VIEWER)不限流。
+OPERATOR = Depends(limits.require_principal_rl("operator"))
 # 稽核端點 admin-only 且全域(不做 org 過濾),沿用回 claims 的 require_role 閘。
 ADMIN = Depends(require_role("admin"))
 
@@ -120,7 +123,12 @@ async def create_route(
 ) -> Route:
     # 租戶邊界:org 取自呼叫者 claim,不採信 client。
     async with _pool(app).acquire() as conn:
+        # 配額(G30):非 admin 依現存航線數判定,達上限回 402。
+        if not principal.is_admin:
+            existing = await repo.count_routes(conn, principal.org)
+            limits.enforce_quota(principal, existing, limits.QUOTA_MAX_ROUTES, "航線")
         route = await repo.create_route(conn, body, principal.org)
+        await repo.increment_usage(conn, principal.org, "route_created", limits.current_period())
         await audit.record(
             conn, claims=principal.claims, action="create", resource_type="route",
             resource_id=route.id,
@@ -160,10 +168,16 @@ async def create_mission(
     body: MissionCreate, request: Request, principal: Principal = OPERATOR
 ) -> Mission:
     # 租戶邊界:org 取自呼叫者 claim;route 亦以本 org 查找(他 org route → 404)。
+    period = limits.current_period()
     async with _pool(app).acquire() as conn:
+        # 配額(G30):非 admin 依「當日已建任務數」判定每日量上限,達上限回 402。
+        if not principal.is_admin:
+            today = await repo.usage_count(conn, principal.org, "mission_created", period)
+            limits.enforce_quota(principal, today, limits.QUOTA_MAX_MISSIONS_PER_DAY, "每日任務")
         m = await repo.create_mission(conn, body, principal.org)
         if m is None:
             raise HTTPException(status_code=404, detail="route 不存在")
+        await repo.increment_usage(conn, principal.org, "mission_created", period)
         await audit.record(
             conn, claims=principal.claims, action="create", resource_type="mission",
             resource_id=m.id,
@@ -216,6 +230,9 @@ async def dispatch_mission(
         )
         await dispatch.publish_mission_plan(MQTT_HOST, MQTT_PORT, m.drone_id, plan_json)
         await repo.mark_dispatched(conn, mission_pk)
+        await repo.increment_usage(
+            conn, principal.org, "mission_dispatched", limits.current_period()
+        )
         await audit.record(
             conn, claims=principal.claims, action="dispatch", resource_type="mission",
             resource_id=mission_pk,
@@ -245,6 +262,30 @@ async def command_mission(
             request=request,
         )
         return m
+
+
+# ---- usage(G30 用量報表)----
+@app.get("/api/v1/usage", response_model=UsageReport)
+async def get_usage(
+    org: str | None = Query(default=None, description="僅 admin:查指定租戶(略則查本 org)"),
+    principal: Principal = VIEWER,
+) -> UsageReport:
+    # 非 admin 一律查本 org(忽略 ?org=,防越權窺他 org 用量);admin 可指定,略則查自身。
+    scope_org = org if (principal.is_admin and org) else principal.org
+    period = limits.current_period()
+    async with _pool(app).acquire() as conn:
+        counters = await repo.get_usage(conn, scope_org, period)
+        totals = await repo.get_usage_totals(conn, scope_org)
+        routes = await repo.count_routes(conn, scope_org)
+        missions = await repo.count_missions(conn, None, scope_org)
+    return UsageReport(
+        org_id=scope_org,
+        period=period,
+        counters=counters,
+        totals=totals,
+        resources={"routes": routes, "missions": missions},
+        limits=limits.QUOTA_LIMITS,
+    )
 
 
 # ---- audit(G14 稽核查詢,admin only;分頁同 G12 慣例)----

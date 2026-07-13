@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 from enum import Enum
 from uuid import UUID
 
@@ -106,6 +106,24 @@ class CommandKind(str, Enum):
 
 class MissionCommandRequest(BaseModel):
     command: CommandKind
+
+
+# ---- 用量 / 配額(G30) ----
+class UsageReport(BaseModel):
+    """某租戶用量報表(GET /api/v1/usage)。
+
+    - counters:當日(UTC)各計費指標計數(route_created / mission_created / mission_dispatched)。
+    - totals:歷來累計(跨所有日期)。
+    - resources:當前現存資源數量(部分配額以此判定)。
+    - limits:設定的配額上限(供前端顯示剩餘額度)。
+    """
+
+    org_id: str
+    period: date
+    counters: dict[str, int] = Field(default_factory=dict)
+    totals: dict[str, int] = Field(default_factory=dict)
+    resources: dict[str, int] = Field(default_factory=dict)
+    limits: dict[str, int] = Field(default_factory=dict)
 
 
 # ---- audit(G14) ----

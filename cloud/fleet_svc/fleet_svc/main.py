@@ -18,7 +18,7 @@ import asyncpg
 from fastapi import Depends, FastAPI, HTTPException, Query, Request, Response
 from fastapi.responses import StreamingResponse
 
-from fleet_svc import audit, metrics, repo
+from fleet_svc import audit, limits, metrics, repo
 from fleet_svc.auth import (
     AUTH_ENABLED,
     Principal,
@@ -43,6 +43,7 @@ from fleet_svc.models import (
     FirmwareCreate,
     Fleet,
     FleetCreate,
+    UsageReport,
 )
 
 log = logging.getLogger("fleet_svc")
@@ -102,7 +103,9 @@ if not AUTH_ENABLED:
 # 供審計取 actor(claims 在 principal.claims)。注入 Principal 不增加 OpenAPI 參數。
 # FastAPI 對同一 Depends 物件快取,故不會重複驗證。
 VIEWER = Depends(require_principal("viewer"))
-OPERATOR = Depends(require_principal("operator"))
+# 寫入端點(create/update/delete/set)用帶限流的 operator 依賴(G30):非 admin 每租戶
+# 寫入速率受限,超限 429 + Retry-After;讀取(VIEWER)不限流。
+OPERATOR = Depends(limits.require_principal_rl("operator"))
 # 稽核端點 admin-only 且全域(不做 org 過濾),沿用回 claims 的 require_role 閘。
 ADMIN = Depends(require_role("admin"))
 
@@ -139,7 +142,12 @@ async def create_fleet(
 ) -> Fleet:
     # 租戶邊界:org 取自呼叫者 claim(principal.org),不採信 client 傳入。
     async with _pool(app).acquire() as conn:
+        # 配額(G30):非 admin 依現存機隊數判定,達上限回 402。
+        if not principal.is_admin:
+            existing = await repo.count_fleets(conn, principal.org)
+            limits.enforce_quota(principal, existing, limits.QUOTA_MAX_FLEETS, "機隊")
         fleet = await repo.create_fleet(conn, body, principal.org)
+        await repo.increment_usage(conn, principal.org, "fleet_created", limits.current_period())
         await audit.record(
             conn, claims=principal.claims, action="create", resource_type="fleet",
             resource_id=fleet.id, details={"name": fleet.name, "org_id": fleet.org_id},
@@ -180,10 +188,15 @@ async def create_device(
 ) -> Device:
     # 租戶邊界:org 取自呼叫者 claim,不採信 client。
     async with _pool(app).acquire() as conn:
+        # 配額(G30):非 admin 依現存裝置數判定,達上限回 402。
+        if not principal.is_admin:
+            existing = await repo.count_devices(conn, None, principal.org)
+            limits.enforce_quota(principal, existing, limits.QUOTA_MAX_DEVICES, "裝置")
         try:
             device = await repo.create_device(conn, body, principal.org)
         except asyncpg.UniqueViolationError:
             raise HTTPException(status_code=409, detail=f"serial 已存在:{body.serial}")
+        await repo.increment_usage(conn, principal.org, "device_created", limits.current_period())
         await audit.record(
             conn, claims=principal.claims, action="create", resource_type="device",
             resource_id=device.id,
@@ -329,6 +342,30 @@ async def list_fleet_status(
 ) -> list[DeviceStatusView]:
     async with _pool(app).acquire() as conn:
         return await repo.list_fleet_status(conn, fleet_id, read_org(principal))
+
+
+# ---- usage(G30 用量報表)----
+@app.get("/api/v1/usage", response_model=UsageReport)
+async def get_usage(
+    org: str | None = Query(default=None, description="僅 admin:查指定租戶(略則查本 org)"),
+    principal: Principal = VIEWER,
+) -> UsageReport:
+    # 非 admin 一律查本 org(忽略 ?org=,防越權窺他 org 用量);admin 可指定,略則查自身。
+    scope_org = org if (principal.is_admin and org) else principal.org
+    period = limits.current_period()
+    async with _pool(app).acquire() as conn:
+        counters = await repo.get_usage(conn, scope_org, period)
+        totals = await repo.get_usage_totals(conn, scope_org)
+        devices = await repo.count_devices(conn, None, scope_org)
+        fleets = await repo.count_fleets(conn, scope_org)
+    return UsageReport(
+        org_id=scope_org,
+        period=period,
+        counters=counters,
+        totals=totals,
+        resources={"devices": devices, "fleets": fleets},
+        limits=limits.QUOTA_LIMITS,
+    )
 
 
 # ---- audit(G14 稽核查詢,admin only;分頁同 G12 慣例)----

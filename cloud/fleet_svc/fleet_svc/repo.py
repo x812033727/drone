@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from datetime import date
 from typing import Any
 from uuid import UUID
 
@@ -343,6 +344,42 @@ async def list_org_serials(conn: asyncpg.Connection, org: str) -> set[str]:
     遙測 hub 以 drone_id 為鍵,非 admin 訂閱者只放行本 org 裝置的即時遙測。"""
     rows = await conn.fetch("SELECT serial FROM fleet.device WHERE org_id = $1", org)
     return {r["serial"] for r in rows}
+
+
+# ---- 用量計量(G30):usage_counter 依 (org, metric, 日期) 原子遞增 ----
+_USAGE_INC = """
+INSERT INTO fleet.usage_counter (org_id, metric, period, count)
+VALUES ($1, $2, $3, 1)
+ON CONFLICT (org_id, metric, period)
+DO UPDATE SET count = fleet.usage_counter.count + 1
+"""
+
+
+async def increment_usage(
+    conn: asyncpg.Connection, org: str, metric: str, period: date
+) -> None:
+    """計費相關操作成功後 +1(org, metric, 當日)。period 由呼叫端傳入(UTC 日)。"""
+    await conn.execute(_USAGE_INC, org, metric, period)
+
+
+async def get_usage(conn: asyncpg.Connection, org: str, period: date) -> dict[str, int]:
+    """某租戶某日各 metric 計數(GET /api/v1/usage 的當日 counters)。"""
+    rows = await conn.fetch(
+        "SELECT metric, count FROM fleet.usage_counter WHERE org_id = $1 AND period = $2",
+        org,
+        period,
+    )
+    return {r["metric"]: int(r["count"]) for r in rows}
+
+
+async def get_usage_totals(conn: asyncpg.Connection, org: str) -> dict[str, int]:
+    """某租戶各 metric 的歷來累計(跨所有日期彙總)。"""
+    rows = await conn.fetch(
+        "SELECT metric, sum(count)::bigint AS total FROM fleet.usage_counter "
+        "WHERE org_id = $1 GROUP BY metric",
+        org,
+    )
+    return {r["metric"]: int(r["total"]) for r in rows}
 
 
 # ---- audit(G14 稽核查詢;寫入在 fleet_svc.audit) ----
