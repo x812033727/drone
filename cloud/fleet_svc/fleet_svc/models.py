@@ -223,6 +223,49 @@ class UsageReport(BaseModel):
     limits: dict[str, int] = Field(default_factory=dict)
 
 
+# ---- 訂閱金流(綠界 ECPay) ----
+class BillingCheckoutRequest(BaseModel):
+    """發起訂閱結帳:為本 org 指定欲付費啟用的方案(free 不可結帳)。"""
+
+    plan: OrgPlan
+
+
+class CheckoutForm(BaseModel):
+    """結帳回應:前端據此組表單 auto-submit 導向綠界結帳頁。
+
+    - action_url:綠界 AioCheckOut 端點(沙箱走測試環境)。
+    - params:表單欄位(含 CheckMacValue),原樣 POST 給綠界。
+    - sandbox:True 表示未設正式憑證,用綠界公開測試參數(不會真實扣款)。
+    """
+
+    action_url: str
+    params: dict[str, str]
+    sandbox: bool
+
+
+class BillingTransaction(BaseModel):
+    """一筆結帳/付款交易(GET /billing/subscription 的最近交易)。"""
+
+    id: int
+    org_id: str
+    plan: OrgPlan
+    amount: int
+    trade_no: str
+    status: str  # pending / paid / failed
+    at: datetime
+
+
+class SubscriptionView(BaseModel):
+    """本 org 目前訂閱狀態(GET /billing/subscription)。"""
+
+    org_id: str
+    plan: OrgPlan
+    status: OrgStatus
+    price: int  # 目前方案月費(TWD)
+    sandbox: bool  # 金流是否為沙箱模式(未設正式憑證)
+    recent_transactions: list[BillingTransaction] = Field(default_factory=list)
+
+
 # ---- audit(G14) ----
 class AuditEntry(BaseModel):
     """審計軌跡一筆(供 GET /api/v1/audit,admin 稽核檢視)。"""

@@ -14,9 +14,9 @@
 admin 豁免:平台管理者(is_admin)不受配額/限流約束;dev 模式(認證停用)claims 即
 admin,故 cloud-smoke 全放行、既有煙霧不受影響。
 
-TODO(付費串接):本模組只做計量/配額/限流基礎設施,**不做金流**。真實付款(方案
-訂閱、超額計費、發票)需 payment provider(綠界 / Stripe 等)決策後另案串接:
-usage_counter 已可作為計費來源資料(usage-based billing 的 metering 底座)。
+金流串接:方案「訂閱付費啟用」已由 fleet_svc.billing(綠界 ECPay)實作——checkout 產綠界
+表單、callback 驗 CheckMacValue 後 upsert org 為該 plan+active。本模組仍只做計量/配額/限流;
+usage_counter 亦可作為未來 usage-based billing(超額計費)的 metering 底座。
 """
 
 from __future__ import annotations

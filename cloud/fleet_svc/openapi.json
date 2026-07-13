@@ -74,6 +74,90 @@
         "title": "AuditEntry",
         "type": "object"
       },
+      "BillingCheckoutRequest": {
+        "description": "發起訂閱結帳:為本 org 指定欲付費啟用的方案(free 不可結帳)。",
+        "properties": {
+          "plan": {
+            "$ref": "#/components/schemas/OrgPlan"
+          }
+        },
+        "required": [
+          "plan"
+        ],
+        "title": "BillingCheckoutRequest",
+        "type": "object"
+      },
+      "BillingTransaction": {
+        "description": "一筆結帳/付款交易(GET /billing/subscription 的最近交易)。",
+        "properties": {
+          "amount": {
+            "title": "Amount",
+            "type": "integer"
+          },
+          "at": {
+            "format": "date-time",
+            "title": "At",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "org_id": {
+            "title": "Org Id",
+            "type": "string"
+          },
+          "plan": {
+            "$ref": "#/components/schemas/OrgPlan"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "trade_no": {
+            "title": "Trade No",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "org_id",
+          "plan",
+          "amount",
+          "trade_no",
+          "status",
+          "at"
+        ],
+        "title": "BillingTransaction",
+        "type": "object"
+      },
+      "CheckoutForm": {
+        "description": "結帳回應:前端據此組表單 auto-submit 導向綠界結帳頁。\n\n- action_url:綠界 AioCheckOut 端點(沙箱走測試環境)。\n- params:表單欄位(含 CheckMacValue),原樣 POST 給綠界。\n- sandbox:True 表示未設正式憑證,用綠界公開測試參數(不會真實扣款)。",
+        "properties": {
+          "action_url": {
+            "title": "Action Url",
+            "type": "string"
+          },
+          "params": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Params",
+            "type": "object"
+          },
+          "sandbox": {
+            "title": "Sandbox",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "action_url",
+          "params",
+          "sandbox"
+        ],
+        "title": "CheckoutForm",
+        "type": "object"
+      },
       "Component": {
         "enum": [
           "px4",
@@ -803,6 +887,45 @@
         "title": "OrgUpdate",
         "type": "object"
       },
+      "SubscriptionView": {
+        "description": "本 org 目前訂閱狀態(GET /billing/subscription)。",
+        "properties": {
+          "org_id": {
+            "title": "Org Id",
+            "type": "string"
+          },
+          "plan": {
+            "$ref": "#/components/schemas/OrgPlan"
+          },
+          "price": {
+            "title": "Price",
+            "type": "integer"
+          },
+          "recent_transactions": {
+            "items": {
+              "$ref": "#/components/schemas/BillingTransaction"
+            },
+            "title": "Recent Transactions",
+            "type": "array"
+          },
+          "sandbox": {
+            "title": "Sandbox",
+            "type": "boolean"
+          },
+          "status": {
+            "$ref": "#/components/schemas/OrgStatus"
+          }
+        },
+        "required": [
+          "org_id",
+          "plan",
+          "status",
+          "price",
+          "sandbox"
+        ],
+        "title": "SubscriptionView",
+        "type": "object"
+      },
       "UsageReport": {
         "description": "某租戶用量報表(GET /api/v1/usage)。\n\n- counters:當日(UTC)各計費指標計數(如 device_created / fleet_created)。\n- totals:歷來累計(跨所有日期)。\n- resources:當前現存資源數量(配額以此判定)。\n- limits:設定的配額上限(供前端顯示剩餘額度)。",
         "properties": {
@@ -981,6 +1104,90 @@
           }
         ],
         "summary": "List Audit"
+      }
+    },
+    "/api/v1/billing/callback": {
+      "post": {
+        "operationId": "billing_callback_api_v1_billing_callback_post",
+        "responses": {
+          "200": {
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Billing Callback"
+      }
+    },
+    "/api/v1/billing/checkout": {
+      "post": {
+        "operationId": "billing_checkout_api_v1_billing_checkout_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BillingCheckoutRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CheckoutForm"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Billing Checkout"
+      }
+    },
+    "/api/v1/billing/subscription": {
+      "get": {
+        "operationId": "billing_subscription_api_v1_billing_subscription_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SubscriptionView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Billing Subscription"
       }
     },
     "/api/v1/devices": {
