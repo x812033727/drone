@@ -7,6 +7,10 @@ WORKDIR /app
 COPY cloud/log_svc/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
+# 雲端服務共用純邏輯(auth 純函式;Wave 1 A1 去重)
+COPY cloud/common /opt/drone-common
+RUN pip install --no-cache-dir /opt/drone-common
+
 COPY tools/ulog_report.py tools/ulog_report.py
 COPY cloud/log_svc/log_svc ./log_svc
 

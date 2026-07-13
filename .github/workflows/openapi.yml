@@ -36,6 +36,10 @@ jobs:
           if [ -d interfaces/proto/gen/python ]; then
             pip install -e interfaces/proto/gen/python
           fi
+          # fleet/mission/log 於 import 時載入 drone_common(Wave 1 A1 共用純邏輯),需先安裝。
+          if [ -f cloud/common/pyproject.toml ]; then
+            pip install -e cloud/common
+          fi
 
       - name: 重產 OpenAPI 契約,驗證與版控同步
         run: |

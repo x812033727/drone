@@ -1,4 +1,9 @@
-"""JWT 認證 + RBAC(OIDC-ready)。fleet-svc / mission-svc / log-svc 共用同一設計。
+"""JWT 認證 + RBAC(OIDC-ready)執行期層。fleet-svc / mission-svc / log-svc 共用同一設計。
+
+純邏輯(角色萃取、權級)已抽到 drone_common.auth(Wave 1 A1)。本檔保留**環境相依的
+執行期層**:env 常數、_decode、authorize_token、require_role——因單元測試以 monkeypatch
+本模組級全域(AUTH_ENABLED / JWT_SECRET / _jwks_client …)與 importlib.reload(本模組)
+驗證,這些狀態必須留在被 patch/reload 的服務模組內,不可抽離。
 
 模式(依環境變數):
 - JWT_JWKS_URL 設定 → 生產:RS256,經 JWKS 驗簽(外部 IdP / OIDC)。
@@ -8,8 +13,6 @@
 
 角色(claim `role` 字串 / `roles` 陣列 / Keycloak `realm_access.roles`):
 viewer < operator < admin。讀取需 viewer,上傳/寫入需 operator。
-
-(cloud/common 抽出後多服務共用此檔——屬 Wave 1 A1;現各服務自帶,同 migrate.py。)
 """
 
 from __future__ import annotations
@@ -18,6 +21,7 @@ import logging
 import os
 
 import jwt
+from drone_common.auth import ROLE_ORDER, extract_roles, role_rank
 from fastapi import Depends, HTTPException
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
@@ -31,30 +35,8 @@ JWT_AUDIENCE = os.environ.get("JWT_AUDIENCE") or None
 JWT_ISSUER = os.environ.get("JWT_ISSUER") or None
 AUTH_ENABLED = bool(JWT_SECRET or JWT_JWKS_URL)
 
-ROLE_ORDER = {"viewer": 0, "operator": 1, "admin": 2}
-
 _bearer = HTTPBearer(auto_error=False)
 _jwks_client = jwt.PyJWKClient(JWT_JWKS_URL) if JWT_JWKS_URL else None
-
-
-def extract_roles(claims: dict) -> set[str]:
-    """從 JWT claims 萃取角色(相容單一 role、roles 陣列、Keycloak realm_access)。"""
-    roles: set[str] = set()
-    role = claims.get("role")
-    if isinstance(role, str):
-        roles.add(role)
-    rs = claims.get("roles")
-    if isinstance(rs, list):
-        roles.update(r for r in rs if isinstance(r, str))
-    realm = claims.get("realm_access")
-    if isinstance(realm, dict) and isinstance(realm.get("roles"), list):
-        roles.update(r for r in realm["roles"] if isinstance(r, str))
-    return {r for r in roles if r in ROLE_ORDER}
-
-
-def role_rank(roles: set[str]) -> int:
-    """已知角色中的最高權級;無任何已知角色回 -1。"""
-    return max((ROLE_ORDER[r] for r in roles), default=-1)
 
 
 def _decode(token: str) -> dict:
@@ -98,3 +80,14 @@ def require_role(min_role: str):
         return authorize_token(cred.credentials if cred else None, min_role)
 
     return dependency
+
+
+# 純邏輯自 drone_common.auth 再匯出,保留 `from log_svc.auth import ...` 既有路徑不變。
+__all__ = [
+    "AUTH_ENABLED",
+    "ROLE_ORDER",
+    "authorize_token",
+    "extract_roles",
+    "require_role",
+    "role_rank",
+]
