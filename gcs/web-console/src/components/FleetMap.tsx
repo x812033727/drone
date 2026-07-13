@@ -1,8 +1,9 @@
 import maplibregl from "maplibre-gl";
 import { useEffect, useRef } from "react";
+import { config } from "../config";
 import type { DeviceStatusView } from "../types";
 
-// 預設內嵌 OSM raster 樣式(私有部署可用 VITE_MAP_STYLE 換成離線/自建 tile 伺服器)。
+// 預設內嵌 OSM raster 樣式(私有部署可用執行期 mapStyle / VITE_MAP_STYLE 換成離線/自建 tile 伺服器)。
 const DEFAULT_STYLE: maplibregl.StyleSpecification = {
   version: 8,
   sources: {
@@ -16,8 +17,7 @@ const DEFAULT_STYLE: maplibregl.StyleSpecification = {
   layers: [{ id: "osm", type: "raster", source: "osm" }],
 };
 
-const STYLE: string | maplibregl.StyleSpecification =
-  (import.meta.env.VITE_MAP_STYLE as string | undefined) ?? DEFAULT_STYLE;
+const STYLE: string | maplibregl.StyleSpecification = config.mapStyle ?? DEFAULT_STYLE;
 
 type Props = {
   devices: DeviceStatusView[];

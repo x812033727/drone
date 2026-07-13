@@ -1,4 +1,5 @@
 import { AuthError, getToken } from "./auth";
+import { config } from "./config";
 import type {
   Device,
   DeviceCreate,
@@ -15,9 +16,10 @@ import type {
 } from "./types";
 
 // 正式部署由 nginx 代理 /api → fleetsvc(routes/missions 前綴 → missionsvc);
-// 開發由 vite proxy。可用 VITE_API_BASE 覆寫。fleet-svc 與 mission-svc 的路徑前綴
-// (status/devices/fleets/firmware vs routes/missions)不衝突,故共用同一 base。
-const API_BASE = import.meta.env.VITE_API_BASE ?? "/api/v1";
+// 開發由 vite proxy。base 走執行期設定(runtime config.js → VITE_API_BASE → 預設 /api/v1)。
+// fleet-svc 與 mission-svc 的路徑前綴(status/devices/fleets/firmware vs routes/missions)
+// 不衝突,故共用同一 base。
+const API_BASE = config.apiBase;
 
 // 統一請求輔助:附帶 Bearer、把 401/403 轉 AuthError、非 2xx 盡量帶後端錯誤訊息。
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
