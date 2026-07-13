@@ -132,3 +132,56 @@ export type MissionCreate = {
 };
 
 export type CommandKind = "pause" | "resume" | "abort";
+
+// ---- fleet-svc 租戶 / 用量契約(對 cloud/fleet_svc/fleet_svc/models.py,openapi Org/UsageReport)----
+
+export type OrgPlan = "free" | "pro" | "enterprise";
+export type OrgStatus = "active" | "suspended";
+
+// GET /api/v1/orgs、/orgs/{id}(admin only)。max_*=None 表示用 plan 預設配額。
+export type Org = {
+  org_id: string;
+  name: string;
+  plan: OrgPlan;
+  status: OrgStatus;
+  max_devices: number | null;
+  max_fleets: number | null;
+  created_at: string;
+  updated_at: string;
+};
+
+// POST /api/v1/orgs。plan/status 省略時後端預設 free/active。
+export type OrgCreate = {
+  org_id: string;
+  name: string;
+  plan?: OrgPlan;
+  status?: OrgStatus;
+  max_devices?: number | null;
+  max_fleets?: number | null;
+};
+
+// PATCH /api/v1/orgs/{id}:僅送有給的欄位;max_* 顯式給 null 可清除覆寫。
+export type OrgUpdate = {
+  name?: string | null;
+  plan?: OrgPlan;
+  status?: OrgStatus;
+  max_devices?: number | null;
+  max_fleets?: number | null;
+};
+
+// GET /api/v1/usage(本 org)、/orgs/{id}/usage(admin)。
+// counters=當日各計費指標;totals=歷來累計;resources=現存資源數;limits=配額上限。
+export type UsageReport = {
+  org_id: string;
+  period: string;
+  counters: Record<string, number>;
+  totals: Record<string, number>;
+  resources: Record<string, number>;
+  limits: Record<string, number>;
+};
+
+// 分頁列表回應:本體是陣列,total 走 X-Total-Count 標頭。
+export type Page<T> = {
+  items: T[];
+  total: number;
+};
