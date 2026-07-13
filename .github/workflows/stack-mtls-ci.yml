@@ -1,0 +1,36 @@
+name: stack-mtls-ci
+
+# 整棧 mTLS 端到端守門:裝置(TLS)→ mosquitto-mtls → ingest(TLS)→ TimescaleDB 落庫。
+# 證明「機-雲全程 mTLS」安全部署可實際運行。路徑觸發(runner 有 docker compose)。
+on:
+  push:
+    branches: [main]
+    paths:
+      - "cloud/deploy/compose/docker-compose.mtls.yml"
+      - "cloud/deploy/compose/verify_stack_mtls.sh"
+      - "cloud/deploy/mqtt-tls/**"
+      - "cloud/pki/**"
+      - "cloud/ingest/**"
+      - ".github/workflows/stack-mtls-ci.yml"
+  pull_request:
+    paths:
+      - "cloud/deploy/compose/docker-compose.mtls.yml"
+      - "cloud/deploy/compose/verify_stack_mtls.sh"
+      - "cloud/deploy/mqtt-tls/**"
+      - "cloud/pki/**"
+      - "cloud/ingest/**"
+      - ".github/workflows/stack-mtls-ci.yml"
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+      - name: 安裝 paho-mqtt
+        run: pip install "paho-mqtt>=2,<3"
+      - name: 整棧 mTLS 端到端驗證
+        run: bash cloud/deploy/compose/verify_stack_mtls.sh
