@@ -13,6 +13,7 @@ import asyncpg
 
 from fleet_svc.hub import TelemetryHub
 from fleet_svc.telemetry import parse_telemetry
+from fleet_svc.tls import from_env as _mqtt_tls
 
 log = logging.getLogger("fleet_svc.consumer")
 
@@ -66,6 +67,7 @@ async def run_consumer(
                 mqtt_port,
                 identifier="fleet-svc-consumer",
                 max_queued_incoming_messages=MQTT_MAX_QUEUED_IN,
+                tls_params=_mqtt_tls(),
             ) as client:
                 await client.subscribe("fleet/+/telemetry", qos=1)
                 log.info("消費者已連上 MQTT %s:%s", mqtt_host, mqtt_port)
