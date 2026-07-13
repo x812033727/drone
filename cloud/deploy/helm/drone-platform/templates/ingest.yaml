@@ -1,0 +1,40 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "drone.fullname" . }}-ingest
+  labels:
+    {{- include "drone.labels" . | nindent 4 }}
+    app.kubernetes.io/component: ingest
+spec:
+  replicas: {{ .Values.ingest.replicas }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: {{ .Release.Name }}
+      app.kubernetes.io/component: ingest
+  template:
+    metadata:
+      labels:
+        {{- include "drone.labels" . | nindent 8 }}
+        app.kubernetes.io/component: ingest
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: ingest
+          image: {{ include "drone.image" (list . "ingest") | quote }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          env:
+            - name: PG_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "drone.secretName" . }}
+                  key: PG_PASSWORD
+            - name: PG_DSN
+              value: {{ include "drone.pgDsn" . | quote }}
+            - name: MQTT_HOST
+              value: {{ include "drone.fullname" . }}-mosquitto
+            - name: MQTT_PORT
+              value: "1883"
+          resources:
+            {{- toYaml .Values.ingest.resources | nindent 12 }}

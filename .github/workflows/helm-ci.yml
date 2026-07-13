@@ -1,0 +1,32 @@
+name: helm-ci
+
+# Helm chart 守門:lint + template(渲染成功即驗證模板語法/值)。路徑觸發。
+on:
+  push:
+    branches: [main]
+    paths:
+      - "cloud/deploy/helm/**"
+      - ".github/workflows/helm-ci.yml"
+  pull_request:
+    paths:
+      - "cloud/deploy/helm/**"
+      - ".github/workflows/helm-ci.yml"
+
+jobs:
+  lint-template:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/setup-helm@v4
+        with:
+          version: v3.16.3
+      - name: helm lint
+        run: helm lint cloud/deploy/helm/drone-platform
+      - name: helm template(預設)
+        run: helm template drone cloud/deploy/helm/drone-platform > /dev/null
+      - name: helm template(生產覆寫:JWT + ingress)
+        run: |
+          helm template drone cloud/deploy/helm/drone-platform \
+            --set secrets.jwtSecret=abcdefghijklmnopqrstuvwxyz123456 \
+            --set ingress.enabled=true --set ingress.host=drone.example.com > /dev/null

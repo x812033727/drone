@@ -1,0 +1,11 @@
+apiVersion: v2
+name: drone-platform
+description: 無人機機隊管理平台(私有部署交付物)——遙測落庫、機隊/任務服務、Web 指揮中心
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+keywords:
+  - drone
+  - fleet-management
+  - private-deployment
+home: https://github.com/x812033727/drone

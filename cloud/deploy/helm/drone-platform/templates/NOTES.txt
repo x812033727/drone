@@ -1,0 +1,20 @@
+drone-platform {{ .Chart.AppVersion }} 已部署為 release「{{ .Release.Name }}」。
+
+元件(叢集內):timescaledb / mosquitto / ingest / fleetsvc / missionsvc / logsvc
+{{- if .Values.grafana.enabled }} / grafana{{- end }} / webconsole。
+
+存取 Web 指揮中心:
+{{- if .Values.ingress.enabled }}
+  https://{{ .Values.ingress.host }}
+{{- else }}
+  kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "drone.fullname" . }}-webconsole 8080:80
+  然後開 http://localhost:8080
+{{- end }}
+
+{{- if not .Values.secrets.existingSecret }}
+{{- if not (or .Values.secrets.jwtSecret .Values.secrets.jwtJwksUrl) }}
+
+⚠ 警告:未設 JWT_SECRET 或 JWT_JWKS_URL——API 認證停用(dev 模式全放行)。
+   正式部署請設 secrets.jwtSecret 或 secrets.jwtJwksUrl,並覆寫 pgPassword/grafanaAdminPassword。
+{{- end }}
+{{- end }}

@@ -1,0 +1,72 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "drone.fullname" . }}-timescaledb
+  labels:
+    {{- include "drone.labels" . | nindent 4 }}
+    app.kubernetes.io/component: timescaledb
+spec:
+  serviceName: {{ include "drone.fullname" . }}-timescaledb
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: {{ .Release.Name }}
+      app.kubernetes.io/component: timescaledb
+  template:
+    metadata:
+      labels:
+        {{- include "drone.labels" . | nindent 8 }}
+        app.kubernetes.io/component: timescaledb
+    spec:
+      containers:
+        - name: timescaledb
+          image: {{ .Values.timescaledb.image | quote }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          env:
+            - name: POSTGRES_USER
+              value: drone
+            - name: POSTGRES_DB
+              value: drone
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "drone.secretName" . }}
+                  key: PG_PASSWORD
+          ports:
+            - containerPort: 5432
+          readinessProbe:
+            exec:
+              command: ["pg_isready", "-U", "drone", "-d", "drone"]
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          resources:
+            {{- toYaml .Values.timescaledb.resources | nindent 12 }}
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        {{- with .Values.timescaledb.storageClassName }}
+        storageClassName: {{ . | quote }}
+        {{- end }}
+        resources:
+          requests:
+            storage: {{ .Values.timescaledb.storage }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "drone.fullname" . }}-timescaledb
+  labels:
+    {{- include "drone.labels" . | nindent 4 }}
+    app.kubernetes.io/component: timescaledb
+spec:
+  selector:
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/component: timescaledb
+  ports:
+    - port: 5432
+      targetPort: 5432

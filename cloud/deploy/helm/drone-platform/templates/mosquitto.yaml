@@ -1,0 +1,63 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "drone.fullname" . }}-mosquitto
+  labels:
+    {{- include "drone.labels" . | nindent 4 }}
+data:
+  mosquitto.conf: |
+    listener 1883
+    # Phase 0/1 內網:anonymous。C2(mTLS+ACL)落地後改為憑證驗證 + per-device ACL。
+    allow_anonymous true
+    persistence false
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "drone.fullname" . }}-mosquitto
+  labels:
+    {{- include "drone.labels" . | nindent 4 }}
+    app.kubernetes.io/component: mosquitto
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: {{ .Release.Name }}
+      app.kubernetes.io/component: mosquitto
+  template:
+    metadata:
+      labels:
+        {{- include "drone.labels" . | nindent 8 }}
+        app.kubernetes.io/component: mosquitto
+    spec:
+      containers:
+        - name: mosquitto
+          image: {{ .Values.mosquitto.image | quote }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - containerPort: 1883
+          resources:
+            {{- toYaml .Values.mosquitto.resources | nindent 12 }}
+          volumeMounts:
+            - name: config
+              mountPath: /mosquitto/config/mosquitto.conf
+              subPath: mosquitto.conf
+      volumes:
+        - name: config
+          configMap:
+            name: {{ include "drone.fullname" . }}-mosquitto
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "drone.fullname" . }}-mosquitto
+  labels:
+    {{- include "drone.labels" . | nindent 4 }}
+    app.kubernetes.io/component: mosquitto
+spec:
+  selector:
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/component: mosquitto
+  ports:
+    - port: 1883
+      targetPort: 1883

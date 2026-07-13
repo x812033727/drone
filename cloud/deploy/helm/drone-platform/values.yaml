@@ -1,0 +1,87 @@
+# drone-platform 預設值。私有部署交付:客戶 override values 即可自建機房部署,
+# 資料不出機房(無外部依賴)。正式部署務必覆寫 secrets(見 §secrets)。
+
+# 全域映像設定。私有部署把 registry 指向客戶內部倉庫;tag 建議釘 digest(sha256)。
+image:
+  registry: ghcr.io/x812033727/drone
+  pullPolicy: IfNotPresent
+  tag: "0.1.0" # 建議正式改為 @sha256:... 釘選
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+# 密鑰(正式部署務必覆寫;或設 existingSecret 指向預建 Secret)
+secrets:
+  existingSecret: "" # 設定則用既有 Secret,忽略以下明文
+  pgPassword: "change-me-pg"
+  grafanaAdminPassword: "change-me-grafana"
+  # JWT:設 jwtSecret(HS256)或 jwtJwksUrl(OIDC/RS256)其一以啟用 API 認證
+  jwtSecret: ""
+  jwtJwksUrl: ""
+  jwtAudience: ""
+  jwtIssuer: ""
+
+# 資料庫(遙測時序 + fleet/mission 關聯,同一 timescaledb 實例)
+timescaledb:
+  image: timescale/timescaledb:2.17.2-pg16
+  storage: 20Gi
+  storageClassName: ""
+  resources:
+    requests: { cpu: 250m, memory: 512Mi }
+    limits: { cpu: "2", memory: 2Gi }
+
+mosquitto:
+  image: eclipse-mosquitto:2.0.20
+  resources:
+    requests: { cpu: 50m, memory: 64Mi }
+    limits: { cpu: 500m, memory: 256Mi }
+
+# 自研服務(replicas 可調)
+fleetsvc:
+  replicas: 1
+  resources:
+    requests: { cpu: 100m, memory: 128Mi }
+    limits: { cpu: "1", memory: 512Mi }
+
+missionsvc:
+  replicas: 1
+  resources:
+    requests: { cpu: 100m, memory: 128Mi }
+    limits: { cpu: "1", memory: 512Mi }
+
+ingest:
+  replicas: 1
+  resources:
+    requests: { cpu: 100m, memory: 128Mi }
+    limits: { cpu: "1", memory: 512Mi }
+
+logsvc:
+  replicas: 1
+  storage: 10Gi
+  storageClassName: ""
+  resources:
+    requests: { cpu: 100m, memory: 128Mi }
+    limits: { cpu: "1", memory: 512Mi }
+
+webconsole:
+  replicas: 1
+  resources:
+    requests: { cpu: 50m, memory: 64Mi }
+    limits: { cpu: 500m, memory: 256Mi }
+
+grafana:
+  enabled: true
+  image: grafana/grafana:11.4.0
+  anonymous: false # 私有部署預設關匿名(對比 dev compose)
+  resources:
+    requests: { cpu: 100m, memory: 128Mi }
+    limits: { cpu: 500m, memory: 512Mi }
+
+# 對外入口(僅 Web 指揮中心對外;服務層走叢集內網)
+ingress:
+  enabled: false
+  className: ""
+  host: drone.example.com
+  annotations: {}
+  tls: [] # [{secretName: drone-tls, hosts: [drone.example.com]}]
