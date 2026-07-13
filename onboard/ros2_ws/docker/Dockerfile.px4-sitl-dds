@@ -11,7 +11,7 @@
 # SIH(Simulation-In-Hardware 之 SITL 版)讓動力學在 PX4 內部模擬,
 # 不需外部 Gazebo → image 免裝模擬器、啟動快(數秒即出 vehicle_status)。
 # 煙霧只驗 DDS 資料流,SIH 足夠;飛行行為回歸仍用 gazebo-headless image。
-FROM ubuntu:22.04
+FROM ubuntu:26.04
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV LANG=C.UTF-8
