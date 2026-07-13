@@ -85,3 +85,5 @@ body {
   padding: 8px; cursor: pointer; font-size: 14px;
 }
 .login-box button:disabled { opacity: .5; cursor: not-allowed; }
+.login-box .or { color: var(--muted); font-size: 12px; text-align: center; margin: 4px 0; }
+.login-box form { display: flex; flex-direction: column; gap: 10px; }
