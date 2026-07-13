@@ -19,7 +19,7 @@ jobs:
     container: ros:humble
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: colcon build obstacle_guard
         shell: bash
         run: |
