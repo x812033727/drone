@@ -1,0 +1,74 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "drone.fullname" . }}-logsvc
+  labels:
+    {{- include "drone.labels" . | nindent 4 }}
+    app.kubernetes.io/component: logsvc
+spec:
+  serviceName: {{ include "drone.fullname" . }}-logsvc
+  replicas: {{ .Values.logsvc.replicas }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: {{ .Release.Name }}
+      app.kubernetes.io/component: logsvc
+  template:
+    metadata:
+      labels:
+        {{- include "drone.labels" . | nindent 8 }}
+        app.kubernetes.io/component: logsvc
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: logsvc
+          image: {{ include "drone.image" (list . "log_svc") | quote }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          env:
+            - name: PG_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "drone.secretName" . }}
+                  key: PG_PASSWORD
+            - name: PG_DSN
+              value: {{ include "drone.pgDsn" . | quote }}
+            - name: ULOG_DIR
+              value: /data/ulog
+          ports:
+            - containerPort: 8090
+          readinessProbe:
+            httpGet: { path: /healthz, port: 8090 }
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          resources:
+            {{- toYaml .Values.logsvc.resources | nindent 12 }}
+          volumeMounts:
+            - name: ulog
+              mountPath: /data/ulog
+  volumeClaimTemplates:
+    - metadata:
+        name: ulog
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        {{- with .Values.logsvc.storageClassName }}
+        storageClassName: {{ . | quote }}
+        {{- end }}
+        resources:
+          requests:
+            storage: {{ .Values.logsvc.storage }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "drone.fullname" . }}-logsvc
+  labels:
+    {{- include "drone.labels" . | nindent 4 }}
+    app.kubernetes.io/component: logsvc
+spec:
+  selector:
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/component: logsvc
+  ports:
+    - port: 8090
+      targetPort: 8090
