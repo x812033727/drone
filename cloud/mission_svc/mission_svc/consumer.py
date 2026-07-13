@@ -16,6 +16,7 @@ from google.protobuf import json_format
 
 from mission_svc import repo
 from mission_svc.dispatch import PROGRESS_TO_STATUS, progress_state_name
+from mission_svc.tls import from_env as _mqtt_tls
 
 log = logging.getLogger("mission_svc.consumer")
 
@@ -44,7 +45,7 @@ async def run_consumer(pool: asyncpg.Pool, mqtt_host: str, mqtt_port: int) -> No
     while True:
         try:
             async with aiomqtt.Client(
-                mqtt_host, mqtt_port, identifier="mission-svc-consumer"
+                mqtt_host, mqtt_port, identifier="mission-svc-consumer", tls_params=_mqtt_tls()
             ) as client:
                 await client.subscribe("fleet/+/mission/progress", qos=1)
                 log.info("進度消費者已連上 MQTT %s:%s", mqtt_host, mqtt_port)

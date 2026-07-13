@@ -13,6 +13,8 @@ import aiomqtt
 from drone.v1 import mission_pb2
 from google.protobuf import json_format
 
+from mission_svc.tls import from_env as _mqtt_tls
+
 log = logging.getLogger("mission_svc.dispatch")
 
 _STATE = mission_pb2.MissionProgress.State
@@ -71,7 +73,9 @@ def progress_state_name(state_value: int) -> str:
 async def publish_mission_plan(
     host: str, port: int, drone_id: str, plan_json: str
 ) -> None:
-    async with aiomqtt.Client(host, port, identifier="mission-svc-pub") as client:
+    async with aiomqtt.Client(
+        host, port, identifier="mission-svc-pub", tls_params=_mqtt_tls()
+    ) as client:
         await client.publish(f"fleet/{drone_id}/cmd/mission", plan_json, qos=1)
     log.info("已派遣任務至 fleet/%s/cmd/mission", drone_id)
 
@@ -79,6 +83,8 @@ async def publish_mission_plan(
 async def publish_mission_command(
     host: str, port: int, drone_id: str, cmd_json: str
 ) -> None:
-    async with aiomqtt.Client(host, port, identifier="mission-svc-ctrl") as client:
+    async with aiomqtt.Client(
+        host, port, identifier="mission-svc-ctrl", tls_params=_mqtt_tls()
+    ) as client:
         await client.publish(f"fleet/{drone_id}/cmd/mission_ctrl", cmd_json, qos=1)
     log.info("已發送任務命令至 fleet/%s/cmd/mission_ctrl", drone_id)
