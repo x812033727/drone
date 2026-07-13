@@ -1,6 +1,7 @@
 import { AuthError, getToken } from "./auth";
 import { config } from "./config";
 import type {
+  Alert,
   Device,
   DeviceCreate,
   DeviceStatusView,
@@ -125,6 +126,19 @@ export const getOrgUsage = (orgId: string) =>
 
 // 本 org 用量(所有登入者);admin 可加 ?org= 查他 org(此處不用,admin 走 /orgs/{id}/usage)。
 export const getUsage = () => request<UsageReport>("/usage");
+
+// ---- fleet-svc:裝置告警(device_alerts;所有登入者看本 org,後端已 org 隔離)----
+// 分頁走 X-Total-Count(同 orgs);kind 過濾 cert(憑證到期)/ ota(OTA 進度)。
+export const listAlerts = (
+  opts: { kind?: string; limit?: number; offset?: number } = {},
+) => {
+  const q = new URLSearchParams();
+  if (opts.kind) q.set("kind", opts.kind);
+  if (opts.limit != null) q.set("limit", String(opts.limit));
+  if (opts.offset != null) q.set("offset", String(opts.offset));
+  const qs = q.toString();
+  return requestPage<Alert>(`/alerts${qs ? `?${qs}` : ""}`);
+};
 
 // ---- fleet-svc:訂閱金流(綠界 ECPay)----
 // 本 org 目前訂閱狀態/最近交易(所有登入者可讀,對齊後端 VIEWER)。

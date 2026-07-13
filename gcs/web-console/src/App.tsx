@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { fetchStatus, subscribeStream } from "./api";
+import { fetchStatus, listAlerts, subscribeStream } from "./api";
 import {
   AuthError,
   clearToken,
@@ -8,6 +8,7 @@ import {
   hasRole,
   setToken,
 } from "./auth";
+import { AlertsView, kindLabel } from "./components/AlertsView";
 import { DeviceManager } from "./components/DeviceManager";
 import { FleetList } from "./components/FleetList";
 import { FleetMap } from "./components/FleetMap";
@@ -22,16 +23,20 @@ import type { DeviceStatusView } from "./types";
 const ONLINE_MS = 10_000; // 與 fleet-svc repo.ONLINE_THRESHOLD_S 對齊
 const LOW_BATTERY_PCT = 20;
 
-type Tab = "map" | "fleet" | "missions" | "usage" | "tenants";
+type Tab = "map" | "fleet" | "missions" | "alerts" | "usage" | "tenants";
 
 // adminOnly 分頁僅 admin 可見(前端 UX 閘門;後端仍以 RBAC 強制 /orgs admin only)。
 const TABS: Array<{ key: Tab; label: string; adminOnly?: boolean }> = [
   { key: "map", label: "地圖監控" },
   { key: "fleet", label: "機隊管理" },
   { key: "missions", label: "任務" },
+  { key: "alerts", label: "告警" },
   { key: "usage", label: "用量" },
   { key: "tenants", label: "租戶", adminOnly: true },
 ];
+
+// 告警輪詢間隔:告警屬低頻事件(憑證到期/OTA 進度),不需與遙測同頻,避免過度打後端。
+const ALERT_POLL_MS = 15_000;
 
 export function App() {
   const { push } = useToasts();
@@ -42,6 +47,9 @@ export function App() {
   const [authRequired, setAuthRequired] = useState(false);
   const [authVersion, setAuthVersion] = useState(0); // 登入後 bump → 重訂閱/重載
   const [, setTick] = useState(0);
+  const [alertCount, setAlertCount] = useState(0); // 頂欄告警數 badge
+  const seenAlerts = useRef<Set<string>>(new Set()); // 已提示過的告警鍵(避免重複 toast)
+  const alertsSeeded = useRef(false); // 首輪僅建基線不 toast,避免登入即刷屏
 
   // operator 以上才可執行寫入(建立/派遣/控制/裝置編輯);隨登入狀態重算。
   const canWrite = useMemo(() => hasRole("operator"), [authVersion]);
@@ -129,6 +137,41 @@ export function App() {
     return () => clearInterval(t);
   }, []);
 
+  // 告警輪詢:更新頂欄 badge(本 org 告警總數)並對「新出現」的告警提示 toast。
+  // 首輪僅建基線(避免登入即把既有告警全部刷屏);登入態變動即重置基線防跨帳號誤報。
+  useEffect(() => {
+    seenAlerts.current = new Set();
+    alertsSeeded.current = false;
+    setAlertCount(0);
+    let cancelled = false;
+    const poll = () =>
+      listAlerts({ limit: 30 })
+        .then((page) => {
+          if (cancelled) return;
+          setAuthRequired(false);
+          setAlertCount(page.total);
+          const seeding = !alertsSeeded.current;
+          for (const a of page.items) {
+            const key = `${a.time}|${a.drone_id}|${a.kind}`;
+            if (seenAlerts.current.has(key)) continue;
+            seenAlerts.current.add(key);
+            if (!seeding) {
+              push("warn", `新告警 · ${kindLabel(a.kind)} ${a.drone_id}:${a.summary}`, `alert-${key}`);
+            }
+          }
+          alertsSeeded.current = true;
+        })
+        .catch((err) => {
+          if (err instanceof AuthError) setAuthRequired(true);
+        });
+    poll();
+    const t = setInterval(poll, ALERT_POLL_MS);
+    return () => {
+      cancelled = true;
+      clearInterval(t);
+    };
+  }, [authVersion, push]);
+
   const onLogin = useCallback((token: string) => {
     setToken(token);
     setAuthRequired(false);
@@ -190,6 +233,9 @@ export function App() {
               onClick={() => setTab(t.key)}
             >
               {t.label}
+              {t.key === "alerts" && alertCount > 0 && (
+                <span className="tab-badge">{alertCount > 99 ? "99+" : alertCount}</span>
+              )}
             </button>
           ))}
         </nav>
@@ -223,6 +269,11 @@ export function App() {
       {tab === "missions" && (
         <div className="view-scroll">
           <MissionManager canWrite={canWrite} onAuthError={onAuthError} />
+        </div>
+      )}
+      {tab === "alerts" && (
+        <div className="view-scroll">
+          <AlertsView onAuthError={onAuthError} />
         </div>
       )}
       {tab === "usage" && (
