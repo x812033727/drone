@@ -1,12 +1,20 @@
 name: release
 
 # 容器映像發布(客戶交付的 helm install 需要 registry 上有映像,否則 ImagePullBackOff)。
-# - push tag `v*` 或 workflow_dispatch:build + push 到 GHCR(+ provenance/SBOM attestation)
+# - push tag `v*` 或 workflow_dispatch:build + push 到 GHCR(+ provenance/SBOM attestation
+#   + G18 cosign keyless 簽章)
+# - push tag `v*`:另建 GitHub Release(G19,notes 取自 CHANGELOG.md,無章節則自動生成)
 # - pull_request(改到 Dockerfile/相依/本檔時):build-only 不推,驗證所有服務映像可建
 #
 # 映像命名對齊 Helm `drone.image` helper:ghcr.io/<owner>/drone/<svc>:<version>
 # ⚠️ GHCR package 預設 private;客戶免憑證拉取需在 GitHub 套件設定改 public,
 #    或在 values.yaml 設 imagePullSecrets(部署決策,非本流程可代)。
+#
+# 供應鏈可驗證性(對齊 CRA):推出的每個映像以 cosign keyless(GitHub OIDC id-token,
+# 無長期金鑰)簽章;驗證:
+#   cosign verify ghcr.io/<owner>/drone/<svc>:<ver> \
+#     --certificate-identity-regexp 'https://github.com/<owner>/drone/.github/workflows/release.yml@.*' \
+#     --certificate-oidc-issuer https://token.actions.githubusercontent.com
 on:
   push:
     tags: ["v*"]
@@ -84,6 +92,7 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: build（tag/dispatch 時 push + 附掛 provenance/SBOM）
+        id: build
         uses: docker/build-push-action@v7
         with:
           context: .
@@ -97,3 +106,55 @@ jobs:
             org.opencontainers.image.version=${{ steps.meta.outputs.version }}
           provenance: ${{ steps.meta.outputs.push }}
           sbom: ${{ steps.meta.outputs.push }}
+
+      # G18 供應鏈:對推出的映像做 cosign keyless 簽章(GitHub OIDC,無長期金鑰)。
+      # 以 digest 而非 tag 簽(tag 可變、digest 不可變)。id-token: write 已於上方授權。
+      - name: 安裝 cosign
+        if: steps.meta.outputs.push == 'true'
+        uses: sigstore/cosign-installer@v3
+
+      - name: cosign 簽章（keyless）
+        if: steps.meta.outputs.push == 'true'
+        # 映像名由 owner/svc 組成(皆非外部輸入);digest 來自 build-push-action 輸出。
+        # 走 env 不在 shell 內插 ${{ }},避免注入。
+        env:
+          IMAGE: ghcr.io/${{ github.repository_owner }}/drone/${{ matrix.svc }}
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          set -euo pipefail
+          cosign sign --yes "${IMAGE}@${DIGEST}"
+
+  # G19:tag push 時建 GitHub Release。notes 優先取 CHANGELOG.md 對應章節,
+  # 取不到(如章節命名不符)則退回 GitHub 自動生成 notes。dispatch/PR 不建 Release。
+  release:
+    needs: images  # 映像全推成功後才建 Release,避免 Release 指向不存在的映像
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write  # gh release create 需寫 repo(僅本 job 提權,不動全域唯讀)
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: 建 GitHub Release
+        # TAG 為 ref_name(tag 名,理論上可由推 tag 者控制),一律走 env 不在 shell
+        # 內插 ${{ }};version/notes 僅用於 shell 變數與 awk -v,不進 shell 解譯。
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          version="${TAG#v}"
+          notes_file="$(mktemp)"
+          # 摘取 CHANGELOG「## [version]」到下一個「## 」之間的內容
+          awk -v ver="$version" '
+            index($0, "## [" ver "]") == 1 { grab = 1; next }
+            grab && /^## / { exit }
+            grab { print }
+          ' CHANGELOG.md > "$notes_file" || true
+          if [ -s "$notes_file" ]; then
+            echo "使用 CHANGELOG 章節作為 release notes"
+            gh release create "$TAG" --title "$TAG" --notes-file "$notes_file" --verify-tag
+          else
+            echo "CHANGELOG 無對應章節,改用 GitHub 自動生成 notes"
+            gh release create "$TAG" --title "$TAG" --generate-notes --verify-tag
+          fi
