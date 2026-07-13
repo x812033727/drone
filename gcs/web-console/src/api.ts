@@ -10,9 +10,14 @@ import type {
   Mission,
   MissionCreate,
   CommandKind,
+  Org,
+  OrgCreate,
+  OrgUpdate,
+  Page,
   Route,
   RouteCreate,
   TelemetryEvent,
+  UsageReport,
 } from "./types";
 
 // 正式部署由 nginx 代理 /api → fleetsvc(routes/missions 前綴 → missionsvc);
@@ -32,6 +37,21 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   if (!res.ok) throw new Error(await errorDetail(res, `${init?.method ?? "GET"} ${path}`));
   if (res.status === 204) return undefined as T;
   return res.json() as Promise<T>;
+}
+
+// 分頁列表:回應本體是陣列,total 走 X-Total-Count 標頭(fleet-svc G12,同源反代可讀)。
+// 標頭缺失(理論上不會)則以本頁筆數回退,避免 NaN。
+async function requestPage<T>(path: string, init?: RequestInit): Promise<Page<T>> {
+  const token = getToken();
+  const headers: Record<string, string> = { ...(init?.headers as Record<string, string>) };
+  if (token) headers.Authorization = `Bearer ${token}`;
+  const res = await fetch(`${API_BASE}${path}`, { ...init, headers });
+  if (res.status === 401 || res.status === 403) throw new AuthError(String(res.status));
+  if (!res.ok) throw new Error(await errorDetail(res, `${init?.method ?? "GET"} ${path}`));
+  const items = (await res.json()) as T[];
+  const totalHeader = res.headers.get("X-Total-Count");
+  const total = totalHeader != null ? Number(totalHeader) : items.length;
+  return { items, total: Number.isFinite(total) ? total : items.length };
 }
 
 // 盡量抽出 FastAPI 的 {detail: ...};失敗則回退狀態碼。
@@ -79,6 +99,29 @@ export const commandMission = (pk: string, command: CommandKind) =>
     method: "POST",
     body: JSON.stringify({ command }),
   });
+
+// ---- fleet-svc:orgs(租戶控制面,admin only)+ usage ----
+export const listOrgs = (opts: { status?: string; limit?: number; offset?: number } = {}) => {
+  const q = new URLSearchParams();
+  if (opts.status) q.set("status", opts.status);
+  if (opts.limit != null) q.set("limit", String(opts.limit));
+  if (opts.offset != null) q.set("offset", String(opts.offset));
+  const qs = q.toString();
+  return requestPage<Org>(`/orgs${qs ? `?${qs}` : ""}`);
+};
+export const getOrg = (orgId: string) => request<Org>(`/orgs/${encodeURIComponent(orgId)}`);
+export const createOrg = (body: OrgCreate) =>
+  request<Org>("/orgs", { method: "POST", body: JSON.stringify(body) });
+export const updateOrg = (orgId: string, body: OrgUpdate) =>
+  request<Org>(`/orgs/${encodeURIComponent(orgId)}`, {
+    method: "PATCH",
+    body: JSON.stringify(body),
+  });
+export const getOrgUsage = (orgId: string) =>
+  request<UsageReport>(`/orgs/${encodeURIComponent(orgId)}/usage`);
+
+// 本 org 用量(所有登入者);admin 可加 ?org= 查他 org(此處不用,admin 走 /orgs/{id}/usage)。
+export const getUsage = () => request<UsageReport>("/usage");
 
 // 訂閱 SSE 即時遙測;EventSource 無法帶 header,故 token 走查詢參數。
 // 回傳取消函式。斷線由 EventSource 自動重連。

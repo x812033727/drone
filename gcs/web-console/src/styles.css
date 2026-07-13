@@ -224,3 +224,24 @@ body {
 .toast.info { border-left-color: var(--accent); }
 .toast.warn { border-left-color: #d29922; }
 .toast.error { border-left-color: #f85149; }
+
+/* ---- 用量 / 配額 ---- */
+.kv { display: flex; gap: 12px; font-size: 13px; padding: 3px 0; }
+.kv > .muted { min-width: 56px; }
+.quotas { display: flex; flex-direction: column; gap: 14px; }
+.quota-head { display: flex; justify-content: space-between; font-size: 13px; margin-bottom: 6px; }
+.meter {
+  height: 8px; border-radius: 999px; background: var(--border); overflow: hidden;
+}
+.meter-fill {
+  height: 100%; background: var(--accent); border-radius: 999px;
+  transition: width .3s ease;
+}
+.meter-fill.near { background: #d29922; }
+.meter-fill.over { background: #f85149; }
+.usage-modal { padding: 18px; display: flex; flex-direction: column; gap: 14px; }
+.usage-modal .card { margin: 0; }
+
+/* ---- 分頁 ---- */
+.pager { display: flex; align-items: center; gap: 10px; margin-top: 12px; font-size: 13px; }
+.pager .muted { margin-right: auto; }

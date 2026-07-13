@@ -10,19 +10,25 @@ React + Vite + TypeScript + MapLibre GL。
 
 ## 功能
 
-三個分頁視圖(頂欄切換,單頁 SPA,狀態沿用 React hooks,不引入 Redux):
+分頁視圖(頂欄切換,單頁 SPA,狀態沿用 React hooks,不引入 Redux;分頁依角色顯示):
 
 - **地圖監控**:機隊清單(在線/離線、飛行模式、電量、相對高度、最後遙測時間)+ MapLibre
   即時地圖(綠=在線/灰=離線,SSE 即時更新,首次自動框住全機隊,點選置中開 popup)。
 - **機隊管理**:列出機隊/裝置;新增機隊;新增/編輯/退役裝置(退役=PATCH `status=retired`)。
 - **任務**:列出航線/任務;以表單輸入航點(緯度/經度/相對高度列)建立航線;由航線 + 目標機
   建立任務;派遣(POST dispatch)、暫停/恢復/中止(POST command);顯示任務狀態機進度。
+- **用量**(所有登入者):讀 `GET /api/v1/usage`(本 org),以長條顯示裝置/機隊配額用量比例
+  (現存 / 上限,≥80% 轉黃、達上限轉紅),並列本期計費計數與歷來累計。
+- **租戶**(**僅 admin 顯示**):讀 `GET /api/v1/orgs`(分頁,total 走 `X-Total-Count`)列出租戶
+  (org_id/名稱/方案/狀態/配額覆寫);建立(POST)、編輯 plan/狀態(active↔suspended)/配額覆寫
+  (PATCH,留空=用方案預設);點「用量」看該租戶 `GET /api/v1/orgs/{id}/usage` 彙總。
 
 其它:
 
 - **前端 RBAC**:解析 JWT 的 `role`/`roles`/Keycloak `realm_access.roles`(對後端
   `cloud/fleet_svc/fleet_svc/auth.py`,viewer<operator<admin)。viewer 只能看,operator 以上才
-  顯示/啟用寫入動作。此為 UX 閘門,真正授權仍由後端 JWT 驗簽 + RBAC 強制。
+  顯示/啟用寫入動作;**「租戶」分頁與其動作僅 admin 可見**(對 `/orgs` 的 admin only 閘門)。
+  此為 UX 閘門,真正授權仍由後端 JWT 驗簽 + RBAC 強制(偽造前端角色仍被後端 403 擋下)。
 - **告警**:低電量(<20%)、離線、任務 FAILED 以 toast 提示(僅在狀態「進入」轉移時,不刷屏)。
 
 ## API 反代
@@ -32,7 +38,9 @@ fleet-svc 與 mission-svc 的 `/api/v1` 路徑前綴不衝突,故前端共用同
 | 路徑前綴 | 目標 |
 |----------|------|
 | `/api/v1/routes`、`/api/v1/missions` | mission-svc(:8092) |
-| 其餘 `/api/`(status/devices/fleets/firmware/stream) | fleet-svc(:8091) |
+| 其餘 `/api/`(status/devices/fleets/firmware/stream/**orgs/usage**) | fleet-svc(:8091) |
+
+`/orgs`、`/usage` 皆在 fleet-svc(:8091),落在既有 catch-all,**無需改 nginx.conf**。
 
 正式部署見 `nginx.conf`(較長前綴優先);開發見 `vite.config.ts`(proxy)。
 

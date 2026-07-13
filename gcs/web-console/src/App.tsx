@@ -13,6 +13,8 @@ import { FleetList } from "./components/FleetList";
 import { FleetMap } from "./components/FleetMap";
 import { Login } from "./components/Login";
 import { MissionManager } from "./components/MissionManager";
+import { TenantManager } from "./components/TenantManager";
+import { UsageView } from "./components/UsageView";
 import { useToasts } from "./components/Toasts";
 import { handleCallback } from "./oidc";
 import type { DeviceStatusView } from "./types";
@@ -20,12 +22,15 @@ import type { DeviceStatusView } from "./types";
 const ONLINE_MS = 10_000; // 與 fleet-svc repo.ONLINE_THRESHOLD_S 對齊
 const LOW_BATTERY_PCT = 20;
 
-type Tab = "map" | "fleet" | "missions";
+type Tab = "map" | "fleet" | "missions" | "usage" | "tenants";
 
-const TABS: Array<{ key: Tab; label: string }> = [
+// adminOnly 分頁僅 admin 可見(前端 UX 閘門;後端仍以 RBAC 強制 /orgs admin only)。
+const TABS: Array<{ key: Tab; label: string; adminOnly?: boolean }> = [
   { key: "map", label: "地圖監控" },
   { key: "fleet", label: "機隊管理" },
   { key: "missions", label: "任務" },
+  { key: "usage", label: "用量" },
+  { key: "tenants", label: "租戶", adminOnly: true },
 ];
 
 export function App() {
@@ -40,7 +45,16 @@ export function App() {
 
   // operator 以上才可執行寫入(建立/派遣/控制/裝置編輯);隨登入狀態重算。
   const canWrite = useMemo(() => hasRole("operator"), [authVersion]);
+  const isAdmin = useMemo(() => hasRole("admin"), [authVersion]);
   const roleLabel = useMemo(() => currentRoleLabel(), [authVersion]);
+
+  // 依角色過濾分頁(admin 專屬分頁對非 admin 隱藏)。
+  const visibleTabs = useMemo(() => TABS.filter((t) => !t.adminOnly || isAdmin), [isAdmin]);
+
+  // 登出/降權後若停在已隱藏的分頁(如租戶),退回地圖。
+  useEffect(() => {
+    if (!visibleTabs.some((t) => t.key === tab)) setTab("map");
+  }, [visibleTabs, tab]);
 
   // OIDC 回呼:若本次載入帶 ?code(SSO 導回),交換 token 並登入
   useEffect(() => {
@@ -169,7 +183,7 @@ export function App() {
           {list.length} 台 · 線上 {onlineCount}
         </span>
         <nav className="tabs">
-          {TABS.map((t) => (
+          {visibleTabs.map((t) => (
             <button
               key={t.key}
               className={`tab ${tab === t.key ? "active" : ""}`}
@@ -209,6 +223,16 @@ export function App() {
       {tab === "missions" && (
         <div className="view-scroll">
           <MissionManager canWrite={canWrite} onAuthError={onAuthError} />
+        </div>
+      )}
+      {tab === "usage" && (
+        <div className="view-scroll">
+          <UsageView onAuthError={onAuthError} />
+        </div>
+      )}
+      {tab === "tenants" && isAdmin && (
+        <div className="view-scroll">
+          <TenantManager onAuthError={onAuthError} />
         </div>
       )}
     </div>
