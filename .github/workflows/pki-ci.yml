@@ -1,0 +1,22 @@
+name: pki-ci
+
+# PKI 工具守門:跑 verify_pki.sh 全生命週期自我驗證(runner 皆有 openssl)。路徑觸發。
+on:
+  push:
+    branches: [main]
+    paths:
+      - "cloud/pki/**"
+      - ".github/workflows/pki-ci.yml"
+  pull_request:
+    paths:
+      - "cloud/pki/**"
+      - ".github/workflows/pki-ci.yml"
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: PKI 生命週期自我驗證
+        run: bash cloud/pki/verify_pki.sh
