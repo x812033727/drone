@@ -1,0 +1,5 @@
+# fleet-svc 執行依賴(釘版:雲端服務映像求可重現建置,對齊 cloud/log_svc)
+fastapi==0.139.0
+uvicorn==0.51.0
+asyncpg==0.31.0
+pydantic>=2.7,<3   # 由 fastapi 帶入,顯式約束大版本

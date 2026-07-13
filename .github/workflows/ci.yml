@@ -28,7 +28,8 @@ jobs:
                    tools/sitl_scenarios/requirements.txt \
                    onboard/drone_agent/requirements.txt \
                    cloud/ingest/requirements.txt \
-                   cloud/log_svc/requirements.txt; do
+                   cloud/log_svc/requirements.txt \
+                   cloud/fleet_svc/requirements.txt; do
             if [ -f "$f" ]; then pip install -r "$f"; fi
           done
           if [ -d interfaces/proto/gen/python ]; then
