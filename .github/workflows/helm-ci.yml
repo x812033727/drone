@@ -30,3 +30,7 @@ jobs:
           helm template drone cloud/deploy/helm/drone-platform \
             --set secrets.jwtSecret=abcdefghijklmnopqrstuvwxyz123456 \
             --set ingress.enabled=true --set ingress.host=drone.example.com > /dev/null
+      - name: helm template(mTLS 啟用)
+        run: |
+          helm template drone cloud/deploy/helm/drone-platform \
+            --set mtls.enabled=true --set mtls.certSecret=drone-mqtt-certs > /dev/null

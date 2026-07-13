@@ -36,11 +36,27 @@ helm install drone ./cloud/deploy/helm/drone-platform \
 3. **關 Grafana 匿名**:`grafana.anonymous=false`(預設已關)。
 4. **私有 registry**:`image.registry` 指向客戶內部倉庫 + `imagePullSecrets`。
 
+## mTLS 安全部署(C2)
+
+啟用機-雲 mTLS(broker 8883 雙向 TLS + per-device ACL + CRL,服務以 backend 憑證連線):
+
+```bash
+# 1) 用 cloud/pki 簽發憑證(server=<release>-drone-platform-mosquitto / backend / 各裝置),
+#    建成 k8s Secret(需含 ca.cert.pem/server.cert.pem/server.key.pem/ca.crl.pem/
+#    backend.cert.pem/backend.key.pem):
+kubectl -n drone create secret generic drone-mqtt-certs --from-file=ca.cert.pem=... [...]
+# 2) 啟用:
+helm upgrade drone ... --set mtls.enabled=true --set mtls.certSecret=drone-mqtt-certs
+```
+啟用後 mosquitto 走 8883 mTLS(內嵌 acl per-device 隔離 + crlfile),fleetsvc/missionsvc/
+ingest 自動帶 `MQTT_TLS_*` 以 backend 憑證連線。server 憑證 SAN 需含服務名
+`<release>-drone-platform-mosquitto`。對 [cloud/deploy/mqtt-tls](../mqtt-tls/README.md) 的 k8s 版。
+
 ## 現況與後續
 
 - 映像須先由各服務 Dockerfile 建置並推入 `image.registry`(CI 發佈流程屬 release wave)。
 - 待補:mediamtx(影像錄存)、Grafana dashboard/datasource provisioning(ConfigMap)、
-  NetworkPolicy 網段隔離、mTLS(C2)、SBOM 附掛(D2)。
+  NetworkPolicy 網段隔離、SBOM 附掛(D2)。
 
 ## 驗證
 

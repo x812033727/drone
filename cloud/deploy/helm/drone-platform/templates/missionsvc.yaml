@@ -38,7 +38,8 @@ spec:
             - name: MQTT_HOST
               value: {{ include "drone.fullname" . }}-mosquitto
             - name: MQTT_PORT
-              value: "1883"
+              value: {{ include "drone.mqttPort" . | quote }}
+            {{- include "drone.mqttTlsEnv" . | nindent 12 }}
           ports:
             - containerPort: 8092
           readinessProbe:
@@ -47,6 +48,18 @@ spec:
             periodSeconds: 10
           resources:
             {{- toYaml .Values.missionsvc.resources | nindent 12 }}
+          {{- if .Values.mtls.enabled }}
+          volumeMounts:
+            - name: mqtt-certs
+              mountPath: /mqtt-certs
+              readOnly: true
+          {{- end }}
+      {{- if .Values.mtls.enabled }}
+      volumes:
+        - name: mqtt-certs
+          secret:
+            secretName: {{ .Values.mtls.certSecret }}
+      {{- end }}
 ---
 apiVersion: v1
 kind: Service

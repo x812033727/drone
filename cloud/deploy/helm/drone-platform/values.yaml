@@ -22,6 +22,14 @@ secrets:
   jwtAudience: ""
   jwtIssuer: ""
 
+# 機-雲 mTLS(C2:對 cloud/deploy/mqtt-tls 的 k8s 版)。啟用後 broker 走 8883
+# 雙向 TLS + per-device ACL,服務以 backend 憑證連線。憑證由預建 Secret 提供
+# (certSecret,需含 ca.cert.pem/server.cert.pem/server.key.pem/ca.crl.pem/
+#  backend.cert.pem/backend.key.pem;由 cloud/pki 簽發後 kubectl create secret)。
+mtls:
+  enabled: false
+  certSecret: "" # 預建 Secret 名稱(mtls.enabled=true 時必填)
+
 # 資料庫(遙測時序 + fleet/mission 關聯,同一 timescaledb 實例)
 timescaledb:
   image: timescale/timescaledb:2.17.2-pg16
