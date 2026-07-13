@@ -23,6 +23,7 @@ from fleet_svc.auth import (
     AUTH_ENABLED,
     Principal,
     authorize_token,
+    build_principal,
     read_org,
     require_principal,
     require_role,
@@ -346,19 +347,43 @@ async def list_audit(
 
 
 # ---- SSE 即時遙測串流 ----
-async def _sse_events(request: Request, hub: TelemetryHub):
-    """連上先送目前快照,之後串流更新;定期 keepalive 避免代理斷連。"""
+async def _org_serials(org: str) -> set[str]:
+    """查某租戶的裝置 serial 集合(SSE 過濾用)。"""
+    async with _pool(app).acquire() as conn:
+        return await repo.list_org_serials(conn, org)
+
+
+async def _sse_events(request: Request, hub: TelemetryHub, principal: Principal):
+    """連上先送快照,之後串流更新;定期 keepalive。
+
+    多租戶隔離(G11b):遙測 hub 以 drone_id(=device serial)為鍵廣播全機隊,
+    非 admin 訂閱者**只放行本 org 裝置**的即時遙測(admin 看全部)。長連線期間
+    定期刷新 org 的 serial 集合以納入新註冊裝置;未知 drone_id 對非 admin 一律不送
+    (安全預設:寧可漏看,不可跨租戶洩漏即時位置)。
+    """
+    allowed: set[str] | None = None if principal.is_admin else await _org_serials(principal.org)
+
+    def visible(data: dict) -> bool:
+        if allowed is None:
+            return True
+        return data.get("drone_id") in allowed
+
     q = hub.subscribe()
     try:
         for data in hub.snapshot():
-            yield f"data: {json.dumps(data)}\n\n"
+            if visible(data):
+                yield f"data: {json.dumps(data)}\n\n"
         while True:
             if await request.is_disconnected():
                 break
             try:
                 data = await asyncio.wait_for(q.get(), timeout=SSE_KEEPALIVE_S)
-                yield f"data: {json.dumps(data)}\n\n"
+                if visible(data):
+                    yield f"data: {json.dumps(data)}\n\n"
             except asyncio.TimeoutError:
+                # keepalive 之際順便刷新本 org 的 serial 集合(納入新裝置)
+                if allowed is not None:
+                    allowed = await _org_serials(principal.org)
                 yield ": keepalive\n\n"
     finally:
         hub.unsubscribe(q)
@@ -366,10 +391,11 @@ async def _sse_events(request: Request, hub: TelemetryHub):
 
 @app.get("/api/v1/stream")
 async def stream(request: Request, token: str | None = Query(default=None)) -> StreamingResponse:
-    # EventSource 無法帶 header,SSE 以查詢參數 token 認證(需 viewer)
-    authorize_token(token, "viewer")
+    # EventSource 無法帶 header,SSE 以查詢參數 token 認證(需 viewer);
+    # 依 principal.org 做多租戶隔離(G11b),admin 跨 org 看全部。
+    principal = build_principal(authorize_token(token, "viewer"))
     return StreamingResponse(
-        _sse_events(request, app.state.hub),
+        _sse_events(request, app.state.hub, principal),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
