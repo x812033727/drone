@@ -1,0 +1,107 @@
+// 雲端任務派遣契約 v0.6.0
+//
+// 定位:雲端「工單層」派遣協議——派遣單(FleetMission)與指派事件
+// (MissionAssignment)。**不上線下發**:機上只認 mission.proto 的
+// MissionPlan / MissionProgress / MissionCommand;本檔供 mission-svc 派遣器
+// 與 Web 指揮中心共用,並作多機調度審計與端到端追溯。
+// 契約草案見 docs/20-software/cloud-fleet.md §6。
+//
+// 追溯鍵:`mission_id` 由派遣單產生並貫穿全鏈
+// (FleetMission ↔ MissionPlan ↔ MissionProgress ↔ ULog 歸檔)。
+// 生命週期(FleetMission.Status)是「這件工作」,與機上任務狀態
+// (MissionProgress.State)分層——後者是「某台機這次執行」。
+//
+// 冪等:沿用 MQTT QoS 1 at-least-once 既定語意(cloud-fleet §6.4);
+// 派遣單終態轉移必須冪等,重複到達以事件內 unix_time_ms 判舊。
+//
+// v0.6.0(純增量,MINOR):新增本檔 FleetMission / MissionAssignment,
+// 不改動既有訊息;機上契約不變。
+syntax = "proto3";
+
+package drone.v1;
+
+import "drone/v1/mission.proto";
+
+// 雲端派遣單——一件待執行的機隊任務工單(工單層,非上線訊息)。
+message FleetMission {
+  // 派遣單生命週期狀態機(對應 cloud-fleet §6.1)。
+  enum Status {
+    STATUS_UNSPECIFIED = 0;
+    // 建立:航線/時窗/機型酬載需求已定,尚未綁機。
+    STATUS_CREATED = 1;
+    // 指派:調度器選機成功,已綁 drone_id 並跑前置自檢。
+    STATUS_ASSIGNED = 2;
+    // 執行:機上回報 STATE_RECEIVED 後,跟隨 MissionProgress 推進。
+    STATUS_EXECUTING = 3;
+    // 完成:機上回報 STATE_COMPLETED 且成果回收確認(端到端閉環)。
+    STATUS_COMPLETED = 4;
+    // 取消:使用者取消或機上回報 STATE_FAILED;失敗單可重新指派。
+    STATUS_CANCELLED = 5;
+  }
+
+  // 派遣單唯一識別碼,亦即端到端追溯鍵(下發時作為 MissionPlan.mission_id)。
+  string mission_id = 1;
+  // 待下發的航線計畫(mission.proto)。下發時 plan.mission_id 應等於本欄 mission_id。
+  MissionPlan plan = 2;
+  // 目前狀態。
+  Status status = 3;
+  // 派遣優先級(數字越大越優先;預設 0)。調度器據此排序待派佇列。
+  int32 priority = 4;
+  // 目標機隊識別碼(調度器在此機隊內選機;空 = 全域機隊)。
+  string fleet_id = 5;
+  // 選機能力需求(機型/酬載等,如 "model:x500"、"payload:spray";AND 語意)。
+  repeated string required_capabilities = 6;
+  // 執行時窗起(Unix epoch 毫秒,UTC;0 = 立即可派)。
+  int64 window_start_unix_ms = 7;
+  // 執行時窗迄(Unix epoch 毫秒,UTC;0 = 無截止)。
+  int64 window_end_unix_ms = 8;
+  // 目前綁定的機身識別碼(ASSIGNED 起填;CREATED 為空)。一機一活動任務(§6.3)。
+  string assigned_drone_id = 9;
+  // 父工單識別碼(多機協同拆分航線時掛同一父工單;Phase 3,單機留空)。
+  string parent_mission_id = 10;
+  // 建立時間,Unix epoch 毫秒(UTC)。
+  int64 created_unix_ms = 11;
+  // 最後狀態更新時間,Unix epoch 毫秒(UTC;亂序防護據此判舊)。
+  int64 updated_unix_ms = 12;
+}
+
+// 指派事件——派遣單與某台機的綁定與前置檢查結果(供多機調度審計與追溯)。
+message MissionAssignment {
+  // 指派結果狀態。
+  enum Status {
+    STATUS_UNSPECIFIED = 0;
+    // 前置檢查進行中(尚未下發)。
+    STATUS_PENDING = 1;
+    // 接受:前置檢查通過且機上回報 STATE_RECEIVED。
+    STATUS_ACCEPTED = 2;
+    // 拒絕:前置檢查未過或機上互斥拒收(見 reject_reason)。
+    STATUS_REJECTED = 3;
+    // 被取代:同一派遣單重新指派他機後,舊指派記為 superseded。
+    STATUS_SUPERSEDED = 4;
+  }
+
+  // 單一前置檢查結果(禁航區圖資版本、電量、OTA 版本矩陣等)。
+  message PreflightCheck {
+    // 檢查項名稱(如 "geofence_map_version"、"battery"、"ota_version_matrix")。
+    string name = 1;
+    // 是否通過。
+    bool passed = 2;
+    // 補充說明(未過時記原因;過則可留空)。
+    string detail = 3;
+  }
+
+  // 指派事件唯一識別碼。
+  string assignment_id = 1;
+  // 對應 FleetMission.mission_id(派遣單追溯鍵)。
+  string mission_id = 2;
+  // 被指派的機身識別碼。
+  string drone_id = 3;
+  // 指派結果狀態。
+  Status status = 4;
+  // 前置自檢結果清單(cloud-fleet §6.1 ASSIGNED 前置檢查)。
+  repeated PreflightCheck preflight_checks = 5;
+  // 拒絕原因(status = STATUS_REJECTED 時填;其餘留空)。
+  string reject_reason = 6;
+  // 指派時間,Unix epoch 毫秒(UTC)。
+  int64 assigned_unix_ms = 7;
+}
