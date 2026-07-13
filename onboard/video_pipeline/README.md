@@ -60,6 +60,22 @@ sudo apt install python3-gi python3-numpy gir1.2-gstreamer-1.0 \
 
 埠被占時:`RTSP_PORT=18554 WEBRTC_PORT=18889 API_PORT=19997 ./run_poc.sh`。
 其他參數:`FRAMES/WIDTH/HEIGHT/FPS/BITRATE` 環境變數。
+
+**認證(預設關閉匿名)**:`mediamtx.yml` 的 `authInternalUsers` 留空以關掉
+MediaMTX「未定義使用者即放行 any 全權」的預設(否則 RTSP :8554 / WebRTC :8889
+對外可任意推/拉流)。`run_poc.sh` 啟動時以環境變數注入三位使用者——
+publish、read、與僅 api 的 any(apiAddress 綁 loopback,供健康檢查)。
+本地跑不必設(內建 dev 預設);要換帳密覆寫這四個環境變數:
+
+| 環境變數 | 預設 | 用途 |
+|----------|------|------|
+| `VIDEO_PUBLISH_USER` / `VIDEO_PUBLISH_PASS` | `publisher` / `poc-publish-dev` | 推流(`sender.py` 的 RTSP publish) |
+| `VIDEO_READ_USER` / `VIDEO_READ_PASS` | `reader` / `poc-read-dev` | 拉流量測 + WHEP(`measure_latency.py` / WebRTC read) |
+
+> ⚠️ MediaMTX v1.12.3 **不支援設定檔內 `${ENV}` 內插**(pass 會原樣存成字面
+> `${VAR}`);且 `authInternalUsers` 物件陣列用 `MTX_` 覆寫是「附加」語意,
+> 故清單留空、由 `MTX_AUTHINTERNALUSERS_*` 環境變數在啟動時注入(見 run_poc.sh)。
+> `cloud/deploy/compose` 的常駐錄存棧同樣走這套(帳密在 docker-compose.yml 注入)。
 單元測試:repo 根 `pytest onboard/video_pipeline/`;lint:`ruff check .`。
 本 POC **不納 CI**(需下載 MediaMTX + GStreamer 全家桶,價值低),
 `run_poc.sh` 為本地驗證入口。
@@ -109,7 +125,7 @@ x86 軟編數字對「編碼延遲」不具代表性,只作傳輸層參考。
 | [measure_latency.py](measure_latency.py) | 量測端:拉流解碼讀時戳 → 統計(`--rtsp-url --frames --json`) |
 | [run_poc.sh](run_poc.sh) | 一鍵跑通 + WHEP 檢查 + 清理 |
 | [docker/get_mediamtx.sh](docker/get_mediamtx.sh) | MediaMTX v1.12.3 下載(SHA-256 釘死校驗) |
-| [docker/mediamtx.yml](docker/mediamtx.yml) | 最小設定:RTSP + WebRTC + API,其餘協議關閉 |
+| [docker/mediamtx.yml](docker/mediamtx.yml) | 最小設定:RTSP + WebRTC + API,其餘協議關閉;`authInternalUsers` 留空+關匿名(帳密由 run_poc.sh 以環境變數注入) |
 | [tests/test_stamp.py](tests/test_stamp.py) | 時戳往返/抗噪/損毀偵測測試(不需 GStreamer) |
 | [tests/test_sender_pipeline.py](tests/test_sender_pipeline.py) | `--source` 解析與 pipeline 字串組裝測試(不需 GStreamer) |
 
