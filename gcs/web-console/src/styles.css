@@ -87,3 +87,140 @@ body {
 .login-box button:disabled { opacity: .5; cursor: not-allowed; }
 .login-box .or { color: var(--muted); font-size: 12px; text-align: center; margin: 4px 0; }
 .login-box form { display: flex; flex-direction: column; gap: 10px; }
+
+/* ---- 分頁導覽 ---- */
+.topbar .tabs { display: flex; gap: 4px; margin-left: 8px; }
+.topbar .tab {
+  background: transparent; color: var(--muted); border: 1px solid transparent;
+  border-radius: 6px; padding: 5px 12px; cursor: pointer; font-size: 13px;
+}
+.topbar .tab:hover { color: var(--text); }
+.topbar .tab.active { color: var(--text); background: var(--bg); border-color: var(--border); }
+.topbar .conn { margin-left: auto; }
+.role-badge {
+  font-size: 11px; text-transform: uppercase; letter-spacing: .04em;
+  color: var(--accent); border: 1px solid var(--accent); border-radius: 6px;
+  padding: 2px 7px;
+}
+
+/* ---- 管理視圖(機隊/任務)---- */
+.view-scroll { flex: 1; min-height: 0; overflow-y: auto; }
+.manager { max-width: 1100px; margin: 0 auto; padding: 20px 24px 60px; }
+.manager-head { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; }
+.manager-head h2 { font-size: 18px; margin: 0; }
+.manager-head .actions { margin-left: auto; display: flex; gap: 8px; }
+
+.card {
+  background: var(--panel); border: 1px solid var(--border); border-radius: 10px;
+  padding: 16px 18px; margin-bottom: 16px;
+}
+.card h3 { margin: 0 0 12px; font-size: 14px; color: var(--muted); font-weight: 600; }
+
+/* ---- 按鈕 ---- */
+.btn {
+  background: var(--bg); color: var(--text); border: 1px solid var(--border);
+  border-radius: 6px; padding: 6px 12px; cursor: pointer; font-size: 13px;
+}
+.btn:hover:not(:disabled) { border-color: var(--muted); }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+.btn.primary:hover:not(:disabled) { filter: brightness(1.08); }
+.btn.ghost { background: transparent; }
+.btn.sm { padding: 4px 9px; font-size: 12px; }
+.btn.danger { color: #f85149; }
+.btn.danger:hover:not(:disabled) { border-color: #f85149; }
+.btn:disabled { opacity: .45; cursor: not-allowed; }
+
+/* ---- 表格 ---- */
+.table-wrap { overflow-x: auto; }
+.table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.table th, .table td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border); }
+.table th { color: var(--muted); font-weight: 600; font-size: 12px; }
+.table .mono, .mono { font-family: ui-monospace, monospace; }
+.row-actions { display: flex; gap: 6px; }
+
+.badge {
+  font-size: 11px; padding: 2px 8px; border-radius: 20px; border: 1px solid var(--border);
+  color: var(--muted); white-space: nowrap;
+}
+.badge.s-active, .badge.m-in_progress { color: var(--online); border-color: var(--online); }
+.badge.s-retired, .badge.s-revoked { color: #f85149; border-color: #f85149; }
+.badge.m-completed { color: var(--online); border-color: var(--online); }
+.badge.m-failed { color: #f85149; border-color: #f85149; }
+.badge.m-paused { color: #d29922; border-color: #d29922; }
+
+.chips { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 8px; }
+.chip {
+  background: var(--bg); border: 1px solid var(--border); border-radius: 20px;
+  padding: 5px 12px; font-size: 13px;
+}
+.muted { color: var(--muted); }
+.strong { font-weight: 600; }
+
+/* ---- 任務卡 + 狀態機 ---- */
+.mission-list { display: flex; flex-direction: column; gap: 12px; }
+.mission {
+  background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 14px 16px;
+}
+.mission.failed { border-color: #f85149; }
+.mission-top { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; }
+.steps { display: flex; flex-wrap: wrap; gap: 2px; margin-bottom: 12px; }
+.step { display: flex; align-items: center; gap: 6px; padding-right: 10px; }
+.step:not(:last-child)::after { content: "›"; color: var(--border); margin-left: 2px; }
+.step-dot {
+  width: 9px; height: 9px; border-radius: 50%; background: var(--border); flex: none;
+}
+.step.done .step-dot { background: var(--online); }
+.step.now .step-dot { background: var(--accent); box-shadow: 0 0 0 3px rgba(47,129,247,.25); }
+.step-label { font-size: 11px; color: var(--muted); }
+.step.done .step-label, .step.now .step-label { color: var(--text); }
+.mission-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+
+/* ---- 表單 + modal ---- */
+.modal-overlay {
+  position: fixed; inset: 0; background: rgba(0,0,0,.6);
+  display: flex; align-items: center; justify-content: center; z-index: 1100; padding: 16px;
+}
+.modal-box {
+  background: var(--panel); border: 1px solid var(--border); border-radius: 10px;
+  width: min(520px, 96vw); max-height: 90vh; overflow-y: auto;
+}
+.modal-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 14px 18px; border-bottom: 1px solid var(--border);
+}
+.modal-head h3 { margin: 0; font-size: 16px; }
+.modal-close {
+  background: transparent; border: none; color: var(--muted); font-size: 22px;
+  line-height: 1; cursor: pointer;
+}
+.modal-close:hover { color: var(--text); }
+.form { display: flex; flex-direction: column; gap: 12px; padding: 18px; }
+.form label { display: flex; flex-direction: column; gap: 5px; font-size: 13px; color: var(--muted); }
+.form label.check { flex-direction: row; align-items: center; gap: 8px; color: var(--text); }
+.form input, .form select {
+  background: var(--bg); color: var(--text); border: 1px solid var(--border);
+  border-radius: 6px; padding: 7px 9px; font-size: 13px; font-family: inherit;
+}
+.form input:disabled { opacity: .6; }
+.form-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 4px; }
+
+/* ---- 航點列 ---- */
+.wp-head { font-size: 12px; color: var(--muted); }
+.wp-rows { display: flex; flex-direction: column; gap: 6px; }
+.wp-row { display: flex; align-items: center; gap: 6px; }
+.wp-row .wp-idx { width: 18px; color: var(--muted); font-size: 12px; text-align: right; }
+.wp-row input { flex: 1; min-width: 0; }
+
+/* ---- toast 告警 ---- */
+.toast-stack {
+  position: fixed; right: 16px; bottom: 16px; z-index: 1200;
+  display: flex; flex-direction: column; gap: 8px; max-width: min(360px, 90vw);
+}
+.toast {
+  background: var(--panel); border: 1px solid var(--border); border-left-width: 3px;
+  border-radius: 6px; padding: 10px 14px; font-size: 13px; cursor: pointer;
+  box-shadow: 0 4px 16px rgba(0,0,0,.4);
+}
+.toast.info { border-left-color: var(--accent); }
+.toast.warn { border-left-color: #d29922; }
+.toast.error { border-left-color: #f85149; }

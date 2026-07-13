@@ -1,21 +1,46 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { fetchStatus, subscribeStream } from "./api";
-import { AuthError, clearToken, getToken, setToken } from "./auth";
+import {
+  AuthError,
+  clearToken,
+  currentRoleLabel,
+  getToken,
+  hasRole,
+  setToken,
+} from "./auth";
+import { DeviceManager } from "./components/DeviceManager";
 import { FleetList } from "./components/FleetList";
 import { FleetMap } from "./components/FleetMap";
 import { Login } from "./components/Login";
+import { MissionManager } from "./components/MissionManager";
+import { useToasts } from "./components/Toasts";
 import { handleCallback } from "./oidc";
 import type { DeviceStatusView } from "./types";
 
 const ONLINE_MS = 10_000; // 與 fleet-svc repo.ONLINE_THRESHOLD_S 對齊
+const LOW_BATTERY_PCT = 20;
+
+type Tab = "map" | "fleet" | "missions";
+
+const TABS: Array<{ key: Tab; label: string }> = [
+  { key: "map", label: "地圖監控" },
+  { key: "fleet", label: "機隊管理" },
+  { key: "missions", label: "任務" },
+];
 
 export function App() {
+  const { push } = useToasts();
   const [devices, setDevices] = useState<Record<string, DeviceStatusView>>({});
   const [connected, setConnected] = useState(false);
   const [selected, setSelected] = useState<string | null>(null);
+  const [tab, setTab] = useState<Tab>("map");
   const [authRequired, setAuthRequired] = useState(false);
   const [authVersion, setAuthVersion] = useState(0); // 登入後 bump → 重訂閱/重載
   const [, setTick] = useState(0);
+
+  // operator 以上才可執行寫入(建立/派遣/控制/裝置編輯);隨登入狀態重算。
+  const canWrite = useMemo(() => hasRole("operator"), [authVersion]);
+  const roleLabel = useMemo(() => currentRoleLabel(), [authVersion]);
 
   // OIDC 回呼:若本次載入帶 ?code(SSO 導回),交換 token 並登入
   useEffect(() => {
@@ -101,7 +126,10 @@ export function App() {
     clearToken();
     setDevices({});
     setAuthRequired(true);
+    setAuthVersion((v) => v + 1); // 重算 canWrite/roleLabel
   }, []);
+
+  const onAuthError = useCallback(() => setAuthRequired(true), []);
 
   const list = useMemo(() => {
     const now = Date.now();
@@ -113,6 +141,23 @@ export function App() {
       .sort((a, b) => a.serial.localeCompare(b.serial));
   }, [devices]);
 
+  // 告警:低電量(<20%)/離線 的「進入」轉移才提示(避免每次 re-render 刷屏)。
+  const alertState = useRef<Map<string, { low: boolean; online: boolean }>>(new Map());
+  useEffect(() => {
+    for (const d of list) {
+      const prev = alertState.current.get(d.serial);
+      const low = d.battery_pct != null && d.battery_pct < LOW_BATTERY_PCT;
+      if (low && !(prev?.low ?? false)) {
+        push("warn", `${d.serial} 低電量 ${d.battery_pct?.toFixed(0)}%`, `low-${d.serial}`);
+      }
+      // 曾知為在線、現在離線 → 告警(初次載入即離線不提示)
+      if (prev?.online === true && !d.online) {
+        push("warn", `${d.serial} 已離線`, `off-${d.serial}`);
+      }
+      alertState.current.set(d.serial, { low, online: d.online });
+    }
+  }, [list, push]);
+
   const onlineCount = list.filter((d) => d.online).length;
 
   return (
@@ -123,24 +168,49 @@ export function App() {
         <span className="stat">
           {list.length} 台 · 線上 {onlineCount}
         </span>
+        <nav className="tabs">
+          {TABS.map((t) => (
+            <button
+              key={t.key}
+              className={`tab ${tab === t.key ? "active" : ""}`}
+              onClick={() => setTab(t.key)}
+            >
+              {t.label}
+            </button>
+          ))}
+        </nav>
         <span className="conn">
           <span className={`dot ${connected ? "on" : "off"}`} />
           {connected ? "即時串流已連線" : "等待串流"}
         </span>
+        {roleLabel && <span className="role-badge">{roleLabel}</span>}
         {getToken() && (
           <button className="logout" onClick={onLogout}>
             登出
           </button>
         )}
       </header>
-      <div className="main">
-        <aside className="sidebar">
-          <FleetList devices={list} selected={selected} onSelect={setSelected} />
-        </aside>
-        <div className="map">
-          <FleetMap devices={list} selected={selected} onSelect={setSelected} />
+
+      {tab === "map" && (
+        <div className="main">
+          <aside className="sidebar">
+            <FleetList devices={list} selected={selected} onSelect={setSelected} />
+          </aside>
+          <div className="map">
+            <FleetMap devices={list} selected={selected} onSelect={setSelected} />
+          </div>
         </div>
-      </div>
+      )}
+      {tab === "fleet" && (
+        <div className="view-scroll">
+          <DeviceManager canWrite={canWrite} onAuthError={onAuthError} />
+        </div>
+      )}
+      {tab === "missions" && (
+        <div className="view-scroll">
+          <MissionManager canWrite={canWrite} onAuthError={onAuthError} />
+        </div>
+      )}
     </div>
   );
 }
