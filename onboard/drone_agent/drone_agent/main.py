@@ -28,6 +28,7 @@ from mavsdk import System
 from drone_agent.cert_monitor import DEFAULT_WARN_DAYS, cert_monitor_loop
 from drone_agent.command import DEFAULT_MISSION_TIMEOUT_S, command_loop
 from drone_agent.log_uploader import DEFAULT_DOWNLOAD_TIMEOUT_S, LogUploader
+from drone_agent.ota import DEFAULT_MAX_RETRIES, ota_loop
 from drone_agent.publisher import (
     DEFAULT_TELEMETRY_BUFFER_MAX,
     HEARTBEAT_INTERVAL_S,
@@ -151,6 +152,19 @@ async def run(args: argparse.Namespace) -> None:
                 timeout_s=args.cmd_timeout,
             )
         )
+    if args.enable_ota:
+        # OTA 機載代理(G23,預設關):訂閱 fleet/{id}/cmd/ota,軟體套件 A/B slot 更新。
+        # 需設 OTA_PUBLIC_KEY(Ed25519 公鑰 PEM)才會放行安裝;未設則訂閱仍在但一律拒絕。
+        coros.append(
+            ota_loop(
+                args.mqtt_host,
+                args.mqtt_port,
+                args.drone_id,
+                args.ota_work_dir,
+                args.ota_root,
+                max_retries=args.ota_max_retries,
+            )
+        )
     await asyncio.gather(*coros)
 
 
@@ -226,6 +240,29 @@ def main() -> None:
         default=DEFAULT_DOWNLOAD_TIMEOUT_S,
         help="ULog MAVLink 下載加總逾時秒數,逾時放棄本次回收"
         f"(預設 {DEFAULT_DOWNLOAD_TIMEOUT_S:.0f};實機大檔經數傳慢,視鏈路調大)",
+    )
+    parser.add_argument(
+        "--enable-ota",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="訂閱 fleet/{drone_id}/cmd/ota 接受雲端軟體套件 OTA(G23,預設關)。"
+        "需設 env OTA_PUBLIC_KEY(Ed25519 公鑰 PEM)才放行安裝;見 docs/20-software/ota.md",
+    )
+    parser.add_argument(
+        "--ota-work-dir",
+        default=os.environ.get("OTA_WORK_DIR", "/var/lib/drone-agent/ota-work"),
+        help="OTA 下載暫存目錄(斷點續傳 .part 檔;env OTA_WORK_DIR 可覆寫)",
+    )
+    parser.add_argument(
+        "--ota-root",
+        default=os.environ.get("OTA_ROOT", "/var/lib/drone-agent/ota"),
+        help="OTA A/B slot 根目錄(slots/a、slots/b、current symlink;env OTA_ROOT 可覆寫)",
+    )
+    parser.add_argument(
+        "--ota-max-retries",
+        type=int,
+        default=DEFAULT_MAX_RETRIES,
+        help=f"OTA 下載斷線續傳重試上限(預設 {DEFAULT_MAX_RETRIES})",
     )
     args = parser.parse_args()
 

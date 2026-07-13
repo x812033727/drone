@@ -28,6 +28,9 @@ drone_agent/
 │                   #   (選配 --log-svc-url;互斥/逾時/失敗即放棄)
 ├── command.py      # cmd/mission 訂閱 + mission_exec 子程序管理(重複投遞去重、
 │                   #   單一任務互斥、逾時 kill、輸出收進 log、非零結束補發 FAILED)
+├── ota.py          # cmd/ota 訂閱 + 機載 OTA 代理(G23,預設關):下載(斷點續傳)→
+│                   #   SHA-256+Ed25519 驗簽 → A/B slot 套用 → 健康檢查 → 提交/回滾 →
+│                   #   進度回報;軟體套件版,實體 firmware 代燒屬 Phase 3(見下)
 └── main.py         # CLI 進入點
 ```
 
@@ -63,7 +66,9 @@ CLI 參數:`--url`(MAVSDK 連線字串,預設 `udpin://0.0.0.0:14540`)、
 `--enable-cmd` / `--no-enable-cmd`(雲端派遣,**預設開**,見下)、
 `--cmd-timeout`(任務子程序逾時秒數,預設 900)、
 `--log-svc-url`(ULog 自動回收,**預設關**,見下)、
-`--log-download-timeout`(ULog 下載逾時秒數,預設 300)。
+`--log-download-timeout`(ULog 下載逾時秒數,預設 300)、
+`--enable-ota` / `--no-enable-ota`(OTA 機載代理,**預設關**,見下)、
+`--ota-work-dir` / `--ota-root` / `--ota-max-retries`(OTA slot/暫存/續傳)。
 
 ### 同機多程序(共用 mavsdk_server)
 
@@ -159,6 +164,71 @@ Phase 1 起 mTLS + 裝置憑證 + 主題 ACL 才對外。
 Hold/RTL)再決定。同理,`COMPLETED` 於**最後一個航點完成時**即發出,RTL
 返航段不屬任務進度——此時互斥已釋放,新任務可被接受,操作者需自行留意
 返航中的機體。
+
+## OTA 機載代理(G23,cmd/ota 下行,選配)
+
+`--enable-ota`(**預設關**)時訂閱 `fleet/{drone_id}/cmd/ota`(QoS 1),接受雲端
+軟體套件 OTA 指令。落地 [docs/20-software/ota.md](../../docs/20-software/ota.md) 的
+**機載代理側,以軟體套件/設定 OTA 的可驗證版**實作;細節與流程見
+[drone_agent/ota.py](drone_agent/ota.py) 模組 docstring。
+
+指令與進度**皆走 JSON**(events.proto/mission.proto 無 OTA 型別,刻意不動 proto,
+與憑證告警 alerts 同策略)。指令 payload 範例(install):
+
+```json
+{
+  "action": "install", "update_id": "ota-2026-07-13-01", "component": "onboard",
+  "version": "1.4.0", "url": "https://mirror/onboard-1.4.0.tar.gz",
+  "size": 12345678, "sha256": "<hex>", "signature": "<base64 Ed25519 sig>"
+}
+```
+
+收到 install 後的流程:
+
+1. **下載(斷點續傳)**:寫 `.part` 暫存,以已收位元組為續傳起點,斷線用 HTTP Range
+   自斷點續傳、不重頭來(ota.md §1);HTTPS 沿用機-雲既有裝置憑證(mTLS,MQTT_TLS_*)。
+2. **驗簽(收檔後驗簽點,ota.md §4)**:先 SHA-256 校驗,再 **Ed25519** 公鑰驗簽;
+   **任一不過一律拒絕套用**(REJECTED),不寫入 slot。簽章對象為套件的 SHA-256 摘要
+   (32 bytes);公鑰來源 env `OTA_PUBLIC_KEY`(Ed25519 PEM 檔)——**未設公鑰 = 無法
+   驗簽 = 一律拒絕安裝(fail-closed)**,釋出私鑰存離線 HSM(security.md §4)。
+3. **A/B slot 套用(ota.md §3)**:以 `{ota-root}/slots/{a,b}` + `current` symlink 模擬
+   A/B 分區——驗簽套件寫入**非活動 slot**,原子切換 `current` 指向它。
+4. **健康檢查 + 自動回滾(ota.md §3)**:套用後跑健康檢查;失敗即把 `current` 切回舊
+   slot(回滾),回報 `ROLLED_BACK`。預設健康檢查僅驗套件落地(佔位),**接真實探測
+   (關鍵服務/DDS/雲連線)為 Phase 1 TODO**。
+5. **進度回報**:各階段(RECEIVED→DOWNLOADING→VERIFYING→APPLYING→HEALTH_CHECK→
+   COMPLETED / REJECTED / FAILED / ROLLED_BACK)發 JSON 到 `fleet/{drone_id}/ota/progress`
+   (QoS 1),語意 **at-least-once**(消費端以 `update_id`+`state` 去重)。
+
+暫停/回滾(ota.md §6):`pause`/`resume` 設清暫停旗標(進行中的下載於下一塊中止、
+保留 `.part` 續傳段);`rollback` 把 `current` 切回前一 slot。**單一更新互斥**、重複
+投遞去重(對齊 cmd/mission)。
+
+CLI:`--enable-ota` / `--no-enable-ota`、`--ota-work-dir`(下載暫存)、`--ota-root`
+(A/B slot 根)、`--ota-max-retries`(斷線續傳重試上限,預設 5);env 對應
+`OTA_PUBLIC_KEY` / `OTA_WORK_DIR` / `OTA_ROOT`。
+
+### 實作現況 vs Phase 3 硬體代燒(誠實說明)
+
+本模組是 ota.md **機載代理側「程式可達部分」的可驗證實作**,標的為
+**軟體套件/設定**,以目錄 slot + symlink **模擬** A/B 分區來驗證代理側的
+下載→驗簽→套用→健康檢查→回滾→回報**編排邏輯**。以下屬 **Phase 3**(實體硬體,
+本環境不可達),於 [ota.py](drone_agent/ota.py) 對應位置以 `TODO` 標明,**尚未實作**:
+
+| ota.md 項目 | 現況 |
+|-------------|------|
+| §2 飛控韌體雙 bank 交換 / Jetson 代燒(方案 A/B 實體 flash) | **Phase 3 TODO**(SlotManager.stage 只複製檔案,不 dd 分區、不 DFU) |
+| §3 rootfs 分區實體寫入 + bootloader 啟動計數回退 | **Phase 3 TODO**(以 symlink 切換模擬「提交/回滾」) |
+| §3 真實健康檢查(服務/DDS/雲連線) | **Phase 1 TODO**(default_health_check 為佔位,僅驗套件落地;可注入真檢查) |
+| §5 相容性矩陣強制檢查(firmware×onboard×gcs×payload) | 未實作(屬 fleet-svc + 安裝前再驗,Phase 2) |
+| §6 灰度 ring 編排 / 72h 觀察期 / 批次失敗率暫停 | 雲端編排面,未在機載代理實作(機載只做 pause/resume/rollback 指令端) |
+| §1 差分更新(delta/OSTree/casync) | 未實作(Phase 2 評估) |
+| §1 斷點續傳、§4 收檔驗簽、§3 A/B 套用+健康檢查回滾、進度回報、pause/resume/rollback | **已實作並單元測試涵蓋** |
+
+安全註記:驗簽採 **Ed25519**(標準庫 `cryptography`,已為既有依賴生態);簽章失敗
+與無公鑰皆 **fail-closed** 拒絕。**Phase 0/1 開發簽章金鑰**(ota.md §7:Phase 1「簽章鏈
+仍用開發簽章」)——正式離線 HSM 簽章鏈與防降級(拒裝低於吊銷版本號)屬 Phase 2,
+本模組尚未做版本吊銷比對。
 
 ## ULog 自動回收(S20 閉環,選配)
 
