@@ -26,5 +26,9 @@ jobs:
           python-version: "3.10"
       - name: 安裝 paho-mqtt
         run: pip install "paho-mqtt>=2,<3"
+      - name: 安裝 aiomqtt(客戶端 TLS 驗證用)
+        run: pip install "aiomqtt>=2,<3"
       - name: mTLS + ACL 端到端驗證
         run: bash cloud/deploy/mqtt-tls/verify_mtls.sh
+      - name: 客戶端 aiomqtt mTLS 路徑驗證(ingest/服務消費者路徑)
+        run: bash cloud/deploy/mqtt-tls/verify_client_tls.sh
