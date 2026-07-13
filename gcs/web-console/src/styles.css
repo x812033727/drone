@@ -147,6 +147,18 @@ body {
 .badge.m-completed { color: var(--online); border-color: var(--online); }
 .badge.m-failed { color: #f85149; border-color: #f85149; }
 .badge.m-paused { color: #d29922; border-color: #d29922; }
+.badge.sandbox { color: #d29922; border-color: #d29922; }
+.badge.txn-paid { color: var(--online); border-color: var(--online); }
+.badge.txn-failed { color: #f85149; border-color: #f85149; }
+.badge.txn-pending { color: #d29922; border-color: #d29922; }
+
+/* ---- 訂閱方案 / 升級結帳 ---- */
+.billing-head { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+.billing-head h3 { margin: 0; }
+.billing .kv { align-items: center; }
+.billing-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.billing-txns { margin-top: 18px; }
+.billing-txns h3 { margin: 0 0 10px; font-size: 14px; color: var(--muted); font-weight: 600; }
 
 .chips { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 8px; }
 .chip {

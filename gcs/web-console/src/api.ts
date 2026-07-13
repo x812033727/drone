@@ -13,9 +13,12 @@ import type {
   Org,
   OrgCreate,
   OrgUpdate,
+  OrgPlan,
   Page,
   Route,
   RouteCreate,
+  Subscription,
+  CheckoutForm,
   TelemetryEvent,
   UsageReport,
 } from "./types";
@@ -122,6 +125,16 @@ export const getOrgUsage = (orgId: string) =>
 
 // 本 org 用量(所有登入者);admin 可加 ?org= 查他 org(此處不用,admin 走 /orgs/{id}/usage)。
 export const getUsage = () => request<UsageReport>("/usage");
+
+// ---- fleet-svc:訂閱金流(綠界 ECPay)----
+// 本 org 目前訂閱狀態/最近交易(所有登入者可讀,對齊後端 VIEWER)。
+export const getSubscription = () => request<Subscription>("/billing/subscription");
+// 為本 org 發起指定方案的結帳(operator/admin,對齊後端 OPERATOR)→ 回綠界表單參數。
+export const checkout = (plan: OrgPlan) =>
+  request<CheckoutForm>("/billing/checkout", {
+    method: "POST",
+    body: JSON.stringify({ plan }),
+  });
 
 // 訂閱 SSE 即時遙測;EventSource 無法帶 header,故 token 走查詢參數。
 // 回傳取消函式。斷線由 EventSource 自動重連。

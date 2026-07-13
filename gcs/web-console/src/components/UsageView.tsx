@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { getUsage } from "../api";
 import { AuthError } from "../auth";
 import type { UsageReport } from "../types";
+import { BillingPanel } from "./BillingPanel";
 import { useToasts } from "./Toasts";
 
 // 計費指標中文標籤(未知 key 直接顯示原字串)。
@@ -99,8 +100,15 @@ export function UsageReportCard({ report }: { report: UsageReport }) {
   );
 }
 
-// 本 org 用量/方案畫面(所有登入者)。讀 GET /api/v1/usage。
-export function UsageView({ onAuthError }: { onAuthError: () => void }) {
+// 本 org 用量/方案畫面(所有登入者)。讀 GET /api/v1/usage;
+// 訂閱方案/升級結帳由 BillingPanel 承載(canWrite=operator 以上可升級)。
+export function UsageView({
+  canWrite,
+  onAuthError,
+}: {
+  canWrite: boolean;
+  onAuthError: () => void;
+}) {
   const { push } = useToasts();
   const [report, setReport] = useState<UsageReport | null>(null);
   const [loading, setLoading] = useState(true);
@@ -131,6 +139,8 @@ export function UsageView({ onAuthError }: { onAuthError: () => void }) {
           </button>
         </div>
       </div>
+
+      <BillingPanel canWrite={canWrite} onAuthError={onAuthError} />
 
       {loading && !report ? (
         <div className="empty">載入中…</div>

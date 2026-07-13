@@ -227,7 +227,7 @@ export function App() {
       )}
       {tab === "usage" && (
         <div className="view-scroll">
-          <UsageView onAuthError={onAuthError} />
+          <UsageView canWrite={canWrite} onAuthError={onAuthError} />
         </div>
       )}
       {tab === "tenants" && isAdmin && (
