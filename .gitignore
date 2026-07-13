@@ -10,6 +10,12 @@ build/
 install/
 log/
 
+# Node / 前端(gcs/web-console;各子目錄另有 .gitignore,此處為根層防呆)
+node_modules/
+dist/
+.vite/
+*.tsbuildinfo
+
 # 飛行日誌與大檔(正式歸檔走雲端/LFS;flight-logs/ 為 flight_ops 歸檔產物)
 flight-logs/
 *.ulg

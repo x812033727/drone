@@ -11,6 +11,8 @@ updates:
       - "/onboard/mission_exec"
       - "/cloud/ingest"
       - "/cloud/log_svc"
+      - "/cloud/fleet_svc"
+      - "/cloud/mission_svc"
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 5
@@ -39,11 +41,26 @@ updates:
     commit-message:
       prefix: "ci"
 
+  # 前端 npm 相依(gcs/web-console)
+  - package-ecosystem: "npm"
+    directory: "/gcs/web-console"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    groups:
+      npm-deps:
+        patterns: ["*"]
+    commit-message:
+      prefix: "deps(web)"
+
   # 容器基底映像(FROM 行 CVE 追蹤)
   - package-ecosystem: "docker"
     directories:
       - "/cloud/ingest"
       - "/cloud/log_svc"
+      - "/cloud/fleet_svc"
+      - "/cloud/mission_svc"
+      - "/gcs/web-console"
       - "/onboard/ros2_ws/docker"
     schedule:
       interval: "weekly"
