@@ -24,6 +24,9 @@ exclude = '/tests/'
 # 各服務為獨立套件根(cloud/ingest/ingest、cloud/fleet_svc/fleet_svc……),
 # 以 explicit_package_bases 讓 mypy 正確定位模組。
 explicit_package_bases = true
+# cloud/common 為雲端服務共用套件根(drone_common;Wave 1 A1);列入搜尋路徑,
+# 服務原始碼 `from drone_common... import` 才能被 mypy 正確解析。
+mypy_path = "cloud/common"
 # 寬鬆起步:第三方套件(fastapi / asyncpg / paho 等)缺型別存根時不報錯;
 # 不要求函式全數註解(不開 disallow_untyped_defs)。
 ignore_missing_imports = true

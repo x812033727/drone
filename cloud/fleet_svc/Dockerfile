@@ -10,6 +10,10 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY interfaces/proto/gen/python /opt/drone-proto
 RUN pip install --no-cache-dir /opt/drone-proto
 
+# 雲端服務共用純邏輯(auth 純函式 / migration runner / 審計寫入;Wave 1 A1 去重)
+COPY cloud/common /opt/drone-common
+RUN pip install --no-cache-dir /opt/drone-common
+
 COPY cloud/fleet_svc/fleet_svc ./fleet_svc
 COPY cloud/fleet_svc/migrations ./migrations
 

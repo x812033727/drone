@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "drone-common"
+version = "0.1.0"
+description = "雲端服務共用純邏輯(JWT/RBAC 純函式、migration runner、審計寫入)。Wave 1 A1 去重。"
+requires-python = ">=3.10"
+# 執行依賴刻意以寬鬆下限宣告:各服務 requirements.txt 已釘死實際版本並先行安裝
+# (映像/CI 皆先裝服務 requirements,再 pip install 本地 cloud/common),故此處不參與
+# 版本鎖定,亦不影響 requirements.lock(對齊 interfaces/proto/gen/python 的做法)。
+dependencies = [
+  "fastapi",
+  "asyncpg",
+]
+
+[tool.setuptools]
+packages = ["drone_common"]
