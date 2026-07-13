@@ -10,7 +10,7 @@
 - `acl`:**per-device 主題 ACL**——裝置(username=序號)只能發自己的
   `fleet/<serial>/{telemetry,mission/progress,events,sensors/#}`、只能訂
   `fleet/<serial>/cmd/#`;後端服務帳號(CN=`backend`)可讀寫全機隊 `fleet/#`。
-- `verify_mtls.sh` + `test_mtls.py`:端到端自我驗證(起 mosquitto TLS 容器 + PKI 憑證)。
+- `verify_mtls.sh` + `mtls_check.py`:端到端自我驗證(起 mosquitto TLS 容器 + PKI 憑證)。
 
 ## 驗證
 

@@ -1,7 +1,7 @@
 """mosquitto mTLS + per-device ACL 驗證(paho,TLS client cert)。
 
 由 verify_mtls.sh 起 mosquitto 容器後呼叫。引數:
-  test_mtls.py <port> <ca> <certs_dir>
+  mtls_check.py <port> <ca> <certs_dir>
 certs_dir 需含 dev-1.{cert,key}.pem、dev-2.{cert,key}.pem、backend.{cert,key}.pem。
 
 ACL 以「訊息投遞」斷言(比 SUBACK 可靠:mosquitto 對被拒訂閱回 granted 但不投遞):

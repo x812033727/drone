@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # mosquitto mTLS + per-device ACL 端到端驗證:建憑證 → 起 mosquitto TLS 容器 →
-# 跑 test_mtls.py 斷言。可本地跑,也適合 CI(需 docker + paho-mqtt)。
+# 跑 mtls_check.py 斷言。可本地跑,也適合 CI(需 docker + paho-mqtt)。
 # 用法:[PYTHON=/path/python] cloud/deploy/mqtt-tls/verify_mtls.sh
 set -euo pipefail
 
@@ -41,4 +41,4 @@ for _ in $(seq 1 40); do
 done
 
 echo "→ 跑 mTLS + ACL 斷言..."
-"$PYTHON" "$HERE/test_mtls.py" "$PORT" "$CERTS/ca.cert.pem" "$PKI_CA_DIR/issued"
+"$PYTHON" "$HERE/mtls_check.py" "$PORT" "$CERTS/ca.cert.pem" "$PKI_CA_DIR/issued"
