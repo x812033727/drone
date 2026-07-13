@@ -610,6 +610,54 @@
         "title": "HTTPValidationError",
         "type": "object"
       },
+      "UsageReport": {
+        "description": "某租戶用量報表(GET /api/v1/usage)。\n\n- counters:當日(UTC)各計費指標計數(如 device_created / fleet_created)。\n- totals:歷來累計(跨所有日期)。\n- resources:當前現存資源數量(配額以此判定)。\n- limits:設定的配額上限(供前端顯示剩餘額度)。",
+        "properties": {
+          "counters": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Counters",
+            "type": "object"
+          },
+          "limits": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Limits",
+            "type": "object"
+          },
+          "org_id": {
+            "title": "Org Id",
+            "type": "string"
+          },
+          "period": {
+            "format": "date",
+            "title": "Period",
+            "type": "string"
+          },
+          "resources": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Resources",
+            "type": "object"
+          },
+          "totals": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Totals",
+            "type": "object"
+          }
+        },
+        "required": [
+          "org_id",
+          "period"
+        ],
+        "title": "UsageReport",
+        "type": "object"
+      },
       "ValidationError": {
         "properties": {
           "ctx": {
@@ -1513,6 +1561,59 @@
           }
         },
         "summary": "Stream"
+      }
+    },
+    "/api/v1/usage": {
+      "get": {
+        "operationId": "get_usage_api_v1_usage_get",
+        "parameters": [
+          {
+            "description": "僅 admin:查指定租戶(略則查本 org)",
+            "in": "query",
+            "name": "org",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "僅 admin:查指定租戶(略則查本 org)",
+              "title": "Org"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UsageReport"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Usage"
       }
     },
     "/healthz": {

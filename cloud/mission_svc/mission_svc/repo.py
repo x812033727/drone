@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from datetime import date
 from typing import Any
 from uuid import UUID, uuid4
 
@@ -216,6 +217,53 @@ async def apply_progress(
         current_item,
         total_items,
     )
+
+
+# ---- 用量計量(G30):usage_counter 依 (org, metric, 日期) 原子遞增 ----
+_USAGE_INC = """
+INSERT INTO mission.usage_counter (org_id, metric, period, count)
+VALUES ($1, $2, $3, 1)
+ON CONFLICT (org_id, metric, period)
+DO UPDATE SET count = mission.usage_counter.count + 1
+"""
+
+
+async def increment_usage(
+    conn: asyncpg.Connection, org: str, metric: str, period: date
+) -> None:
+    """計費相關操作成功後 +1(org, metric, 當日)。period 由呼叫端傳入(UTC 日)。"""
+    await conn.execute(_USAGE_INC, org, metric, period)
+
+
+async def usage_count(conn: asyncpg.Connection, org: str, metric: str, period: date) -> int:
+    """某租戶某日某 metric 的計數(每日量配額判定用);無列回 0。"""
+    val = await conn.fetchval(
+        "SELECT count FROM mission.usage_counter WHERE org_id = $1 AND metric = $2 AND period = $3",
+        org,
+        metric,
+        period,
+    )
+    return int(val) if val is not None else 0
+
+
+async def get_usage(conn: asyncpg.Connection, org: str, period: date) -> dict[str, int]:
+    """某租戶某日各 metric 計數(GET /api/v1/usage 的當日 counters)。"""
+    rows = await conn.fetch(
+        "SELECT metric, count FROM mission.usage_counter WHERE org_id = $1 AND period = $2",
+        org,
+        period,
+    )
+    return {r["metric"]: int(r["count"]) for r in rows}
+
+
+async def get_usage_totals(conn: asyncpg.Connection, org: str) -> dict[str, int]:
+    """某租戶各 metric 的歷來累計(跨所有日期彙總)。"""
+    rows = await conn.fetch(
+        "SELECT metric, sum(count)::bigint AS total FROM mission.usage_counter "
+        "WHERE org_id = $1 GROUP BY metric",
+        org,
+    )
+    return {r["metric"]: int(r["total"]) for r in rows}
 
 
 # ---- audit(G14 稽核查詢;寫入在 mission_svc.audit) ----
