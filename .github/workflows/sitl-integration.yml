@@ -28,7 +28,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: 啟動 PX4 SITL(背景容器)
         # 此 image 會主動把 MAVLink 封包送往 docker gateway(即 host),
@@ -37,7 +37,7 @@ jobs:
         # 預設 bridge 網路即可,毋須 --network host(本機與 runner 皆實測可用)。
         run: docker run --rm -d --name px4-sitl jonasvautherin/px4-gazebo-headless:1.15.4
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
 
@@ -85,13 +85,13 @@ jobs:
       matrix:
         scenario: [f05, f06, f07, f08, f09, f10, f11, f12]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: 啟動 PX4 SITL(背景容器)
         # 同 mission-sitl:此 image 主動送 MAVLink 到 host,監聽即可,不做埠映射。
         run: docker run --rm -d --name px4-failsafe jonasvautherin/px4-gazebo-headless:1.15.4
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
 
@@ -141,7 +141,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 70
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: 跑 uXRCE-DDS 煙霧(含兩顆 image build,無快取)
         # run_smoke.sh 內建:UDP 8888/14550 埠占檢查、px4-s8-*/ros2-s8-*
@@ -157,9 +157,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
 
