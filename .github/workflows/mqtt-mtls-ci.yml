@@ -32,3 +32,5 @@ jobs:
         run: bash cloud/deploy/mqtt-tls/verify_mtls.sh
       - name: 客戶端 aiomqtt mTLS 路徑驗證(ingest/服務消費者路徑)
         run: bash cloud/deploy/mqtt-tls/verify_client_tls.sh
+      - name: CRL 吊銷驗證(revoked 憑證連線被拒)
+        run: bash cloud/deploy/mqtt-tls/verify_crl.sh

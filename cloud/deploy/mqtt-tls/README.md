@@ -10,7 +10,8 @@
 - `acl`:**per-device 主題 ACL**——裝置(username=序號)只能發自己的
   `fleet/<serial>/{telemetry,mission/progress,events,sensors/#}`、只能訂
   `fleet/<serial>/cmd/#`;後端服務帳號(CN=`backend`)可讀寫全機隊 `fleet/#`。
-- `verify_mtls.sh` + `mtls_check.py`:端到端自我驗證(起 mosquitto TLS 容器 + PKI 憑證)。
+- `crlfile`:broker 載入 CRL(C1 `gen_crl.sh` 產出)——**吊銷(失竊/退役)的裝置憑證於 TLS 握手即被拒**。
+- `verify_mtls.sh` / `verify_client_tls.sh` / `verify_crl.sh`:端到端自我驗證(mTLS+ACL / aiomqtt 客戶端 / CRL 吊銷)。
 
 ## 驗證
 
