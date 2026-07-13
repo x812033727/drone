@@ -13,13 +13,14 @@ from contextlib import asynccontextmanager
 from uuid import UUID
 
 import asyncpg
-from fastapi import Depends, FastAPI, HTTPException, Query, Response
+from fastapi import Depends, FastAPI, HTTPException, Query, Request, Response
 
-from mission_svc import dispatch, metrics, repo
+from mission_svc import audit, dispatch, metrics, repo
 from mission_svc.auth import AUTH_ENABLED, require_role
 from mission_svc.consumer import run_consumer
 from mission_svc.migrate import apply_migrations
 from mission_svc.models import (
+    AuditEntry,
     Mission,
     MissionCommandRequest,
     MissionCreate,
@@ -74,9 +75,11 @@ metrics.instrument(app)  # /metrics(Prometheus)+ HTTP 指標 middleware(G13)
 if not AUTH_ENABLED:
     log.warning("⚠ JWT 認證未啟用(dev 模式,全放行)——正式部署須設 JWT_SECRET 或 JWT_JWKS_URL")
 
-# RBAC:讀取需 viewer,派遣/控制/建立需 operator(healthz 不設)
+# RBAC:讀取需 viewer,派遣/控制/建立需 operator(healthz 不設);審計稽核檢視需 admin。
+# 變更端點以參數注入 claims(= Depends 值)供審計取 actor,FastAPI 對同一 Depends 快取。
 VIEWER = Depends(require_role("viewer"))
 OPERATOR = Depends(require_role("operator"))
+ADMIN = Depends(require_role("admin"))
 
 
 def _pool(app: FastAPI) -> asyncpg.Pool:
@@ -103,10 +106,15 @@ async def healthz() -> dict:
 
 
 # ---- routes ----
-@app.post("/api/v1/routes", response_model=Route, status_code=201, dependencies=[OPERATOR])
-async def create_route(body: RouteCreate) -> Route:
+@app.post("/api/v1/routes", response_model=Route, status_code=201)
+async def create_route(body: RouteCreate, request: Request, claims: dict = OPERATOR) -> Route:
     async with _pool(app).acquire() as conn:
-        return await repo.create_route(conn, body)
+        route = await repo.create_route(conn, body)
+        await audit.record(
+            conn, claims=claims, action="create", resource_type="route", resource_id=route.id,
+            details={"name": route.name, "waypoints": len(route.waypoints)}, request=request,
+        )
+    return route
 
 
 @app.get("/api/v1/routes", response_model=list[Route], dependencies=[VIEWER])
@@ -132,12 +140,18 @@ async def get_route(route_id: UUID) -> Route:
 
 
 # ---- missions ----
-@app.post("/api/v1/missions", response_model=Mission, status_code=201, dependencies=[OPERATOR])
-async def create_mission(body: MissionCreate) -> Mission:
+@app.post("/api/v1/missions", response_model=Mission, status_code=201)
+async def create_mission(body: MissionCreate, request: Request, claims: dict = OPERATOR) -> Mission:
     async with _pool(app).acquire() as conn:
         m = await repo.create_mission(conn, body)
-    if m is None:
-        raise HTTPException(status_code=404, detail="route 不存在")
+        if m is None:
+            raise HTTPException(status_code=404, detail="route 不存在")
+        await audit.record(
+            conn, claims=claims, action="create", resource_type="mission", resource_id=m.id,
+            details={"mission_id": m.mission_id, "drone_id": m.drone_id,
+                     "route_id": str(m.route_id) if m.route_id else None},
+            request=request,
+        )
     return m
 
 
@@ -164,10 +178,10 @@ async def get_mission(mission_pk: UUID) -> Mission:
     return m
 
 
-@app.post(
-    "/api/v1/missions/{mission_pk}/dispatch", response_model=Mission, dependencies=[OPERATOR]
-)
-async def dispatch_mission(mission_pk: UUID) -> Mission:
+@app.post("/api/v1/missions/{mission_pk}/dispatch", response_model=Mission)
+async def dispatch_mission(
+    mission_pk: UUID, request: Request, claims: dict = OPERATOR
+) -> Mission:
     async with _pool(app).acquire() as conn:
         m = await repo.get_mission(conn, mission_pk)
         if m is None:
@@ -179,17 +193,42 @@ async def dispatch_mission(mission_pk: UUID) -> Mission:
         )
         await dispatch.publish_mission_plan(MQTT_HOST, MQTT_PORT, m.drone_id, plan_json)
         await repo.mark_dispatched(conn, mission_pk)
+        await audit.record(
+            conn, claims=claims, action="dispatch", resource_type="mission", resource_id=mission_pk,
+            details={"mission_id": m.mission_id, "drone_id": m.drone_id}, request=request,
+        )
         return await repo.get_mission(conn, mission_pk)  # type: ignore[return-value]
 
 
-@app.post(
-    "/api/v1/missions/{mission_pk}/command", response_model=Mission, dependencies=[OPERATOR]
-)
-async def command_mission(mission_pk: UUID, body: MissionCommandRequest) -> Mission:
+@app.post("/api/v1/missions/{mission_pk}/command", response_model=Mission)
+async def command_mission(
+    mission_pk: UUID, body: MissionCommandRequest, request: Request, claims: dict = OPERATOR
+) -> Mission:
     async with _pool(app).acquire() as conn:
         m = await repo.get_mission(conn, mission_pk)
         if m is None:
             raise HTTPException(status_code=404, detail="mission 不存在")
         cmd_json = dispatch.build_mission_command_json(m.mission_id, body.command.value)
         await dispatch.publish_mission_command(MQTT_HOST, MQTT_PORT, m.drone_id, cmd_json)
+        await audit.record(
+            conn, claims=claims, action="command", resource_type="mission", resource_id=mission_pk,
+            details={"mission_id": m.mission_id, "drone_id": m.drone_id,
+                     "command": body.command.value},
+            request=request,
+        )
         return m
+
+
+# ---- audit(G14 稽核查詢,admin only;分頁同 G12 慣例)----
+@app.get("/api/v1/audit", response_model=list[AuditEntry], dependencies=[ADMIN])
+async def list_audit(
+    response: Response,
+    resource_type: str | None = Query(default=None),
+    limit: int = Query(default=PAGE_LIMIT_DEFAULT, ge=1, le=PAGE_LIMIT_MAX),
+    offset: int = Query(default=0, ge=0),
+) -> list[AuditEntry]:
+    async with _pool(app).acquire() as conn:
+        total = await repo.count_audit(conn, resource_type)
+        items = await repo.list_audit(conn, resource_type, limit=limit, offset=offset)
+    _set_page_headers(response, total, limit, offset)
+    return items

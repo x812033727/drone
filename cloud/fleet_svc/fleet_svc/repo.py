@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import json
 from typing import Any
 from uuid import UUID
 
 import asyncpg
 
 from fleet_svc.models import (
+    AuditEntry,
     Device,
     DeviceCreate,
     DeviceFirmware,
@@ -243,3 +245,47 @@ async def list_all_status(
 ) -> list[DeviceStatusView]:
     rows = await conn.fetch(_STATUS_SELECT + " ORDER BY d.serial", threshold_s)
     return [_status(r) for r in rows]
+
+
+# ---- audit(G14 稽核查詢;寫入在 fleet_svc.audit) ----
+_AUDIT_COLS = "id, at, actor, role, action, resource_type, resource_id, details, source_ip"
+
+
+def _audit(r: asyncpg.Record) -> AuditEntry:
+    d = dict(r)
+    # jsonb 由 asyncpg 以字串回傳(未設 codec);轉回 dict 供模型
+    if isinstance(d.get("details"), str):
+        d["details"] = json.loads(d["details"])
+    return AuditEntry.model_validate(d)
+
+
+async def list_audit(
+    conn: asyncpg.Connection,
+    resource_type: str | None = None,
+    limit: int = 100,
+    offset: int = 0,
+) -> list[AuditEntry]:
+    if resource_type is not None:
+        rows = await conn.fetch(
+            f"SELECT {_AUDIT_COLS} FROM fleet.audit_log WHERE resource_type = $1 "
+            "ORDER BY at DESC, id DESC LIMIT $2 OFFSET $3",
+            resource_type,
+            limit,
+            offset,
+        )
+    else:
+        rows = await conn.fetch(
+            f"SELECT {_AUDIT_COLS} FROM fleet.audit_log "
+            "ORDER BY at DESC, id DESC LIMIT $1 OFFSET $2",
+            limit,
+            offset,
+        )
+    return [_audit(r) for r in rows]
+
+
+async def count_audit(conn: asyncpg.Connection, resource_type: str | None = None) -> int:
+    if resource_type is not None:
+        return await conn.fetchval(
+            "SELECT count(*) FROM fleet.audit_log WHERE resource_type = $1", resource_type
+        )
+    return await conn.fetchval("SELECT count(*) FROM fleet.audit_log")
