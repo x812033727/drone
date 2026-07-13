@@ -19,17 +19,22 @@
 import argparse
 import asyncio
 import logging
+import os
 import sys
+from collections import deque
 
 from mavsdk import System
 
+from drone_agent.cert_monitor import DEFAULT_WARN_DAYS, cert_monitor_loop
 from drone_agent.command import DEFAULT_MISSION_TIMEOUT_S, command_loop
 from drone_agent.log_uploader import DEFAULT_DOWNLOAD_TIMEOUT_S, LogUploader
 from drone_agent.publisher import (
+    DEFAULT_TELEMETRY_BUFFER_MAX,
     HEARTBEAT_INTERVAL_S,
     STALE_TIMEOUT_S,
     heartbeat_loop,
     publish_loop,
+    telemetry_producer,
 )
 from drone_agent.state import WATCHERS, TelemetryState
 
@@ -86,17 +91,29 @@ async def run(args: argparse.Namespace) -> None:
         state.disarm_callback = uploader.trigger
         logger.info("ULog 自動回收已啟用:disarm 後上傳至 %s", args.log_svc_url)
 
-    # 全部訂閱協程 + 發佈迴圈(+ cmd 訂閱)並行;MQTT 斷線重連由各迴圈自理,
+    # 遙測取樣(producer)與發佈(publish_loop)拆開,共用離線緩衝 buffer:
+    # 斷線期間 producer 續取堆進 buffer,publish_loop 重連後 FIFO 補發(G24)
+    telemetry_buffer: deque = deque()
+
+    # 全部訂閱協程 + 取樣/發佈迴圈(+ cmd 訂閱)並行;MQTT 斷線重連由各迴圈自理,
     # 任一 MAVSDK 訂閱異常結束則整體結束(交給 systemd 重啟,Phase 0 策略)
     coros = [
         *(watch(drone, state) for watch in WATCHERS),
+        telemetry_producer(
+            state,
+            telemetry_buffer,
+            args.drone_id,
+            args.telemetry_buffer_max,
+            args.rate,
+            args.stale_timeout,
+        ),
         publish_loop(
             state,
+            telemetry_buffer,
             args.mqtt_host,
             args.mqtt_port,
             args.drone_id,
             args.rate,
-            args.stale_timeout,
         ),
         heartbeat_loop(
             args.mqtt_host,
@@ -106,6 +123,21 @@ async def run(args: argparse.Namespace) -> None:
             args.heartbeat_interval,
         ),
     ]
+    # 憑證到期/輪換偵測(G22):僅在有設裝置憑證(mTLS)時啟動;
+    # Phase 0 明文(MQTT_TLS_CERT 未設)無憑證可監控,略過
+    cert_path = os.environ.get("MQTT_TLS_CERT")
+    if cert_path:
+        coros.append(
+            cert_monitor_loop(
+                cert_path,
+                args.mqtt_host,
+                args.mqtt_port,
+                args.drone_id,
+                args.cert_warn_days,
+            )
+        )
+    else:
+        logger.info("未設 MQTT_TLS_CERT(明文模式),略過憑證到期監控")
     if args.enable_cmd:
         # mission_exec 子程序共用的 mavsdk_server 位址:agent 連既有 server 就透傳
         # 同一個;自行 spawn 時為內嵌 server 的 localhost:50051
@@ -139,6 +171,20 @@ def main() -> None:
         type=float,
         default=STALE_TIMEOUT_S,
         help=f"遙測斷流判定秒數,超過即暫停上報(預設 {STALE_TIMEOUT_S:.0f})",
+    )
+    parser.add_argument(
+        "--telemetry-buffer-max",
+        type=int,
+        default=int(os.environ.get("TELEMETRY_BUFFER_MAX", DEFAULT_TELEMETRY_BUFFER_MAX)),
+        help="離線緩衝上限筆數(MQTT 斷線期間 store-and-forward,滿了丟最舊;"
+        f"預設 {DEFAULT_TELEMETRY_BUFFER_MAX},env TELEMETRY_BUFFER_MAX 可覆寫)",
+    )
+    parser.add_argument(
+        "--cert-warn-days",
+        type=float,
+        default=float(os.environ.get("CERT_EXPIRY_WARN_DAYS", DEFAULT_WARN_DAYS)),
+        help="裝置憑證剩餘天數低於此值即告警(需設 MQTT_TLS_CERT;"
+        f"預設 {DEFAULT_WARN_DAYS},env CERT_EXPIRY_WARN_DAYS 可覆寫)",
     )
     parser.add_argument(
         "--heartbeat-interval",
