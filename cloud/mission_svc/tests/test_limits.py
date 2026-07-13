@@ -110,8 +110,11 @@ class _MemConn:
         self.routes: list[dict] = []
         self.missions: list[dict] = []
         self.usage: dict[tuple, int] = {}
+        self.devices: dict[str, str] = {}  # serial -> org_id(共用 fleet.device)
 
     async def fetchval(self, sql, *args):
+        if "fleet.device" in sql:  # device_org:目標機所屬 org
+            return self.devices.get(args[0])
         if "count(*) FROM mission.route" in sql:
             rows = self.routes
             if "org_id = $1" in sql:
@@ -234,6 +237,7 @@ def _mk_route(c, org: str) -> str:
 
 def test_usage_metering_route_and_mission(client):
     c, conn = client
+    conn.devices["d1"] = "acme"  # acme 自有機(fleet.device)
     rid = _mk_route(c, "acme")
     _mission(c, rid, "d1", "operator", "acme")
     r = c.get("/api/v1/usage", headers=_tok("viewer", "acme"))
@@ -261,6 +265,7 @@ def test_usage_org_isolation(client):
 
 def test_missions_per_day_quota_402(client, monkeypatch):
     c, conn = client
+    conn.devices.update({"d1": "acme", "d2": "acme"})  # acme 自有機(quota 擋在 device 驗後)
     monkeypatch.setattr(limits, "QUOTA_MAX_MISSIONS_PER_DAY", 1)
     rid = _mk_route(c, "acme")
     assert _mission(c, rid, "d1", "operator", "acme").status_code == 201

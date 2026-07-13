@@ -170,6 +170,15 @@ async def create_mission(
     # 租戶邊界:org 取自呼叫者 claim;route 亦以本 org 查找(他 org route → 404)。
     period = limits.current_period()
     async with _pool(app).acquire() as conn:
+        # 跨租戶派遣防護(安全關鍵):目標機(drone_id=device serial)須屬本 org。
+        # mission-svc 無 device 表,直讀共用 `drone` 庫的 fleet.device 取其 org_id。
+        # 非 admin:查無此機或屬他 org 皆回 404(不洩漏存在性,與 #113 慣例一致),
+        # 杜絕以他 org 機序號建任務→派遣時 MQTT 直達 fleet/{他 org 序號}/cmd/mission。
+        # admin 可跨 org(平台管理);dev 模式(認證停用)為 admin,故 cloud-smoke 不受影響。
+        if not principal.is_admin:
+            owner = await repo.device_org(conn, body.drone_id)
+            if owner is None or owner != principal.org:
+                raise HTTPException(status_code=404, detail="drone 不存在")
         # 配額(G30):非 admin 依「當日已建任務數」判定每日量上限,達上限回 402。
         if not principal.is_admin:
             today = await repo.usage_count(conn, principal.org, "mission_created", period)
