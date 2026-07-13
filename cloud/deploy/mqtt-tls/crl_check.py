@@ -7,6 +7,7 @@
 import ssl
 import sys
 import time
+from typing import Any
 
 import paho.mqtt.client as mqtt
 
@@ -16,7 +17,7 @@ PORT, CA, CERT, KEY, EXPECT = (
 
 c = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, protocol=mqtt.MQTTv5)
 c.tls_set(ca_certs=CA, certfile=CERT, keyfile=KEY, tls_version=ssl.PROTOCOL_TLS_CLIENT)
-rc = {}
+rc: dict[str, Any] = {}
 c.on_connect = lambda cl, u, f, reason, p: rc.setdefault("r", reason)
 
 connected = False

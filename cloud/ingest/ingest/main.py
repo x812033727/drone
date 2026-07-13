@@ -8,6 +8,7 @@ import asyncio
 import json
 import logging
 import os
+from collections.abc import Callable
 from datetime import datetime, timezone
 
 import aiomqtt
@@ -67,7 +68,7 @@ SENSOR_LOCAL_POSITION_SQL = _insert_sql(
 # 主題路由:取主題「末兩段」查表,查不到再退回末一段(涵蓋既有主題,行為不變)。
 # 末一段:fleet/{id}/telemetry、fleet/{id}/events(末兩段含 {id},查不到)
 # 末兩段:fleet/{id}/mission/progress、fleet/{id}/sensors/*(v0.4.0 高頻流)
-ROUTES: dict[str, tuple[str, object]] = {
+ROUTES: dict[str, tuple[str, Callable[[bytes | str], tuple]]] = {
     "telemetry": (TELEMETRY_SQL, decode.telemetry_row),
     "events": (EVENT_SQL, decode.event_row),
     "heartbeat": (DEVICE_HEARTBEAT_SQL, decode.device_heartbeat_row),

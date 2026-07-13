@@ -1,0 +1,81 @@
+name: quality-gates
+
+# G29 工程品質閘:依賴鎖定(G29a)+ 型別檢查(G29b)。
+# 刻意獨立於 ci.yml:不改動既有 lint-test / cloud-smoke 的安裝路徑,
+# 純粹「增量加閘」,即使本檔紅了也不牽動既有工作流。
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  # G29a 依賴鎖定:驗證各雲端服務 requirements.lock 與來源 requirements.txt 同步,
+  # 且鎖檔在乾淨環境可安裝。目前僅「守門」,實際映像/CI 安裝路徑維持現狀(漸進切換)。
+  dep-lock-sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      # 釘死產鎖工具鏈,確保 CI 與本機重現一致(pip-tools 7.4.1 需搭配 pip <25)。
+      PIP_VERSION: "24.3.1"
+      PIP_TOOLS_VERSION: "7.4.1"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          # 基線對齊 ci.yml 的 Python 3.10:鎖檔於此版本解析產生
+          python-version: "3.10"
+
+      - name: 安裝 pip-tools(釘版)
+        run: |
+          python -m pip install "pip==${PIP_VERSION}"
+          python -m pip install "pip-tools==${PIP_TOOLS_VERSION}"
+
+      - name: 驗證鎖檔與來源同步(regenerate + git diff)
+        run: |
+          set -euo pipefail
+          for svc in ingest log_svc fleet_svc mission_svc; do
+            echo "::group::pip-compile ${svc}"
+            pip-compile --quiet --strip-extras \
+              --output-file="cloud/${svc}/requirements.lock" \
+              "cloud/${svc}/requirements.txt"
+            echo "::endgroup::"
+          done
+          if ! git diff --exit-code -- 'cloud/*/requirements.lock'; then
+            echo "::error::requirements.lock 與 requirements.txt 不同步。" \
+                 "請本機以 pip-tools==${PIP_TOOLS_VERSION}(Python 3.10)重跑 pip-compile 並提交。"
+            exit 1
+          fi
+          echo "所有雲端服務鎖檔皆與來源同步。"
+
+      - name: 驗證鎖檔可於乾淨環境安裝
+        run: |
+          set -euo pipefail
+          for svc in ingest log_svc fleet_svc mission_svc; do
+            echo "::group::install ${svc} lock"
+            python -m venv "/tmp/venv-${svc}"
+            "/tmp/venv-${svc}/bin/python" -m pip install --quiet --upgrade pip
+            "/tmp/venv-${svc}/bin/python" -m pip install -r "cloud/${svc}/requirements.lock"
+            rm -rf "/tmp/venv-${svc}"
+            echo "::endgroup::"
+          done
+          echo "所有鎖檔皆可安裝。"
+
+  # G29b 型別檢查:mypy 守雲端服務原始碼(scope=cloud/,寬鬆設定見 pyproject [tool.mypy])。
+  # 現況 0 error,設為 blocking;寬鬆起步不要求全註解,後續可逐步收緊。
+  mypy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      - name: 安裝 mypy
+        run: python -m pip install mypy
+
+      - name: mypy cloud/
+        # 設定(python 版本 / scope / 排除 tests / ignore_missing_imports)全數在 pyproject。
+        run: mypy cloud/
