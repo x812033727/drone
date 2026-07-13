@@ -43,6 +43,9 @@ from fleet_svc.models import (
     FirmwareCreate,
     Fleet,
     FleetCreate,
+    Org,
+    OrgCreate,
+    OrgUpdate,
     UsageReport,
 )
 
@@ -114,6 +117,19 @@ def _pool(app: FastAPI) -> asyncpg.Pool:
     return app.state.pool
 
 
+async def _guard_write(conn: asyncpg.Connection, principal: Principal) -> Org | None:
+    """非 admin 寫入前置:取本租戶註冊列並擋 suspended(403);回 org 列供配額解析。
+
+    admin(含 dev 模式)豁免——回 None,不查表、不受 suspended/配額約束。
+    org 未在註冊表(None)亦放行:配額退回 env 全域預設(見 limits.effective_limit)。
+    """
+    if principal.is_admin:
+        return None
+    org_row = await repo.get_org(conn, principal.org)
+    limits.enforce_org_active(principal, org_row)
+    return org_row
+
+
 # 分頁(G12):list 端點加 limit/offset,預設上限 100(避免回全表);
 # 向後相容——回應本體仍是既有陣列,total/limit/offset 走回應標頭(X-Total-Count 等),
 # 不改 response_model、不破壞既有測試/煙霧。
@@ -142,10 +158,13 @@ async def create_fleet(
 ) -> Fleet:
     # 租戶邊界:org 取自呼叫者 claim(principal.org),不採信 client 傳入。
     async with _pool(app).acquire() as conn:
-        # 配額(G30):非 admin 依現存機隊數判定,達上限回 402。
+        # 租戶控制面:非 admin 先擋 suspended,並依 per-org 有效配額(覆寫→plan→env)判定。
+        org_row = await _guard_write(conn, principal)
         if not principal.is_admin:
             existing = await repo.count_fleets(conn, principal.org)
-            limits.enforce_quota(principal, existing, limits.QUOTA_MAX_FLEETS, "機隊")
+            limits.enforce_quota(
+                principal, existing, limits.effective_limit(org_row, "max_fleets"), "機隊"
+            )
         fleet = await repo.create_fleet(conn, body, principal.org)
         await repo.increment_usage(conn, principal.org, "fleet_created", limits.current_period())
         await audit.record(
@@ -188,10 +207,13 @@ async def create_device(
 ) -> Device:
     # 租戶邊界:org 取自呼叫者 claim,不採信 client。
     async with _pool(app).acquire() as conn:
-        # 配額(G30):非 admin 依現存裝置數判定,達上限回 402。
+        # 租戶控制面:非 admin 先擋 suspended,並依 per-org 有效配額(覆寫→plan→env)判定。
+        org_row = await _guard_write(conn, principal)
         if not principal.is_admin:
             existing = await repo.count_devices(conn, None, principal.org)
-            limits.enforce_quota(principal, existing, limits.QUOTA_MAX_DEVICES, "裝置")
+            limits.enforce_quota(
+                principal, existing, limits.effective_limit(org_row, "max_devices"), "裝置"
+            )
         try:
             device = await repo.create_device(conn, body, principal.org)
         except asyncpg.UniqueViolationError:
@@ -237,6 +259,7 @@ async def update_device(
     device_id: UUID, body: DeviceUpdate, request: Request, principal: Principal = OPERATOR
 ) -> Device:
     async with _pool(app).acquire() as conn:
+        await _guard_write(conn, principal)  # 擋 suspended 租戶寫入(admin 豁免)
         d = await repo.update_device(conn, device_id, body, read_org(principal))
         if d is None:  # 跨 org 亦回 404(不得改他 org 資源)
             raise HTTPException(status_code=404, detail="device 不存在")
@@ -253,6 +276,7 @@ async def delete_device(
     device_id: UUID, request: Request, principal: Principal = OPERATOR
 ) -> None:
     async with _pool(app).acquire() as conn:
+        await _guard_write(conn, principal)  # 擋 suspended 租戶寫入(admin 豁免)
         ok = await repo.delete_device(conn, device_id, read_org(principal))
         if not ok:  # 跨 org 亦回 404
             raise HTTPException(status_code=404, detail="device 不存在")
@@ -295,6 +319,7 @@ async def set_device_firmware(
     device_id: UUID, body: DeviceFirmwareSet, request: Request, principal: Principal = OPERATOR
 ) -> DeviceFirmware:
     async with _pool(app).acquire() as conn:
+        await _guard_write(conn, principal)  # 擋 suspended 租戶寫入(admin 豁免)
         d = await repo.get_device(conn, device_id, read_org(principal))
         if d is None:  # 跨 org 亦回 404(不得改他 org 裝置韌體)
             raise HTTPException(status_code=404, detail="device 不存在")
@@ -358,13 +383,102 @@ async def get_usage(
         totals = await repo.get_usage_totals(conn, scope_org)
         devices = await repo.count_devices(conn, None, scope_org)
         fleets = await repo.count_fleets(conn, scope_org)
+        org_row = await repo.get_org(conn, scope_org)  # per-org 有效配額(退回 env 全域預設)
     return UsageReport(
         org_id=scope_org,
         period=period,
         counters=counters,
         totals=totals,
         resources={"devices": devices, "fleets": fleets},
-        limits=limits.QUOTA_LIMITS,
+        limits={
+            "max_devices": limits.effective_limit(org_row, "max_devices"),
+            "max_fleets": limits.effective_limit(org_row, "max_fleets"),
+        },
+    )
+
+
+# ---- orgs(租戶/計費控制面,admin only)----
+# 平台管理者管理租戶註冊表:建立/列出/更新租戶與其 plan/status/配額覆寫,並查每租戶用量
+# 彙總。RBAC 沿用 ADMIN(require_role("admin"))閘——非 admin 一律 403;dev 模式=admin 放行。
+# 配額覆寫欄(max_devices/max_fleets)由 create_fleet/create_device 的 effective_limit 生效。
+@app.post("/api/v1/orgs", response_model=Org, status_code=201)
+async def create_org(body: OrgCreate, request: Request, claims: dict = ADMIN) -> Org:
+    async with _pool(app).acquire() as conn:
+        try:
+            org = await repo.create_org(conn, body)
+        except asyncpg.UniqueViolationError:
+            raise HTTPException(status_code=409, detail=f"org 已存在:{body.org_id}")
+        await audit.record(
+            conn, claims=claims, action="create", resource_type="org",
+            resource_id=org.org_id,
+            details={"name": org.name, "plan": org.plan.value, "status": org.status.value},
+            request=request,
+        )
+    return org
+
+
+@app.get("/api/v1/orgs", response_model=list[Org])
+async def list_orgs(
+    response: Response,
+    status: str | None = Query(default=None, description="依狀態過濾:active / suspended"),
+    limit: int = Query(default=PAGE_LIMIT_DEFAULT, ge=1, le=PAGE_LIMIT_MAX),
+    offset: int = Query(default=0, ge=0),
+    claims: dict = ADMIN,
+) -> list[Org]:
+    async with _pool(app).acquire() as conn:
+        total = await repo.count_orgs(conn, status)
+        items = await repo.list_orgs(conn, status=status, limit=limit, offset=offset)
+    _set_page_headers(response, total, limit, offset)
+    return items
+
+
+@app.get("/api/v1/orgs/{org_id}", response_model=Org)
+async def get_org(org_id: str, claims: dict = ADMIN) -> Org:
+    async with _pool(app).acquire() as conn:
+        org = await repo.get_org(conn, org_id)
+    if org is None:
+        raise HTTPException(status_code=404, detail="org 不存在")
+    return org
+
+
+@app.patch("/api/v1/orgs/{org_id}", response_model=Org)
+async def update_org(
+    org_id: str, body: OrgUpdate, request: Request, claims: dict = ADMIN
+) -> Org:
+    async with _pool(app).acquire() as conn:
+        org = await repo.update_org(conn, org_id, body)
+        if org is None:
+            raise HTTPException(status_code=404, detail="org 不存在")
+        await audit.record(
+            conn, claims=claims, action="update", resource_type="org",
+            resource_id=org_id,
+            details=body.model_dump(exclude_unset=True, mode="json"), request=request,
+        )
+    return org
+
+
+@app.get("/api/v1/orgs/{org_id}/usage", response_model=UsageReport)
+async def get_org_usage(org_id: str, claims: dict = ADMIN) -> UsageReport:
+    # 某租戶用量彙總(復用 usage_counter);limits 為該租戶「有效」配額(覆寫→plan→env)。
+    period = limits.current_period()
+    async with _pool(app).acquire() as conn:
+        org_row = await repo.get_org(conn, org_id)
+        if org_row is None:
+            raise HTTPException(status_code=404, detail="org 不存在")
+        counters = await repo.get_usage(conn, org_id, period)
+        totals = await repo.get_usage_totals(conn, org_id)
+        devices = await repo.count_devices(conn, None, org_id)
+        fleets = await repo.count_fleets(conn, org_id)
+    return UsageReport(
+        org_id=org_id,
+        period=period,
+        counters=counters,
+        totals=totals,
+        resources={"devices": devices, "fleets": fleets},
+        limits={
+            "max_devices": limits.effective_limit(org_row, "max_devices"),
+            "max_fleets": limits.effective_limit(org_row, "max_fleets"),
+        },
     )
 
 

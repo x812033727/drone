@@ -23,6 +23,21 @@ class Component(str, Enum):
     payload = "payload"
 
 
+class OrgPlan(str, Enum):
+    """租戶方案:決定「未覆寫」時的預設配額(對應值在 limits.PLAN_QUOTAS)。"""
+
+    free = "free"
+    pro = "pro"
+    enterprise = "enterprise"
+
+
+class OrgStatus(str, Enum):
+    """租戶狀態:suspended 的寫入被服務層擋下(admin 平台管理者豁免)。"""
+
+    active = "active"
+    suspended = "suspended"
+
+
 def _non_blank(v: str, field: str) -> str:
     if not v or not v.strip():
         raise ValueError(f"{field} 不可為空")
@@ -135,6 +150,59 @@ class DeviceStatusView(BaseModel):
     battery_pct: float | None = None
     flight_mode: str | None = None
     armed: bool | None = None
+
+
+# ---- 租戶註冊表 / 每租戶配額(計費控制面,admin only) ----
+class OrgCreate(BaseModel):
+    """建立租戶。org_id 為租戶主鍵(對應 JWT `org` claim);plan 決定預設配額。
+
+    max_devices / max_fleets 為配額「覆寫」——省略/None 表示用 plan 預設。
+    """
+
+    org_id: str
+    name: str
+    plan: OrgPlan = OrgPlan.free
+    status: OrgStatus = OrgStatus.active
+    max_devices: int | None = Field(default=None, ge=0)
+    max_fleets: int | None = Field(default=None, ge=0)
+
+    @field_validator("org_id")
+    @classmethod
+    def _org_id(cls, v: str) -> str:
+        return _non_blank(v, "org_id")
+
+    @field_validator("name")
+    @classmethod
+    def _name(cls, v: str) -> str:
+        return _non_blank(v, "name")
+
+
+class OrgUpdate(BaseModel):
+    """PATCH 租戶:所有欄位可選,只更新有給的(max_* 顯式給 null 可清除覆寫)。"""
+
+    name: str | None = None
+    plan: OrgPlan | None = None
+    status: OrgStatus | None = None
+    max_devices: int | None = Field(default=None, ge=0)
+    max_fleets: int | None = Field(default=None, ge=0)
+
+    @field_validator("name")
+    @classmethod
+    def _name(cls, v: str | None) -> str | None:
+        return _non_blank(v, "name") if v is not None else v
+
+
+class Org(BaseModel):
+    """租戶註冊列。max_devices/max_fleets 為配額覆寫(None = 用 plan 預設)。"""
+
+    org_id: str
+    name: str
+    plan: OrgPlan
+    status: OrgStatus
+    max_devices: int | None = None
+    max_fleets: int | None = None
+    created_at: datetime
+    updated_at: datetime
 
 
 # ---- 用量 / 配額(G30) ----

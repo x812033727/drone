@@ -24,10 +24,14 @@ from __future__ import annotations
 import math
 import os
 from datetime import date, datetime, timezone
+from typing import TYPE_CHECKING
 
 from fastapi import Depends, HTTPException, Request
 
 from fleet_svc.auth import Principal, require_principal
+
+if TYPE_CHECKING:
+    from fleet_svc.models import Org
 
 # ---- 配額設定(環境變數;預設寬鬆,dev/cloud-smoke 不觸發;正式部署以 Helm 值調整)----
 
@@ -43,8 +47,17 @@ def _int_env(name: str, default: int) -> int:
         return default
 
 
-QUOTA_MAX_DEVICES = _int_env("QUOTA_MAX_DEVICES", 10_000)  # 每租戶現存裝置上限
-QUOTA_MAX_FLEETS = _int_env("QUOTA_MAX_FLEETS", 1_000)  # 每租戶現存機隊上限
+QUOTA_MAX_DEVICES = _int_env("QUOTA_MAX_DEVICES", 10_000)  # env 全域預設:每租戶現存裝置上限
+QUOTA_MAX_FLEETS = _int_env("QUOTA_MAX_FLEETS", 1_000)  # env 全域預設:每租戶現存機隊上限
+
+# 方案(plan)→ 預設配額。租戶在註冊表(fleet.org)未設「覆寫」欄時,配額取此表對應方案值。
+# free 小(試用)/ pro 中 / enterprise 大。數值為合理起步,正式營運可調。
+PLAN_QUOTAS: dict[str, dict[str, int]] = {
+    "free": {"max_devices": 10, "max_fleets": 2},
+    "pro": {"max_devices": 500, "max_fleets": 50},
+    "enterprise": {"max_devices": 100_000, "max_fleets": 5_000},
+}
+
 # 每租戶寫入速率(每分鐘);容量(burst)= 同值。預設寬鬆(100/秒)確保煙霧/測試不誤傷,
 # 正式部署以環境變數調降到有意義值。
 RATE_LIMIT_PER_MIN = _int_env("RATE_LIMIT_PER_MIN", 6_000)
@@ -148,6 +161,46 @@ def enforce_quota(principal: Principal, current: int, maximum: int, resource: st
         raise HTTPException(
             status_code=402,
             detail=f"已達 {resource} 配額上限({maximum});請提升方案或聯絡管理者",
+        )
+
+
+# ---- per-org 配額解析(#113 租戶註冊表 × #115 配額)----
+
+
+def _env_quota(key: str) -> int:
+    """env 全域預設(org 不在註冊表時的最終退路)。動態讀模組全域,支援測試 monkeypatch。"""
+    return QUOTA_MAX_DEVICES if key == "max_devices" else QUOTA_MAX_FLEETS
+
+
+def effective_limit(org: Org | None, key: str) -> int:
+    """解析某租戶某資源的有效配額上限(key = max_devices / max_fleets)。
+
+    優先序(#115 配額檢查據此,per-org 覆寫 env 全域):
+      1. org 覆寫欄(fleet.org.max_devices/max_fleets)非 NULL → 硬覆寫。
+      2. org.plan 的 PLAN_QUOTAS 預設。
+      3. org 不在註冊表(None)或方案未知 → env 全域預設(QUOTA_MAX_*)。
+    """
+    if org is None:
+        return _env_quota(key)
+    override = getattr(org, key, None)
+    if override is not None:
+        return int(override)
+    plan_key = org.plan.value if hasattr(org.plan, "value") else str(org.plan)
+    plan_defaults = PLAN_QUOTAS.get(plan_key)
+    if plan_defaults is None:
+        return _env_quota(key)
+    return plan_defaults[key]
+
+
+def enforce_org_active(principal: Principal, org: Org | None) -> None:
+    """suspended 租戶的寫入被擋(403);admin 平台管理者豁免。org 未註冊(None)不阻擋。"""
+    if principal.is_admin or org is None:
+        return
+    status = org.status.value if hasattr(org.status, "value") else str(org.status)
+    if status == "suspended":
+        raise HTTPException(
+            status_code=403,
+            detail="租戶已停用(suspended),寫入被拒;請聯絡平台管理者",
         )
 
 
