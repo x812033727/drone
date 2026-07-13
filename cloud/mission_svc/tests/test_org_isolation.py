@@ -171,6 +171,20 @@ def test_get_mission_org_scoped():
     assert "WHERE id = $1 AND org_id = $2" in sql and args == (mid, "acme")
 
 
+def test_device_org_reads_shared_fleet_device_by_serial():
+    # 跨租戶派遣防護:mission-svc 讀共用庫的 fleet.device 取目標機所屬 org。
+    class _Val(_StubConn):
+        async def fetchval(self, sql, *args):
+            self.fetchval_calls.append((sql, args))
+            return "orgB"
+
+    conn = _Val()
+    out = asyncio.run(repo.device_org(conn, "SN-B"))
+    sql, args = conn.fetchval_calls[0]
+    assert "SELECT org_id FROM fleet.device WHERE serial = $1" in sql
+    assert args == ("SN-B",) and out == "orgB"
+
+
 # ----------------------------------------------------------------------------
 # 3. 端點層:記憶體連線 + TestClient
 # ----------------------------------------------------------------------------
@@ -182,8 +196,11 @@ class _MemConn:
     def __init__(self) -> None:
         self.routes: list[dict] = []
         self.missions: list[dict] = []
+        self.devices: dict[str, str] = {}  # serial -> org_id(模擬共用 fleet.device)
 
     async def fetchval(self, sql, *args):
+        if "fleet.device" in sql:  # device_org:回目標機所屬 org(查無回 None)
+            return self.devices.get(args[0])
         table = self.routes if "mission.route" in sql else self.missions
         if "count(*)" in sql:
             if "org_id = $1" in sql:
@@ -283,6 +300,7 @@ def test_endpoint_route_create_binds_caller_org(client):
 
 def test_endpoint_cross_org_route_and_mission_isolation(client):
     c, conn = client
+    conn.devices["dA"] = "orgA"  # orgA 自有機(fleet.device)
     # org A 建 route + mission
     ra = c.post("/api/v1/routes", json=_route_payload(), headers=_tok("operator", "orgA"))
     a_route = ra.json()["id"]
@@ -347,3 +365,63 @@ def test_endpoint_dev_mode_default_org(monkeypatch):
     c = TestClient(main.app)
     r = c.post("/api/v1/routes", json=_route_payload())
     assert r.status_code == 201 and r.json()["org_id"] == DEV_ORG
+
+
+# ----------------------------------------------------------------------------
+# 4. 跨租戶「派遣目標機」隔離(安全關鍵:覆蓋攻擊路徑)
+# ----------------------------------------------------------------------------
+# 漏洞:create_mission 原只驗 route 的 org,drone_id 為自由字串原樣落庫 → org A
+# operator 可用 org B 的機序號建任務並派遣,MQTT 直達 fleet/{B 序號}/cmd/mission。
+# 修復:建任務時以共用庫的 fleet.device 驗目標機所屬 org == 呼叫者 org(admin 例外)。
+
+
+def _mk_mission(c, org, route_id, drone_id):
+    return c.post(
+        "/api/v1/missions", json={"route_id": route_id, "drone_id": drone_id},
+        headers=_tok("operator", org),
+    )
+
+
+def test_cross_org_dispatch_blocked_and_own_org_allowed(client):
+    c, conn = client
+    conn.devices["SN-A"] = "orgA"  # orgA 自有機
+    conn.devices["SN-B"] = "orgB"  # orgB 自有機(攻擊目標)
+    ra = c.post("/api/v1/routes", json=_route_payload(), headers=_tok("operator", "orgA"))
+    a_route = ra.json()["id"]
+
+    # 攻擊路徑:orgA operator 用 orgB 的機序號建任務 → 404(不洩漏存在性)
+    attack = _mk_mission(c, "orgA", a_route, "SN-B")
+    assert attack.status_code == 404
+    assert len(conn.missions) == 0  # 未落庫,無從派遣
+
+    # 未知序號 → 404
+    assert _mk_mission(c, "orgA", a_route, "SN-UNKNOWN").status_code == 404
+
+    # 本 org 機 → 201
+    ok = _mk_mission(c, "orgA", a_route, "SN-A")
+    assert ok.status_code == 201 and ok.json()["drone_id"] == "SN-A"
+
+
+def test_admin_may_target_other_org_device(client):
+    c, conn = client
+    conn.devices["SN-B"] = "orgB"
+    # admin 建 route(其 org=plat);以 orgB 的機建任務 → 允許(平台管理跨 org)
+    ra = c.post("/api/v1/routes", json=_route_payload(), headers=_tok("admin", "plat"))
+    a_route = ra.json()["id"]
+    r = c.post(
+        "/api/v1/missions", json={"route_id": a_route, "drone_id": "SN-B"},
+        headers=_tok("admin", "plat"),
+    )
+    assert r.status_code == 201
+
+
+def test_dev_mode_does_not_block_unknown_device(monkeypatch):
+    # dev 模式(認證停用=admin)不驗裝置所有權 → cloud-smoke/預設 org 建任務照常過。
+    monkeypatch.setattr(auth, "AUTH_ENABLED", False)
+    conn = _MemConn()  # 刻意不 seed devices
+    main.app.state.pool = _MemPool(conn)
+    c = TestClient(main.app)
+    ra = c.post("/api/v1/routes", json=_route_payload())
+    a_route = ra.json()["id"]
+    r = c.post("/api/v1/missions", json={"route_id": a_route, "drone_id": "whatever"})
+    assert r.status_code == 201

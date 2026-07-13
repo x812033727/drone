@@ -98,6 +98,15 @@ async def get_route(
     return _route(r) if r else None
 
 
+# ---- 裝置所有權(跨租戶派遣防護,安全關鍵)----
+# mission-svc 無 device 表,但與 fleet-svc 共用同一 `drone` 資料庫(不同 schema)。
+# 故直接讀 fleet.device 取裝置所屬 org,擋「以他 org 機序號建任務→MQTT 直達他 org 機」。
+# 同一 `drone` 角色(POSTGRES_USER)為兩 schema 擁有者,對 fleet.device 有 SELECT 權,免 GRANT。
+async def device_org(conn: asyncpg.Connection, serial: str) -> str | None:
+    """回傳裝置(serial=drone_id)所屬 org_id;查無此機回 None。"""
+    return await conn.fetchval("SELECT org_id FROM fleet.device WHERE serial = $1", serial)
+
+
 # ---- mission ----
 async def create_mission(
     conn: asyncpg.Connection, body: MissionCreate, org: str
