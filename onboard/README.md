@@ -27,7 +27,7 @@ onboard/
 ## Phase 0 待辦
 
 - [x] ros2_ws 建立 + px4_ros_com bridge 跑通(SITL)→ [ros2_ws/](ros2_ws/)(容器化環境 + bridge_smoke + run_smoke.sh 一鍵煙霧)
-- [ ] mission_exec 雛形:接收 JSON 任務 → 上傳 MAVLink mission → 進度回報
+- [x] mission_exec 雛形:接收 JSON 任務 → 上傳 MAVLink mission → 進度回報 → [mission_exec/](mission_exec/)(狀態機 executor + plan 驗證 + translate + SITL e2e)
 - [x] drone-agent 雛形:MQTT 連雲、遙測摘要 1 Hz 上報 → [drone_agent/](drone_agent/)
 - [x] video_pipeline POC:RTSP/WebRTC 傳輸架構 + 像素時戳端到端延遲量測方法論(x86 基線,
       非 REQ-COM-03 驗證)→ [video_pipeline/](video_pipeline/)
