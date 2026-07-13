@@ -18,6 +18,8 @@ spec:
         {{- include "drone.labels" . | nindent 8 }}
         app.kubernetes.io/component: logsvc
     spec:
+      securityContext:
+        {{- include "drone.podSecurityContext" . | nindent 8 }}
       {{- with .Values.imagePullSecrets }}
       imagePullSecrets: {{- toYaml . | nindent 8 }}
       {{- end }}
@@ -25,6 +27,8 @@ spec:
         - name: logsvc
           image: {{ include "drone.image" (list . "log_svc") | quote }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext:
+            {{- include "drone.containerSecurityContext" . | nindent 12 }}
           env:
             - name: PG_PASSWORD
               valueFrom:
@@ -41,6 +45,11 @@ spec:
             httpGet: { path: /healthz, port: 8090 }
             initialDelaySeconds: 10
             periodSeconds: 10
+          livenessProbe:
+            httpGet: { path: /healthz, port: 8090 }
+            initialDelaySeconds: 20
+            periodSeconds: 20
+            failureThreshold: 3
           resources:
             {{- toYaml .Values.logsvc.resources | nindent 12 }}
           volumeMounts:

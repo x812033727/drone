@@ -22,6 +22,10 @@ spec:
         - name: timescaledb
           image: {{ .Values.timescaledb.image | quote }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
+          # 第三方 postgres/timescaledb 映像保守處理:禁特權升級 + 丟棄 capabilities
+          # (postgres uid 999,不需 cap);不強制 runAsNonRoot/uid(映像自管 initdb 權限)。TODO。
+          securityContext:
+            {{- include "drone.thirdPartyContainerSecurityContext" . | nindent 12 }}
           env:
             - name: POSTGRES_USER
               value: drone

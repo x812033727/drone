@@ -17,6 +17,8 @@ spec:
         {{- include "drone.labels" . | nindent 8 }}
         app.kubernetes.io/component: fleetsvc
     spec:
+      securityContext:
+        {{- include "drone.podSecurityContext" . | nindent 8 }}
       {{- with .Values.imagePullSecrets }}
       imagePullSecrets: {{- toYaml . | nindent 8 }}
       {{- end }}
@@ -24,6 +26,8 @@ spec:
         - name: fleetsvc
           image: {{ include "drone.image" (list . "fleet_svc") | quote }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext:
+            {{- include "drone.containerSecurityContext" . | nindent 12 }}
           envFrom:
             - secretRef:
                 name: {{ include "drone.secretName" . }}
@@ -46,6 +50,11 @@ spec:
             httpGet: { path: /healthz, port: 8091 }
             initialDelaySeconds: 10
             periodSeconds: 10
+          livenessProbe:
+            httpGet: { path: /healthz, port: 8091 }
+            initialDelaySeconds: 20
+            periodSeconds: 20
+            failureThreshold: 3
           resources:
             {{- toYaml .Values.fleetsvc.resources | nindent 12 }}
           {{- if .Values.mtls.enabled }}

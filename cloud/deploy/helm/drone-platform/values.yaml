@@ -11,6 +11,14 @@ imagePullSecrets: []
 nameOverride: ""
 fullnameOverride: ""
 
+# 安全加固旗標。自研 Python 服務套完整 pod+container securityContext(非 root uid 1000);
+# 第三方映像(grafana/timescaledb/mosquitto/webconsole)只套 container-level 保守項
+# (禁特權升級 + 丟棄 capabilities)。
+security:
+  # readOnlyRootFilesystem 預設 false。設 true 前務必為 /tmp 等可寫路徑掛 emptyDir,
+  # 否則 uvicorn/python 寫入(如 __pycache__、暫存)會失敗導致 Pod 起不來。
+  readOnlyRootFilesystem: false
+
 # 密鑰(正式部署務必覆寫;或設 existingSecret 指向預建 Secret)
 secrets:
   existingSecret: "" # 設定則用既有 Secret,忽略以下明文

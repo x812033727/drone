@@ -17,6 +17,8 @@ spec:
         {{- include "drone.labels" . | nindent 8 }}
         app.kubernetes.io/component: ingest
     spec:
+      securityContext:
+        {{- include "drone.podSecurityContext" . | nindent 8 }}
       {{- with .Values.imagePullSecrets }}
       imagePullSecrets: {{- toYaml . | nindent 8 }}
       {{- end }}
@@ -24,6 +26,8 @@ spec:
         - name: ingest
           image: {{ include "drone.image" (list . "ingest") | quote }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext:
+            {{- include "drone.containerSecurityContext" . | nindent 12 }}
           env:
             - name: PG_PASSWORD
               valueFrom:
@@ -37,6 +41,15 @@ spec:
             - name: MQTT_PORT
               value: {{ include "drone.mqttPort" . | quote }}
             {{- include "drone.mqttTlsEnv" . | nindent 12 }}
+          # ingest 無 HTTP 埠(純 MQTT→PG 消費者)。以 exec 檢查主程序(PID 1)仍為
+          # ingest.main 作為 liveness;python:slim 無 procps/pgrep,故改讀 /proc/1/cmdline。
+          # TODO(G21):ingest 補 /healthz 後改為 httpGet,以偵測 hung/deadlock。
+          livenessProbe:
+            exec:
+              command: ["sh", "-c", "grep -q ingest.main /proc/1/cmdline"]
+            initialDelaySeconds: 20
+            periodSeconds: 20
+            failureThreshold: 3
           resources:
             {{- toYaml .Values.ingest.resources | nindent 12 }}
           {{- if .Values.mtls.enabled }}

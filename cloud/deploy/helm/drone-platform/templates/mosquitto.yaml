@@ -57,8 +57,17 @@ spec:
         - name: mosquitto
           image: {{ .Values.mosquitto.image | quote }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
+          # 第三方映像保守處理:禁特權升級 + 丟棄 capabilities(mosquitto uid 1883,
+          # 監聽非特權埠,不需任何 cap);不強制 runAsNonRoot/uid。TODO。
+          securityContext:
+            {{- include "drone.thirdPartyContainerSecurityContext" . | nindent 12 }}
           ports:
             - containerPort: {{ include "drone.mqttPort" . }}
+          livenessProbe:
+            tcpSocket: { port: {{ include "drone.mqttPort" . }} }
+            initialDelaySeconds: 20
+            periodSeconds: 20
+            failureThreshold: 3
           resources:
             {{- toYaml .Values.mosquitto.resources | nindent 12 }}
           volumeMounts:

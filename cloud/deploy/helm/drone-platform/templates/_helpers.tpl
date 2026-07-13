@@ -72,3 +72,38 @@ postgresql://drone:$(PG_PASSWORD)@{{ include "drone.fullname" . }}-timescaledb:5
   readOnly: true
 {{- end }}
 {{- end -}}
+
+{{/* Pod-level securityContext(自研 Python 服務:以非 root uid 1000 執行)。
+     映像未內建 USER,故靠此強制降權;fsGroup 讓掛載卷(log_svc PVC/憑證)可讀寫。 */}}
+{{- define "drone.podSecurityContext" -}}
+runAsNonRoot: true
+runAsUser: 1000
+runAsGroup: 1000
+fsGroup: 1000
+seccompProfile:
+  type: RuntimeDefault
+{{- end -}}
+
+{{/* Container-level securityContext(自研服務:完整加固)。
+     readOnlyRootFilesystem 由 values.security.readOnlyRootFilesystem 控制(預設 false);
+     若要開啟需為 /tmp 等可寫路徑另掛 emptyDir,否則 uvicorn/python 會因無法寫入而失敗。 */}}
+{{- define "drone.containerSecurityContext" -}}
+allowPrivilegeEscalation: false
+runAsNonRoot: true
+capabilities:
+  drop:
+    - ALL
+readOnlyRootFilesystem: {{ .Values.security.readOnlyRootFilesystem }}
+{{- end -}}
+
+{{/* Container-level securityContext(第三方映像:保守處理)。
+     只關特權升級 + 丟棄所有 Linux capabilities,不強制 runAsNonRoot/uid——
+     grafana(472)/postgres(999)/mosquitto(1883)各有自訂 uid,強制 1000 會壞掉;
+     待各映像改為 unprivileged 再收斂(TODO)。webconsole nginx 另需 NET_BIND_SERVICE,
+     故不使用本 helper 而於其 template 內就地宣告。 */}}
+{{- define "drone.thirdPartyContainerSecurityContext" -}}
+allowPrivilegeEscalation: false
+capabilities:
+  drop:
+    - ALL
+{{- end -}}
