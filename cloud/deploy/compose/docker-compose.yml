@@ -136,6 +136,36 @@ services:
       start_period: 10s
     restart: unless-stopped
 
+  missionsvc:
+    build:
+      context: ../../..
+      dockerfile: cloud/mission_svc/Dockerfile
+    environment:
+      PG_DSN: postgresql://drone:${PG_PASSWORD:-dronedev}@timescaledb:5432/drone
+      MQTT_HOST: mosquitto
+      MQTT_PORT: "1883"
+    ports:
+      # 只綁 loopback:Phase 0 無認證,不對外網開(security.md §8 內網豁免)
+      - "127.0.0.1:${MISSIONSVC_PORT:-8092}:8092"
+    depends_on:
+      timescaledb:
+        condition: service_healthy
+      mosquitto:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://localhost:8092/healthz', timeout=3)",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    restart: unless-stopped
+
   mediamtx:
     # 官方標準 image 無 shell/curl:不設 healthcheck(--wait 對它只等 running,
     # 不影響其他服務的 healthcheck 等待;無人 depends_on 它),
