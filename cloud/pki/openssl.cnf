@@ -1,0 +1,63 @@
+# Drone Fleet PKI 設定(openssl ca)。CA 目錄由環境變數 PKI_CA_DIR 指定。
+# 對 docs/20-software/security.md §2「裝置身分與 PKI」:每機一憑證、mTLS、CRL 吊銷。
+# 這是 C1 最小體系(工具+文件,不動 broker);C2 才把憑證接上 EMQX mTLS+ACL。
+
+[ca]
+default_ca = CA_default
+
+[CA_default]
+dir               = $ENV::PKI_CA_DIR
+certs             = $dir/certs
+crl_dir           = $dir/crl
+new_certs_dir     = $dir/issued
+database          = $dir/index.txt
+serial            = $dir/serial
+private_key       = $dir/private/ca.key.pem
+certificate       = $dir/certs/ca.cert.pem
+crlnumber         = $dir/crlnumber
+crl               = $dir/crl/ca.crl.pem
+crl_extensions    = crl_ext
+default_crl_days   = 30
+default_md         = sha256
+name_opt           = ca_default
+cert_opt           = ca_default
+default_days       = 365
+preserve           = no
+policy             = policy_loose
+
+[policy_loose]
+commonName              = supplied
+countryName             = optional
+stateOrProvinceName     = optional
+organizationName        = optional
+organizationalUnitName  = optional
+emailAddress            = optional
+
+[req]
+default_bits        = 2048
+distinguished_name  = req_distinguished_name
+string_mask         = utf8only
+default_md          = sha256
+x509_extensions     = v3_ca
+
+[req_distinguished_name]
+commonName = Common Name
+
+# 根 CA 憑證擴充
+[v3_ca]
+subjectKeyIdentifier    = hash
+authorityKeyIdentifier  = keyid:always,issuer
+basicConstraints        = critical, CA:true
+keyUsage                = critical, digitalSignature, cRLSign, keyCertSign
+
+# 裝置(client)憑證擴充:clientAuth,供機-雲 mTLS。SAN 由 PKI_SAN 帶入。
+[device_cert]
+basicConstraints        = CA:FALSE
+subjectKeyIdentifier    = hash
+authorityKeyIdentifier  = keyid,issuer
+keyUsage                = critical, digitalSignature, keyEncipherment
+extendedKeyUsage        = clientAuth
+subjectAltName          = $ENV::PKI_SAN
+
+[crl_ext]
+authorityKeyIdentifier  = keyid:always
