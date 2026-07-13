@@ -13,9 +13,10 @@ from contextlib import asynccontextmanager
 from uuid import UUID
 
 import asyncpg
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import Depends, FastAPI, HTTPException, Query
 
 from mission_svc import dispatch, repo
+from mission_svc.auth import AUTH_ENABLED, require_role
 from mission_svc.consumer import run_consumer
 from mission_svc.migrate import apply_migrations
 from mission_svc.models import (
@@ -69,6 +70,13 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="mission-svc", lifespan=lifespan)
 
+if not AUTH_ENABLED:
+    log.warning("⚠ JWT 認證未啟用(dev 模式,全放行)——正式部署須設 JWT_SECRET 或 JWT_JWKS_URL")
+
+# RBAC:讀取需 viewer,派遣/控制/建立需 operator(healthz 不設)
+VIEWER = Depends(require_role("viewer"))
+OPERATOR = Depends(require_role("operator"))
+
 
 def _pool(app: FastAPI) -> asyncpg.Pool:
     return app.state.pool
@@ -82,19 +90,19 @@ async def healthz() -> dict:
 
 
 # ---- routes ----
-@app.post("/api/v1/routes", response_model=Route, status_code=201)
+@app.post("/api/v1/routes", response_model=Route, status_code=201, dependencies=[OPERATOR])
 async def create_route(body: RouteCreate) -> Route:
     async with _pool(app).acquire() as conn:
         return await repo.create_route(conn, body)
 
 
-@app.get("/api/v1/routes", response_model=list[Route])
+@app.get("/api/v1/routes", response_model=list[Route], dependencies=[VIEWER])
 async def list_routes() -> list[Route]:
     async with _pool(app).acquire() as conn:
         return await repo.list_routes(conn)
 
 
-@app.get("/api/v1/routes/{route_id}", response_model=Route)
+@app.get("/api/v1/routes/{route_id}", response_model=Route, dependencies=[VIEWER])
 async def get_route(route_id: UUID) -> Route:
     async with _pool(app).acquire() as conn:
         r = await repo.get_route(conn, route_id)
@@ -104,7 +112,7 @@ async def get_route(route_id: UUID) -> Route:
 
 
 # ---- missions ----
-@app.post("/api/v1/missions", response_model=Mission, status_code=201)
+@app.post("/api/v1/missions", response_model=Mission, status_code=201, dependencies=[OPERATOR])
 async def create_mission(body: MissionCreate) -> Mission:
     async with _pool(app).acquire() as conn:
         m = await repo.create_mission(conn, body)
@@ -113,13 +121,13 @@ async def create_mission(body: MissionCreate) -> Mission:
     return m
 
 
-@app.get("/api/v1/missions", response_model=list[Mission])
+@app.get("/api/v1/missions", response_model=list[Mission], dependencies=[VIEWER])
 async def list_missions(drone_id: str | None = Query(default=None)) -> list[Mission]:
     async with _pool(app).acquire() as conn:
         return await repo.list_missions(conn, drone_id)
 
 
-@app.get("/api/v1/missions/{mission_pk}", response_model=Mission)
+@app.get("/api/v1/missions/{mission_pk}", response_model=Mission, dependencies=[VIEWER])
 async def get_mission(mission_pk: UUID) -> Mission:
     async with _pool(app).acquire() as conn:
         m = await repo.get_mission(conn, mission_pk)
@@ -128,7 +136,9 @@ async def get_mission(mission_pk: UUID) -> Mission:
     return m
 
 
-@app.post("/api/v1/missions/{mission_pk}/dispatch", response_model=Mission)
+@app.post(
+    "/api/v1/missions/{mission_pk}/dispatch", response_model=Mission, dependencies=[OPERATOR]
+)
 async def dispatch_mission(mission_pk: UUID) -> Mission:
     async with _pool(app).acquire() as conn:
         m = await repo.get_mission(conn, mission_pk)
@@ -144,7 +154,9 @@ async def dispatch_mission(mission_pk: UUID) -> Mission:
         return await repo.get_mission(conn, mission_pk)  # type: ignore[return-value]
 
 
-@app.post("/api/v1/missions/{mission_pk}/command", response_model=Mission)
+@app.post(
+    "/api/v1/missions/{mission_pk}/command", response_model=Mission, dependencies=[OPERATOR]
+)
 async def command_mission(mission_pk: UUID, body: MissionCommandRequest) -> Mission:
     async with _pool(app).acquire() as conn:
         m = await repo.get_mission(conn, mission_pk)

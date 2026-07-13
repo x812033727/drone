@@ -15,10 +15,11 @@ from contextlib import asynccontextmanager
 from uuid import UUID
 
 import asyncpg
-from fastapi import FastAPI, HTTPException, Query, Request
+from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
 
 from fleet_svc import repo
+from fleet_svc.auth import AUTH_ENABLED, require_role
 from fleet_svc.consumer import run_consumer
 from fleet_svc.hub import TelemetryHub
 from fleet_svc.migrate import apply_migrations
@@ -83,6 +84,13 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="fleet-svc", lifespan=lifespan)
 
+if not AUTH_ENABLED:
+    log.warning("⚠ JWT 認證未啟用(dev 模式,全放行)——正式部署須設 JWT_SECRET 或 JWT_JWKS_URL")
+
+# RBAC 依賴:讀取需 viewer,變更需 operator(healthz 不設,供 compose healthcheck)
+VIEWER = Depends(require_role("viewer"))
+OPERATOR = Depends(require_role("operator"))
+
 
 def _pool(app: FastAPI) -> asyncpg.Pool:
     return app.state.pool
@@ -97,19 +105,19 @@ async def healthz() -> dict:
 
 
 # ---- fleets ----
-@app.post("/api/v1/fleets", response_model=Fleet, status_code=201)
+@app.post("/api/v1/fleets", response_model=Fleet, status_code=201, dependencies=[OPERATOR])
 async def create_fleet(body: FleetCreate) -> Fleet:
     async with _pool(app).acquire() as conn:
         return await repo.create_fleet(conn, body)
 
 
-@app.get("/api/v1/fleets", response_model=list[Fleet])
+@app.get("/api/v1/fleets", response_model=list[Fleet], dependencies=[VIEWER])
 async def list_fleets() -> list[Fleet]:
     async with _pool(app).acquire() as conn:
         return await repo.list_fleets(conn)
 
 
-@app.get("/api/v1/fleets/{fleet_id}", response_model=Fleet)
+@app.get("/api/v1/fleets/{fleet_id}", response_model=Fleet, dependencies=[VIEWER])
 async def get_fleet(fleet_id: UUID) -> Fleet:
     async with _pool(app).acquire() as conn:
         f = await repo.get_fleet(conn, fleet_id)
@@ -119,7 +127,7 @@ async def get_fleet(fleet_id: UUID) -> Fleet:
 
 
 # ---- devices ----
-@app.post("/api/v1/devices", response_model=Device, status_code=201)
+@app.post("/api/v1/devices", response_model=Device, status_code=201, dependencies=[OPERATOR])
 async def create_device(body: DeviceCreate) -> Device:
     async with _pool(app).acquire() as conn:
         try:
@@ -128,13 +136,13 @@ async def create_device(body: DeviceCreate) -> Device:
             raise HTTPException(status_code=409, detail=f"serial 已存在:{body.serial}")
 
 
-@app.get("/api/v1/devices", response_model=list[Device])
+@app.get("/api/v1/devices", response_model=list[Device], dependencies=[VIEWER])
 async def list_devices(fleet_id: UUID | None = Query(default=None)) -> list[Device]:
     async with _pool(app).acquire() as conn:
         return await repo.list_devices(conn, fleet_id)
 
 
-@app.get("/api/v1/devices/{device_id}", response_model=Device)
+@app.get("/api/v1/devices/{device_id}", response_model=Device, dependencies=[VIEWER])
 async def get_device(device_id: UUID) -> Device:
     async with _pool(app).acquire() as conn:
         d = await repo.get_device(conn, device_id)
@@ -143,7 +151,7 @@ async def get_device(device_id: UUID) -> Device:
     return d
 
 
-@app.patch("/api/v1/devices/{device_id}", response_model=Device)
+@app.patch("/api/v1/devices/{device_id}", response_model=Device, dependencies=[OPERATOR])
 async def update_device(device_id: UUID, body: DeviceUpdate) -> Device:
     async with _pool(app).acquire() as conn:
         d = await repo.update_device(conn, device_id, body)
@@ -152,7 +160,7 @@ async def update_device(device_id: UUID, body: DeviceUpdate) -> Device:
     return d
 
 
-@app.delete("/api/v1/devices/{device_id}", status_code=204)
+@app.delete("/api/v1/devices/{device_id}", status_code=204, dependencies=[OPERATOR])
 async def delete_device(device_id: UUID) -> None:
     async with _pool(app).acquire() as conn:
         ok = await repo.delete_device(conn, device_id)
@@ -161,7 +169,7 @@ async def delete_device(device_id: UUID) -> None:
 
 
 # ---- firmware ----
-@app.post("/api/v1/firmware", response_model=Firmware, status_code=201)
+@app.post("/api/v1/firmware", response_model=Firmware, status_code=201, dependencies=[OPERATOR])
 async def create_firmware(body: FirmwareCreate) -> Firmware:
     async with _pool(app).acquire() as conn:
         try:
@@ -172,13 +180,15 @@ async def create_firmware(body: FirmwareCreate) -> Firmware:
             )
 
 
-@app.get("/api/v1/firmware", response_model=list[Firmware])
+@app.get("/api/v1/firmware", response_model=list[Firmware], dependencies=[VIEWER])
 async def list_firmware() -> list[Firmware]:
     async with _pool(app).acquire() as conn:
         return await repo.list_firmware(conn)
 
 
-@app.put("/api/v1/devices/{device_id}/firmware", response_model=DeviceFirmware)
+@app.put(
+    "/api/v1/devices/{device_id}/firmware", response_model=DeviceFirmware, dependencies=[OPERATOR]
+)
 async def set_device_firmware(device_id: UUID, body: DeviceFirmwareSet) -> DeviceFirmware:
     async with _pool(app).acquire() as conn:
         d = await repo.get_device(conn, device_id)
@@ -187,20 +197,26 @@ async def set_device_firmware(device_id: UUID, body: DeviceFirmwareSet) -> Devic
         return await repo.set_device_firmware(conn, device_id, body.component.value, body.version)
 
 
-@app.get("/api/v1/devices/{device_id}/firmware", response_model=list[DeviceFirmware])
+@app.get(
+    "/api/v1/devices/{device_id}/firmware",
+    response_model=list[DeviceFirmware],
+    dependencies=[VIEWER],
+)
 async def list_device_firmware(device_id: UUID) -> list[DeviceFirmware]:
     async with _pool(app).acquire() as conn:
         return await repo.list_device_firmware(conn, device_id)
 
 
 # ---- status(裝置 + 最新遙測)----
-@app.get("/api/v1/status", response_model=list[DeviceStatusView])
+@app.get("/api/v1/status", response_model=list[DeviceStatusView], dependencies=[VIEWER])
 async def list_all_status() -> list[DeviceStatusView]:
     async with _pool(app).acquire() as conn:
         return await repo.list_all_status(conn)
 
 
-@app.get("/api/v1/devices/{device_id}/status", response_model=DeviceStatusView)
+@app.get(
+    "/api/v1/devices/{device_id}/status", response_model=DeviceStatusView, dependencies=[VIEWER]
+)
 async def get_device_status(device_id: UUID) -> DeviceStatusView:
     async with _pool(app).acquire() as conn:
         s = await repo.get_device_status(conn, device_id)
@@ -209,7 +225,11 @@ async def get_device_status(device_id: UUID) -> DeviceStatusView:
     return s
 
 
-@app.get("/api/v1/fleets/{fleet_id}/status", response_model=list[DeviceStatusView])
+@app.get(
+    "/api/v1/fleets/{fleet_id}/status",
+    response_model=list[DeviceStatusView],
+    dependencies=[VIEWER],
+)
 async def list_fleet_status(fleet_id: UUID) -> list[DeviceStatusView]:
     async with _pool(app).acquire() as conn:
         return await repo.list_fleet_status(conn, fleet_id)
