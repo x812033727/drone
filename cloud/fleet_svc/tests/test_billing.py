@@ -18,7 +18,7 @@ import asyncpg
 import jwt
 import pytest
 from fastapi.testclient import TestClient
-from fleet_svc import auth, billing, limits, main, repo
+from fleet_svc import auth, billing, main, repo
 from fleet_svc.billing import (
     EcpayConfig,
     build_checkout_params,
@@ -28,7 +28,6 @@ from fleet_svc.billing import (
     plan_price,
     verify_callback,
 )
-from fleet_svc.limits import RateLimiter
 
 # ----------------------------------------------------------------------------
 # 1. CheckMacValue —— 綠界官方文件已知測試向量(known-answer test)
@@ -344,7 +343,6 @@ def client(monkeypatch):
     monkeypatch.setattr(auth, "JWT_SECRET", SECRET)
     monkeypatch.setattr(auth, "_jwks_client", None)
     monkeypatch.setattr(auth, "JWT_ALGORITHM", "HS256")
-    monkeypatch.setattr(limits, "write_limiter", RateLimiter(rate_per_min=6000))
     conn = _MemConn()
     main.app.state.pool = _MemPool(conn)
     return TestClient(main.app), conn
@@ -490,7 +488,6 @@ def test_subscription_unknown_org_defaults_free(client):
 def test_dev_mode_checkout_and_callback(monkeypatch):
     _clear_ecpay_env(monkeypatch)
     monkeypatch.setattr(auth, "AUTH_ENABLED", False)
-    monkeypatch.setattr(limits, "write_limiter", RateLimiter(rate_per_min=6000))
     conn = _MemConn()
     main.app.state.pool = _MemPool(conn)
     c = TestClient(main.app)

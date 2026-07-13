@@ -1,9 +1,10 @@
 """用量計量 + 配額 + 限流(G30)。四層驗證,皆不碰真 DB:
 
-1. RateLimiter 單元:token bucket 放行至容量、超限回 Retry-After>0、隨時間補充。
-2. repo 計量 SQL 契約:increment/usage_count/get/totals 綁正確參數與原子遞增語法。
+1. DB-backed 固定視窗限流單元:同 org 超上限→429、視窗滾動後重置、不同 org 獨立、
+   admin 不觸 DB、Retry-After = 到下一視窗秒數。以假連線模擬 (org, window) 原子遞增。
+2. repo SQL 契約:usage increment/usage_count/get/totals 與 rate_limit 遞增綁正確參數。
 3. 配額(402):每日任務量超限回 402;航線現存上限回 402;admin 豁免;dev 不阻塞。
-4. 限流(429):超速回 429 + Retry-After;admin 豁免;org 隔離。
+4. 限流(429):超速回 429 + Retry-After;admin 豁免;org 隔離;讀取不限流;視窗滾動重置。
 """
 
 from __future__ import annotations
@@ -14,27 +15,79 @@ from uuid import uuid4
 
 import jwt
 import pytest
+from drone_common.auth import Principal
+from fastapi import HTTPException
 from fastapi.testclient import TestClient
 from mission_svc import auth, limits, main, repo
-from mission_svc.limits import RateLimiter
 
 # ----------------------------------------------------------------------------
-# 1. RateLimiter 單元
+# 1. DB-backed 固定視窗限流單元(假連線模擬 (org, window_start) 原子遞增)
 # ----------------------------------------------------------------------------
 
 
-def test_rate_limiter_allows_up_to_capacity_then_blocks():
-    rl = RateLimiter(rate_per_min=60, burst=2)
-    assert rl.check("o", now=0.0) == 0.0
-    assert rl.check("o", now=0.0) == 0.0
-    assert rl.check("o", now=0.0) > 0.0
+class _RLConn:
+    """假連線:模擬 rate_limit_counter 的 INSERT ... ON CONFLICT ... RETURNING count。"""
+
+    def __init__(self) -> None:
+        self.counts: dict[tuple[str, int], int] = {}
+
+    async def fetchval(self, sql, *args):
+        assert "rate_limit_counter" in sql and "RETURNING count" in sql
+        key = (args[0], args[1])  # (org, window_start)
+        self.counts[key] = self.counts.get(key, 0) + 1
+        return self.counts[key]
 
 
-def test_rate_limiter_refills_over_time():
-    rl = RateLimiter(rate_per_min=60, burst=1)
-    assert rl.check("o", now=0.0) == 0.0
-    assert rl.check("o", now=0.0) > 0.0
-    assert rl.check("o", now=1.0) == 0.0
+def _principal(org: str, *, is_admin: bool = False) -> Principal:
+    return Principal(claims={"org": org}, role="operator", org=org, is_admin=is_admin)
+
+
+def _run_rl(conn, org, *, is_admin=False, limit=2, now=1000.0):
+    return asyncio.run(
+        limits.enforce_rate_limit(
+            conn, _principal(org, is_admin=is_admin), limit=limit, now=now
+        )
+    )
+
+
+def test_rate_limit_allows_up_to_limit_then_429():
+    conn = _RLConn()
+    _run_rl(conn, "orgA", limit=2, now=1000.0)
+    _run_rl(conn, "orgA", limit=2, now=1000.0)
+    with pytest.raises(HTTPException) as ei:
+        _run_rl(conn, "orgA", limit=2, now=1000.0)
+    assert ei.value.status_code == 429
+    assert "Retry-After" in ei.value.headers
+
+
+def test_rate_limit_retry_after_points_to_next_window():
+    conn = _RLConn()
+    # now=1030(視窗 [1020,1080)),超限時 Retry-After = 1080 - 1030 = 50
+    _run_rl(conn, "o", limit=1, now=1030.0)
+    with pytest.raises(HTTPException) as ei:
+        _run_rl(conn, "o", limit=1, now=1030.0)
+    assert ei.value.headers["Retry-After"] == "50"
+
+
+def test_rate_limit_window_rollover_resets():
+    conn = _RLConn()
+    _run_rl(conn, "o", limit=1, now=1000.0)
+    with pytest.raises(HTTPException):
+        _run_rl(conn, "o", limit=1, now=1010.0)
+    _run_rl(conn, "o", limit=1, now=1080.0)  # 下一視窗,計數重置放行
+
+
+def test_rate_limit_keys_are_independent():
+    conn = _RLConn()
+    _run_rl(conn, "a", limit=1, now=1000.0)
+    _run_rl(conn, "b", limit=1, now=1000.0)  # 不同 org 各自獨立
+
+
+def test_rate_limit_admin_exempt_does_not_touch_db():
+    conn = _RLConn()
+    for _ in range(5):
+        _run_rl(conn, "plat", is_admin=True, limit=1, now=1000.0)
+    assert conn.counts == {}  # admin 提前放行,未觸 DB
 
 
 # ----------------------------------------------------------------------------
@@ -95,6 +148,17 @@ def test_get_usage_totals_grouped():
     assert out == {"mission_created": 3}
 
 
+def test_incr_rate_limit_atomic_upsert_returns_count():
+    conn = _RecConn(fetchval=3)
+    out = asyncio.run(repo.incr_rate_limit(conn, "acme", 1_000_020))
+    sql, args = conn.fetchval_calls[0]
+    assert "INSERT INTO mission.rate_limit_counter" in sql
+    assert "ON CONFLICT (org_id, window_start)" in sql
+    assert "count = mission.rate_limit_counter.count + 1" in sql
+    assert "RETURNING count" in sql
+    assert args == ("acme", 1_000_020) and out == 3
+
+
 # ----------------------------------------------------------------------------
 # 3 & 4. 端點層
 # ----------------------------------------------------------------------------
@@ -111,8 +175,13 @@ class _MemConn:
         self.missions: list[dict] = []
         self.usage: dict[tuple, int] = {}
         self.devices: dict[str, str] = {}  # serial -> org_id(共用 fleet.device)
+        self.rl: dict[tuple, int] = {}  # (org, window_start) -> count(限流固定視窗)
 
     async def fetchval(self, sql, *args):
+        if "rate_limit_counter" in sql:  # DB-backed 限流原子遞增回傳新計數
+            key = (args[0], args[1])  # (org, window_start)
+            self.rl[key] = self.rl.get(key, 0) + 1
+            return self.rl[key]
         if "fleet.device" in sql:  # device_org:目標機所屬 org
             return self.devices.get(args[0])
         if "count(*) FROM mission.route" in sql:
@@ -203,7 +272,7 @@ def client(monkeypatch):
     monkeypatch.setattr(auth, "JWT_SECRET", SECRET)
     monkeypatch.setattr(auth, "_jwks_client", None)
     monkeypatch.setattr(auth, "JWT_ALGORITHM", "HS256")
-    monkeypatch.setattr(limits, "write_limiter", RateLimiter(rate_per_min=6000))
+    # 限流用寬鬆預設(6000/分),煙霧/多數測試不誤傷;需觸發時各測試自行調降上限。
     conn = _MemConn()
     main.app.state.pool = _MemPool(conn)
     return TestClient(main.app), conn
@@ -289,7 +358,6 @@ def test_quota_admin_exempt(client, monkeypatch):
 def test_quota_dev_mode_not_blocked(monkeypatch):
     monkeypatch.setattr(auth, "AUTH_ENABLED", False)
     monkeypatch.setattr(limits, "QUOTA_MAX_ROUTES", 1)
-    monkeypatch.setattr(limits, "write_limiter", RateLimiter(rate_per_min=6000))
     conn = _MemConn()
     main.app.state.pool = _MemPool(conn)
     c = TestClient(main.app)
@@ -302,9 +370,15 @@ def test_quota_dev_mode_not_blocked(monkeypatch):
 # ---- 限流(429)----
 
 
+def _freeze_time(monkeypatch, t: float = 1_000_000.0) -> None:
+    """凍結限流所用時鐘,使一測試內所有請求落同一固定視窗(端點路徑無法注入 now)。"""
+    monkeypatch.setattr(limits.time, "time", lambda: t)
+
+
 def test_rate_limit_429(client, monkeypatch):
     c, conn = client
-    monkeypatch.setattr(limits, "write_limiter", RateLimiter(rate_per_min=60, burst=2))
+    monkeypatch.setattr(limits, "RATE_LIMIT_PER_MIN", 2)
+    _freeze_time(monkeypatch)
     assert _route(c, "1", "operator", "acme").status_code == 201
     assert _route(c, "2", "operator", "acme").status_code == 201
     r = _route(c, "3", "operator", "acme")
@@ -313,14 +387,34 @@ def test_rate_limit_429(client, monkeypatch):
 
 def test_rate_limit_admin_exempt(client, monkeypatch):
     c, conn = client
-    monkeypatch.setattr(limits, "write_limiter", RateLimiter(rate_per_min=60, burst=1))
+    monkeypatch.setattr(limits, "RATE_LIMIT_PER_MIN", 1)
+    _freeze_time(monkeypatch)
     for i in range(4):
         assert _route(c, f"a{i}", "admin", "plat").status_code == 201
 
 
 def test_rate_limit_per_org_isolated(client, monkeypatch):
     c, conn = client
-    monkeypatch.setattr(limits, "write_limiter", RateLimiter(rate_per_min=60, burst=1))
+    monkeypatch.setattr(limits, "RATE_LIMIT_PER_MIN", 1)
+    _freeze_time(monkeypatch)
     assert _route(c, "a", "operator", "orgA").status_code == 201
     assert _route(c, "a2", "operator", "orgA").status_code == 429
     assert _route(c, "b", "operator", "orgB").status_code == 201
+
+
+def test_rate_limit_endpoint_window_rollover_resets(client, monkeypatch):
+    c, conn = client
+    monkeypatch.setattr(limits, "RATE_LIMIT_PER_MIN", 1)
+    monkeypatch.setattr(limits.time, "time", lambda: 1_000_000.0)
+    assert _route(c, "a", "operator", "orgA").status_code == 201
+    assert _route(c, "a2", "operator", "orgA").status_code == 429
+    monkeypatch.setattr(limits.time, "time", lambda: 1_000_080.0)  # 下一視窗 → 重置
+    assert _route(c, "a3", "operator", "orgA").status_code == 201
+
+
+def test_reads_not_rate_limited(client, monkeypatch):
+    c, conn = client
+    monkeypatch.setattr(limits, "RATE_LIMIT_PER_MIN", 1)
+    _freeze_time(monkeypatch)
+    for _ in range(5):
+        assert c.get("/api/v1/usage", headers=_tok("viewer", "acme")).status_code == 200
