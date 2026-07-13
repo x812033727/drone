@@ -25,7 +25,12 @@ from mavsdk import System
 
 from drone_agent.command import DEFAULT_MISSION_TIMEOUT_S, command_loop
 from drone_agent.log_uploader import DEFAULT_DOWNLOAD_TIMEOUT_S, LogUploader
-from drone_agent.publisher import STALE_TIMEOUT_S, publish_loop
+from drone_agent.publisher import (
+    HEARTBEAT_INTERVAL_S,
+    STALE_TIMEOUT_S,
+    heartbeat_loop,
+    publish_loop,
+)
 from drone_agent.state import WATCHERS, TelemetryState
 
 logger = logging.getLogger("drone_agent")
@@ -40,6 +45,16 @@ def parse_mavsdk_address(value: str) -> tuple[str, int]:
     if not sep or not host or not port.isdigit():
         raise argparse.ArgumentTypeError(f"格式須為 host:port,收到:{value!r}")
     return host, int(port)
+
+
+async def _fetch_firmware_version(drone: System) -> str:
+    """最佳努力取飛控韌體版本(供心跳);info 尚未就緒/逾時則留空,不阻塞啟動。"""
+    try:
+        version = await asyncio.wait_for(drone.info.get_version(), timeout=5.0)
+        return f"{version.flight_sw_major}.{version.flight_sw_minor}.{version.flight_sw_patch}"
+    except Exception:
+        logger.warning("取不到韌體版本(心跳 firmware_version 留空)")
+        return ""
 
 
 async def run(args: argparse.Namespace) -> None:
@@ -59,6 +74,8 @@ async def run(args: argparse.Namespace) -> None:
         if conn.is_connected:
             logger.info("已連上飛行器")
             break
+
+    firmware_version = await _fetch_firmware_version(drone)
 
     if args.log_svc_url:
         # S20 ULog 自動回收(選配,預設關):disarm 邊緣觸發下載+上傳,
@@ -80,6 +97,13 @@ async def run(args: argparse.Namespace) -> None:
             args.drone_id,
             args.rate,
             args.stale_timeout,
+        ),
+        heartbeat_loop(
+            args.mqtt_host,
+            args.mqtt_port,
+            args.drone_id,
+            firmware_version,
+            args.heartbeat_interval,
         ),
     ]
     if args.enable_cmd:
@@ -115,6 +139,12 @@ def main() -> None:
         type=float,
         default=STALE_TIMEOUT_S,
         help=f"遙測斷流判定秒數,超過即暫停上報(預設 {STALE_TIMEOUT_S:.0f})",
+    )
+    parser.add_argument(
+        "--heartbeat-interval",
+        type=float,
+        default=HEARTBEAT_INTERVAL_S,
+        help=f"裝置心跳發佈間隔秒數(fleet/{{id}}/heartbeat,預設 {HEARTBEAT_INTERVAL_S:.0f})",
     )
     parser.add_argument(
         "--mavsdk-address",

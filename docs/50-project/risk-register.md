@@ -1,4 +1,4 @@
-# 50-7 風險登錄表(Risk Register)
+# 50-8 風險登錄表(Risk Register)
 
 > rev 1 · 2026-07。全案 Top-8 風險的**活登錄表**,自 [roadmap.md §4](roadmap.md) 移轉而來(該節縮為摘要+連結,以本表為單一事實來源)。版本紀錄見 §3。
 

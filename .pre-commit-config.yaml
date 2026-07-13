@@ -1,0 +1,16 @@
+# 本地提交前守門,與 CI 的 ruff 行為一致(設定在根 pyproject.toml;
+# proto 生成碼已 exclude)。安裝:pip install pre-commit && pre-commit install
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.8.6
+    hooks:
+      - id: ruff            # 靜態檢查(等同 CI 的 ruff check .)
+        args: [--fix]
+      - id: ruff-format     # 格式(不改 CI 行為,僅本地便利)
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+      - id: check-yaml
+      - id: check-added-large-files

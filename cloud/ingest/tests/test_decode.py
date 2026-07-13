@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 
 import pytest
-from drone.v1 import events_pb2, mission_pb2, sensors_pb2, telemetry_pb2
+from drone.v1 import device_pb2, events_pb2, mission_pb2, sensors_pb2, telemetry_pb2
 from google.protobuf.json_format import MessageToJson
 from ingest import decode
 
@@ -88,6 +88,35 @@ def test_event_disarmed_snake_case_payload():
     payload = '{"drone_id": "dev-2", "unix_time_ms": "1783147203000", "event": "EVENT_DISARMED"}'
     row = decode.event_row(payload)
     assert row[1:] == ("dev-2", "EVENT_DISARMED")
+
+
+def test_device_heartbeat_roundtrip():
+    msg = device_pb2.DeviceHeartbeat(
+        drone_id="dev-1",
+        unix_time_ms=1783147210000,
+        agent_version="0.1.0",
+        firmware_version="1.15.4",
+        boot_unix_ms=1783147150000,
+        uptime_s=60,
+    )
+    row = decode.device_heartbeat_row(MessageToJson(msg))
+    assert len(row) == len(decode.DEVICE_HEARTBEAT_COLUMNS)
+    assert row[0] == datetime.fromtimestamp(1783147210.0, tz=timezone.utc)
+    assert row[1:4] == ("dev-1", "0.1.0", "1.15.4")
+    # boot_time 由 boot_unix_ms 轉 timestamptz
+    assert row[4] == datetime.fromtimestamp(1783147150.0, tz=timezone.utc)
+    assert row[5] == 60
+
+
+def test_device_heartbeat_snake_case_int64_string():
+    # 機上實際線上格式:snake_case + int64 字串;firmware 取不到時留空
+    payload = (
+        '{"drone_id": "dev-2", "unix_time_ms": "1783147211000", "agent_version": "0.1.0",'
+        ' "firmware_version": "", "boot_unix_ms": "1783147211000", "uptime_s": "0"}'
+    )
+    row = decode.device_heartbeat_row(payload)
+    assert row[1:4] == ("dev-2", "0.1.0", "")
+    assert row[5] == 0
 
 
 # ---- v0.4.0 高頻感測器流(sensors.proto,S22)----

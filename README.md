@@ -40,6 +40,7 @@
 - [QGC 客製評估與 Phase 1 GCS 決策](docs/20-software/gcs-qgc-evaluation.md)
 - [雲端機隊管理](docs/20-software/cloud-fleet.md)
 - [資安架構](docs/20-software/security.md)
+- [OTA 更新設計](docs/20-software/ota.md)
 
 ### 30 結構
 - [機體結構設計](docs/30-structure/airframe-design.md)
@@ -55,6 +56,7 @@
 - [預算估算](docs/50-project/budget.md)
 - [團隊組成](docs/50-project/team.md)
 - [供應鏈與製造策略](docs/50-project/supply-chain.md)
+- [生產工序(骨架)](docs/50-project/manufacturing.md)
 - [Phase 0 詳細執行計畫](docs/50-project/phase0/README.md)
 - [軟體平台商用化路線圖(Phase 0→1 軟體)](docs/50-project/phase1/commercialization-roadmap.md)
 - [Phase 0 採購計畫](docs/50-project/phase0/procurement.md)

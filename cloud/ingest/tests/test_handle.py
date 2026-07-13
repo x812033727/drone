@@ -110,6 +110,32 @@ def test_event_numeric_enum_out_of_range_dropped():
     assert pool.calls == []
 
 
+GOOD_HEARTBEAT = (
+    b'{"drone_id": "dev-1", "unix_time_ms": "1783147200000", "agent_version": "0.1.0",'
+    b' "firmware_version": "1.15.4", "boot_unix_ms": "1783147140000", "uptime_s": "60"}'
+)
+
+
+def test_good_heartbeat_inserts():
+    pool = _StubPool()
+    _run(pool, "fleet/dev-1/heartbeat", GOOD_HEARTBEAT)
+    assert len(pool.calls) == 1
+    assert pool.calls[0][0] == main.DEVICE_HEARTBEAT_SQL
+    assert pool.calls[0][1][1] == "dev-1"
+    assert pool.calls[0][1][2:4] == ("0.1.0", "1.15.4")
+
+
+def test_heartbeat_huge_boot_timestamp_dropped():
+    # boot_unix_ms 超大 → fromtimestamp 溢位,記錄後丟棄不落半筆
+    pool = _StubPool()
+    payload = (
+        b'{"drone_id": "dev-1", "unix_time_ms": "1783147200000",'
+        b' "boot_unix_ms": "9223372036854775807"}'
+    )
+    _run(pool, "fleet/dev-1/heartbeat", payload)
+    assert pool.calls == []
+
+
 # ---- v0.4.0 sensors 主題路由(取末兩段查表)----
 
 GOOD_ATTITUDE = (

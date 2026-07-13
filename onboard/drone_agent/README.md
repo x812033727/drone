@@ -4,7 +4,10 @@
 `drone.v1.TelemetrySummary`(契約:[interfaces/proto/drone/v1/telemetry.proto](../../interfaces/proto/drone/v1/telemetry.proto)),
 以 1 Hz、QoS 1 發佈到 MQTT 主題 `fleet/{drone_id}/telemetry`;armed 邊緣
 (解鎖/上鎖)另以 `drone.v1.FlightEvent` 發佈到 `fleet/{drone_id}/events`
-(事件觸發,QoS 1,見下「飛行事件」節);同時訂閱
+(事件觸發,QoS 1,見下「飛行事件」節);另以 `drone.v1.DeviceHeartbeat`
+定期(預設 30 s,QoS 1)發佈到 `fleet/{drone_id}/heartbeat`——證明 agent
+程序存活與軟韌體版本,獨立於飛行遙測是否斷流(雲端據此區分「機掛了」與
+「鏈路掛了」);同時訂閱
 `fleet/{drone_id}/cmd/mission` 接受雲端任務派遣(見下「雲端派遣」節)。
 Phase 0 線上編碼為 proto3 JSON mapping(`mosquitto_sub` 直接可讀),Phase 1 切 binary。
 

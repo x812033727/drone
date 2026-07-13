@@ -23,13 +23,14 @@ import time
 
 import paho.mqtt.client as mqtt
 import rclpy
-from drone.v1 import sensors_pb2
 from google.protobuf.json_format import MessageToJson
 from px4_msgs.msg import SensorGps as Px4SensorGps
 from px4_msgs.msg import VehicleAttitude as Px4VehicleAttitude
 from px4_msgs.msg import VehicleLocalPosition as Px4VehicleLocalPosition
 from rclpy.node import Node
 from rclpy.qos import DurabilityPolicy, HistoryPolicy, QoSProfile, ReliabilityPolicy
+
+from px4_mqtt_bridge import codec
 
 # PX4 uxrce_dds_client 發佈端是 BestEffort/TransientLocal;
 # 訂閱端不一致(rclpy 預設 Reliable)會靜默收不到(鐵則 3)。
@@ -40,72 +41,24 @@ PX4_QOS = QoSProfile(
     depth=5,
 )
 
-# PX4 SensorGps.fix_type(uint8)→ 契約字串(FIX_TYPE_* 常數名;
-# 0 與 1 依 SensorGps.msg 註解皆代表 no fix)
-_FIX_TYPE_NAMES = {
-    0: "FIX_TYPE_NONE",
-    Px4SensorGps.FIX_TYPE_NONE: "FIX_TYPE_NONE",
-    Px4SensorGps.FIX_TYPE_2D: "FIX_TYPE_2D",
-    Px4SensorGps.FIX_TYPE_3D: "FIX_TYPE_3D",
-    Px4SensorGps.FIX_TYPE_RTCM_CODE_DIFFERENTIAL: "FIX_TYPE_RTCM_CODE_DIFFERENTIAL",
-    Px4SensorGps.FIX_TYPE_RTK_FLOAT: "FIX_TYPE_RTK_FLOAT",
-    Px4SensorGps.FIX_TYPE_RTK_FIXED: "FIX_TYPE_RTK_FIXED",
-    Px4SensorGps.FIX_TYPE_EXTRAPOLATED: "FIX_TYPE_EXTRAPOLATED",
-}
-
-
-def _attitude_proto(msg: Px4VehicleAttitude, drone_id: str, wall_ms: int):
-    out = sensors_pb2.SensorAttitude(
-        drone_id=drone_id,
-        unix_time_ms=wall_ms,
-        px4_timestamp_us=int(msg.timestamp),
-    )
-    # 四元數照 PX4 原樣(Hamilton,w/x/y/z),契約不做有損轉換
-    out.q.extend(float(v) for v in msg.q)
-    return out
-
-
-def _gps_proto(msg: Px4SensorGps, drone_id: str, wall_ms: int):
-    return sensors_pb2.SensorGps(
-        drone_id=drone_id,
-        unix_time_ms=wall_ms,
-        px4_timestamp_us=int(msg.timestamp),
-        latitude_deg=float(msg.latitude_deg),
-        longitude_deg=float(msg.longitude_deg),
-        altitude_msl_m=float(msg.altitude_msl_m),
-        satellites_used=int(msg.satellites_used),
-        hdop=float(msg.hdop),
-        vdop=float(msg.vdop),
-        fix_type=_FIX_TYPE_NAMES.get(int(msg.fix_type), f"FIX_TYPE_{int(msg.fix_type)}"),
-    )
-
-
-def _local_position_proto(msg: Px4VehicleLocalPosition, drone_id: str, wall_ms: int):
-    return sensors_pb2.SensorLocalPosition(
-        drone_id=drone_id,
-        unix_time_ms=wall_ms,
-        px4_timestamp_us=int(msg.timestamp),
-        x=float(msg.x),
-        y=float(msg.y),
-        z=float(msg.z),
-        vx=float(msg.vx),
-        vy=float(msg.vy),
-        vz=float(msg.vz),
-        heading=float(msg.heading),
-    )
-
+# proto 建構子與 fix_type 映射已抽至 codec.py(純函式,單測不需 ROS 2)。
 
 # key → (ROS 型別, ROS topic, MQTT 子主題, proto 組裝函式)
 # topic 名與型別對 PX4 v1.15.4 dds_topics.yaml 查證
 # (vehicle_gps_position 的型別是 px4_msgs/SensorGps,非 VehicleGpsPosition)
 _STREAMS = {
-    "attitude": (Px4VehicleAttitude, "/fmu/out/vehicle_attitude", "attitude", _attitude_proto),
-    "gps": (Px4SensorGps, "/fmu/out/vehicle_gps_position", "gps", _gps_proto),
+    "attitude": (
+        Px4VehicleAttitude,
+        "/fmu/out/vehicle_attitude",
+        "attitude",
+        codec.attitude_proto,
+    ),
+    "gps": (Px4SensorGps, "/fmu/out/vehicle_gps_position", "gps", codec.gps_proto),
     "local_position": (
         Px4VehicleLocalPosition,
         "/fmu/out/vehicle_local_position",
         "local_position",
-        _local_position_proto,
+        codec.local_position_proto,
     ),
 }
 

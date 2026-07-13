@@ -44,6 +44,19 @@ CREATE TABLE flight_events (
 );
 CREATE INDEX ON flight_events (drone_id, time DESC);
 
+-- 對 interfaces/proto/drone/v1/device.proto 的 DeviceHeartbeat(v0.5.0)
+-- 主題 fleet/{drone_id}/heartbeat,預設 30 s,QoS 1;agent 存活即發(獨立於飛行遙測),
+-- 供看板「最後上線/軟韌體版本」欄。boot_time 為 agent 開機時刻(epoch)。
+CREATE TABLE device_heartbeat (
+    time             timestamptz NOT NULL,
+    drone_id         text        NOT NULL,
+    agent_version    text,
+    firmware_version text,
+    boot_time        timestamptz,
+    uptime_s         bigint
+);
+CREATE INDEX ON device_heartbeat (drone_id, time DESC);
+
 -- 對 interfaces/proto/drone/v1/sensors.proto 的高頻感測器流(v0.4.0,S22)
 -- 主題 fleet/{drone_id}/sensors/*,5 Hz 預設,QoS 0 容失;
 -- px4_timestamp_us 是 PX4 boot-time 起算微秒(非 epoch),原樣保留供機內時序分析

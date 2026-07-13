@@ -4,3 +4,8 @@ modules:
 lint:
   use:
     - STANDARD
+breaking:
+  # 對 main 檢查破壞性變更(改欄位編號/型別、刪欄位/訊息等);
+  # proto3 純增量(加欄位/訊息/enum 值)不觸發。MAJOR 走 drone.v2 才允許。
+  use:
+    - FILE

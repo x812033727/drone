@@ -5,7 +5,14 @@ import time
 
 import pytest
 from drone.v1 import events_pb2
-from drone_agent.publisher import _to_json, flight_event, is_stale, snapshot
+from drone_agent import __version__
+from drone_agent.publisher import (
+    _to_json,
+    flight_event,
+    heartbeat,
+    is_stale,
+    snapshot,
+)
 from drone_agent.state import TelemetryState
 
 
@@ -179,3 +186,35 @@ def test_flight_event_json_wire_format() -> None:
     assert '"drone_id": "dev-1"' in payload
     assert '"unix_time_ms": "1"' in payload  # int64 依 proto3 JSON mapping 輸出為字串
     assert '"event": "EVENT_ARMED"' in payload
+
+
+# ---- 裝置心跳(DeviceHeartbeat)----
+
+
+def test_heartbeat_computes_uptime() -> None:
+    hb = heartbeat(
+        "dev-1",
+        boot_unix_ms=1_752_000_000_000,
+        now_unix_ms=1_752_000_042_500,
+        firmware_version="1.15.4",
+    )
+    assert hb.drone_id == "dev-1"
+    assert hb.unix_time_ms == 1_752_000_042_500
+    assert hb.boot_unix_ms == 1_752_000_000_000
+    assert hb.agent_version == __version__  # 預設取套件版本
+    assert hb.firmware_version == "1.15.4"
+    assert hb.uptime_s == 42  # 42500 ms → 整數秒無條件捨去
+
+
+def test_heartbeat_uptime_never_negative() -> None:
+    # 時鐘回跳/boot 晚於當下:uptime 夾在 0,不出現負值
+    hb = heartbeat("dev-1", boot_unix_ms=1_000, now_unix_ms=500)
+    assert hb.uptime_s == 0
+    assert hb.firmware_version == ""  # 未給則留空
+
+
+def test_heartbeat_json_wire_format() -> None:
+    payload = _to_json(heartbeat("dev-1", boot_unix_ms=0, now_unix_ms=60_000))
+    assert "\n" not in payload
+    assert '"drone_id": "dev-1"' in payload
+    assert '"uptime_s": "60"' in payload  # int64 依 proto3 JSON mapping 輸出為字串
