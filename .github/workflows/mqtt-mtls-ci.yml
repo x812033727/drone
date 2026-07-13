@@ -1,0 +1,30 @@
+name: mqtt-mtls-ci
+
+# MQTT mTLS + per-device ACL 端到端守門:起 mosquitto TLS 容器 + PKI 憑證,
+# 斷言連線互驗與機身主題隔離。路徑觸發(runner 有 docker)。
+on:
+  push:
+    branches: [main]
+    paths:
+      - "cloud/deploy/mqtt-tls/**"
+      - "cloud/pki/**"
+      - ".github/workflows/mqtt-mtls-ci.yml"
+  pull_request:
+    paths:
+      - "cloud/deploy/mqtt-tls/**"
+      - "cloud/pki/**"
+      - ".github/workflows/mqtt-mtls-ci.yml"
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+      - name: 安裝 paho-mqtt
+        run: pip install "paho-mqtt>=2,<3"
+      - name: mTLS + ACL 端到端驗證
+        run: bash cloud/deploy/mqtt-tls/verify_mtls.sh

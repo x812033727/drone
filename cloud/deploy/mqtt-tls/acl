@@ -1,0 +1,15 @@
+# mosquitto per-device ACL(mTLS username = cert CN = 機身序號)。
+# %u 於執行期代換為連線者的 username(= cert CN)。預設拒絕(acl_file 生效)。
+
+# 裝置:只能發自己的遙測/進度/事件/感測,只能訂自己的下行 cmd。
+# 任一裝置無法讀寫其他裝置的主題(機身序號隔離)。
+pattern write fleet/%u/telemetry
+pattern write fleet/%u/mission/progress
+pattern write fleet/%u/events
+pattern write fleet/%u/sensors/#
+pattern read fleet/%u/cmd/#
+
+# 後端服務帳號(cert CN=backend):全機隊讀 + 下行 cmd 寫。
+# ingest / fleet-svc / mission-svc 消費者用此身分連線。
+user backend
+topic readwrite fleet/#
