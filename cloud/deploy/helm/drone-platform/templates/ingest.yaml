@@ -40,15 +40,28 @@ spec:
               value: {{ include "drone.fullname" . }}-mosquitto
             - name: MQTT_PORT
               value: {{ include "drone.mqttPort" . | quote }}
+            - name: HEALTH_PORT
+              value: {{ .Values.ingest.healthPort | quote }}
             {{- include "drone.mqttTlsEnv" . | nindent 12 }}
-          # ingest 無 HTTP 埠(純 MQTT→PG 消費者)。以 exec 檢查主程序(PID 1)仍為
-          # ingest.main 作為 liveness;python:slim 無 procps/pgrep,故改讀 /proc/1/cmdline。
-          # TODO(G21):ingest 補 /healthz 後改為 httpGet,以偵測 hung/deadlock。
+          ports:
+            - name: health
+              containerPort: {{ .Values.ingest.healthPort }}
+          # G21:ingest 補 stdlib health 埠(/livez /healthz),改用真 httpGet 探針。
+          # liveness 打 /livez(程序活著即 200,不因 MQTT/DB 短暫斷線觸發重啟);
+          # readiness 打 /healthz(MQTT+DB pool 皆就緒才 200,否則 503 → 不導流)。
           livenessProbe:
-            exec:
-              command: ["sh", "-c", "grep -q ingest.main /proc/1/cmdline"]
+            httpGet:
+              path: /livez
+              port: health
             initialDelaySeconds: 20
             periodSeconds: 20
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: health
+            initialDelaySeconds: 5
+            periodSeconds: 10
             failureThreshold: 3
           resources:
             {{- toYaml .Values.ingest.resources | nindent 12 }}

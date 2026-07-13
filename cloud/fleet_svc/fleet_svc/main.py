@@ -15,7 +15,7 @@ from contextlib import asynccontextmanager
 from uuid import UUID
 
 import asyncpg
-from fastapi import Depends, FastAPI, HTTPException, Query, Request
+from fastapi import Depends, FastAPI, HTTPException, Query, Request, Response
 from fastapi.responses import StreamingResponse
 
 from fleet_svc import metrics, repo
@@ -97,6 +97,19 @@ def _pool(app: FastAPI) -> asyncpg.Pool:
     return app.state.pool
 
 
+# 分頁(G12):list 端點加 limit/offset,預設上限 100(避免回全表);
+# 向後相容——回應本體仍是既有陣列,total/limit/offset 走回應標頭(X-Total-Count 等),
+# 不改 response_model、不破壞既有測試/煙霧。
+PAGE_LIMIT_DEFAULT = 100
+PAGE_LIMIT_MAX = 1000
+
+
+def _set_page_headers(response: Response, total: int, limit: int, offset: int) -> None:
+    response.headers["X-Total-Count"] = str(total)
+    response.headers["X-Limit"] = str(limit)
+    response.headers["X-Offset"] = str(offset)
+
+
 # ---- health ----
 @app.get("/healthz")
 async def healthz() -> dict:
@@ -113,9 +126,16 @@ async def create_fleet(body: FleetCreate) -> Fleet:
 
 
 @app.get("/api/v1/fleets", response_model=list[Fleet], dependencies=[VIEWER])
-async def list_fleets() -> list[Fleet]:
+async def list_fleets(
+    response: Response,
+    limit: int = Query(default=PAGE_LIMIT_DEFAULT, ge=1, le=PAGE_LIMIT_MAX),
+    offset: int = Query(default=0, ge=0),
+) -> list[Fleet]:
     async with _pool(app).acquire() as conn:
-        return await repo.list_fleets(conn)
+        total = await repo.count_fleets(conn)
+        items = await repo.list_fleets(conn, limit=limit, offset=offset)
+    _set_page_headers(response, total, limit, offset)
+    return items
 
 
 @app.get("/api/v1/fleets/{fleet_id}", response_model=Fleet, dependencies=[VIEWER])
@@ -138,9 +158,17 @@ async def create_device(body: DeviceCreate) -> Device:
 
 
 @app.get("/api/v1/devices", response_model=list[Device], dependencies=[VIEWER])
-async def list_devices(fleet_id: UUID | None = Query(default=None)) -> list[Device]:
+async def list_devices(
+    response: Response,
+    fleet_id: UUID | None = Query(default=None),
+    limit: int = Query(default=PAGE_LIMIT_DEFAULT, ge=1, le=PAGE_LIMIT_MAX),
+    offset: int = Query(default=0, ge=0),
+) -> list[Device]:
     async with _pool(app).acquire() as conn:
-        return await repo.list_devices(conn, fleet_id)
+        total = await repo.count_devices(conn, fleet_id)
+        items = await repo.list_devices(conn, fleet_id, limit=limit, offset=offset)
+    _set_page_headers(response, total, limit, offset)
+    return items
 
 
 @app.get("/api/v1/devices/{device_id}", response_model=Device, dependencies=[VIEWER])

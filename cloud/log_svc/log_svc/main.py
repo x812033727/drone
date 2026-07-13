@@ -22,7 +22,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import asyncpg
-from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, UploadFile
+from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Query, UploadFile
 
 from log_svc import metrics
 from log_svc.auth import require_role
@@ -35,7 +35,8 @@ ULOG_DIR = Path(os.environ.get("ULOG_DIR", "/data/ulog"))
 PG_CONNECT_ATTEMPTS = 30  # 啟動時等 DB 就緒:最多 30 次、每 2 秒(同 ingest)
 PG_CONNECT_RETRY_S = 2
 UPLOAD_CHUNK = 1 << 20  # 上傳串流寫檔的分塊(1 MiB),大檔不佔記憶體
-LIST_LIMIT = 100
+LIST_LIMIT = 100  # 預設分頁上限(G12);可用 limit 查詢參數下修,offset 翻頁
+LIST_LIMIT_MAX = 1000
 
 INSERT_SQL = (
     "INSERT INTO flight_logs "
@@ -44,8 +45,9 @@ INSERT_SQL = (
 )
 LIST_SQL = (
     "SELECT time, filename, size_bytes, report_ok, alerts FROM flight_logs "
-    f"WHERE drone_id = $1 ORDER BY time DESC LIMIT {LIST_LIMIT}"
+    "WHERE drone_id = $1 ORDER BY time DESC LIMIT $2 OFFSET $3"
 )
+COUNT_SQL = "SELECT count(*) FROM flight_logs WHERE drone_id = $1"
 
 
 def validate_drone_id(drone_id: str) -> None:
@@ -134,11 +136,20 @@ async def upload_log(drone_id: str, file: UploadFile, background_tasks: Backgrou
 
 
 @app.get("/api/v1/logs/{drone_id}", dependencies=[VIEWER])
-async def list_logs(drone_id: str) -> dict:
+async def list_logs(
+    drone_id: str,
+    limit: int = Query(default=LIST_LIMIT, ge=1, le=LIST_LIMIT_MAX),
+    offset: int = Query(default=0, ge=0),
+) -> dict:
     validate_drone_id(drone_id)
-    rows = await app.state.pool.fetch(LIST_SQL, drone_id)
+    # 向後相容:回應本體沿用既有 {drone_id, logs},僅新增 total/limit/offset 欄位
+    total = await app.state.pool.fetchval(COUNT_SQL, drone_id)
+    rows = await app.state.pool.fetch(LIST_SQL, drone_id, limit, offset)
     return {
         "drone_id": drone_id,
+        "total": total,
+        "limit": limit,
+        "offset": offset,
         "logs": [
             {
                 "time": row["time"].isoformat(),

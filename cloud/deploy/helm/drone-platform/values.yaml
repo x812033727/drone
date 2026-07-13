@@ -68,6 +68,7 @@ missionsvc:
 
 ingest:
   replicas: 1
+  healthPort: 8081  # G21:stdlib health 埠(/livez liveness、/healthz readiness)
   resources:
     requests: { cpu: 100m, memory: 128Mi }
     limits: { cpu: "1", memory: 512Mi }
