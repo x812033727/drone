@@ -13,7 +13,7 @@ from contextlib import asynccontextmanager
 from uuid import UUID
 
 import asyncpg
-from fastapi import Depends, FastAPI, HTTPException, Query
+from fastapi import Depends, FastAPI, HTTPException, Query, Response
 
 from mission_svc import dispatch, metrics, repo
 from mission_svc.auth import AUTH_ENABLED, require_role
@@ -83,6 +83,18 @@ def _pool(app: FastAPI) -> asyncpg.Pool:
     return app.state.pool
 
 
+# 分頁(G12):list 端點加 limit/offset,預設上限 100;total/limit/offset 走回應標頭
+# (X-Total-Count 等),回應本體仍是既有陣列——向後相容,不動 response_model。
+PAGE_LIMIT_DEFAULT = 100
+PAGE_LIMIT_MAX = 1000
+
+
+def _set_page_headers(response: Response, total: int, limit: int, offset: int) -> None:
+    response.headers["X-Total-Count"] = str(total)
+    response.headers["X-Limit"] = str(limit)
+    response.headers["X-Offset"] = str(offset)
+
+
 @app.get("/healthz")
 async def healthz() -> dict:
     async with _pool(app).acquire() as conn:
@@ -98,9 +110,16 @@ async def create_route(body: RouteCreate) -> Route:
 
 
 @app.get("/api/v1/routes", response_model=list[Route], dependencies=[VIEWER])
-async def list_routes() -> list[Route]:
+async def list_routes(
+    response: Response,
+    limit: int = Query(default=PAGE_LIMIT_DEFAULT, ge=1, le=PAGE_LIMIT_MAX),
+    offset: int = Query(default=0, ge=0),
+) -> list[Route]:
     async with _pool(app).acquire() as conn:
-        return await repo.list_routes(conn)
+        total = await repo.count_routes(conn)
+        items = await repo.list_routes(conn, limit=limit, offset=offset)
+    _set_page_headers(response, total, limit, offset)
+    return items
 
 
 @app.get("/api/v1/routes/{route_id}", response_model=Route, dependencies=[VIEWER])
@@ -123,9 +142,17 @@ async def create_mission(body: MissionCreate) -> Mission:
 
 
 @app.get("/api/v1/missions", response_model=list[Mission], dependencies=[VIEWER])
-async def list_missions(drone_id: str | None = Query(default=None)) -> list[Mission]:
+async def list_missions(
+    response: Response,
+    drone_id: str | None = Query(default=None),
+    limit: int = Query(default=PAGE_LIMIT_DEFAULT, ge=1, le=PAGE_LIMIT_MAX),
+    offset: int = Query(default=0, ge=0),
+) -> list[Mission]:
     async with _pool(app).acquire() as conn:
-        return await repo.list_missions(conn, drone_id)
+        total = await repo.count_missions(conn, drone_id)
+        items = await repo.list_missions(conn, drone_id, limit=limit, offset=offset)
+    _set_page_headers(response, total, limit, offset)
+    return items
 
 
 @app.get("/api/v1/missions/{mission_pk}", response_model=Mission, dependencies=[VIEWER])

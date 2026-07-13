@@ -48,9 +48,19 @@ async def create_route(conn: asyncpg.Connection, body: RouteCreate) -> Route:
     return _route(r)
 
 
-async def list_routes(conn: asyncpg.Connection) -> list[Route]:
-    rows = await conn.fetch(f"SELECT {_ROUTE_COLS} FROM mission.route ORDER BY created_at DESC")
+async def list_routes(
+    conn: asyncpg.Connection, limit: int = 100, offset: int = 0
+) -> list[Route]:
+    rows = await conn.fetch(
+        f"SELECT {_ROUTE_COLS} FROM mission.route ORDER BY created_at DESC LIMIT $1 OFFSET $2",
+        limit,
+        offset,
+    )
     return [_route(r) for r in rows]
+
+
+async def count_routes(conn: asyncpg.Connection) -> int:
+    return await conn.fetchval("SELECT count(*) FROM mission.route")
 
 
 async def get_route(conn: asyncpg.Connection, route_id: UUID) -> Route | None:
@@ -79,18 +89,33 @@ async def create_mission(conn: asyncpg.Connection, body: MissionCreate) -> Missi
     return _mission(r)
 
 
-async def list_missions(conn: asyncpg.Connection, drone_id: str | None = None) -> list[Mission]:
+async def list_missions(
+    conn: asyncpg.Connection, drone_id: str | None = None, limit: int = 100, offset: int = 0
+) -> list[Mission]:
     if drone_id is not None:
         rows = await conn.fetch(
             f"SELECT {_MISSION_COLS} FROM mission.mission WHERE drone_id = $1 "
-            "ORDER BY created_at DESC",
+            "ORDER BY created_at DESC LIMIT $2 OFFSET $3",
             drone_id,
+            limit,
+            offset,
         )
     else:
         rows = await conn.fetch(
-            f"SELECT {_MISSION_COLS} FROM mission.mission ORDER BY created_at DESC"
+            f"SELECT {_MISSION_COLS} FROM mission.mission ORDER BY created_at DESC "
+            "LIMIT $1 OFFSET $2",
+            limit,
+            offset,
         )
     return [_mission(r) for r in rows]
+
+
+async def count_missions(conn: asyncpg.Connection, drone_id: str | None = None) -> int:
+    if drone_id is not None:
+        return await conn.fetchval(
+            "SELECT count(*) FROM mission.mission WHERE drone_id = $1", drone_id
+        )
+    return await conn.fetchval("SELECT count(*) FROM mission.mission")
 
 
 async def get_mission(conn: asyncpg.Connection, mission_pk: UUID) -> Mission | None:

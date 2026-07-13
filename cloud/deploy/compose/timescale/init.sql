@@ -117,3 +117,54 @@ CREATE TABLE flight_logs (
     alerts         text                    -- 異常規則條目(「⚠ 異常提示」逐條換行相接;無異常 NULL)
 );
 CREATE INDEX ON flight_logs (drone_id, time DESC);
+
+-- ============================================================================
+-- 資料保留 / 壓縮政策(G20)—— 只對高頻遙測/感測器 hypertable。
+--
+-- 本檔僅於「首次建庫」(空資料目錄)由 docker-entrypoint-initdb.d 執行一次;
+-- 政策函式一律帶 if_not_exists => true,重跑亦不報錯(冪等)。
+--
+-- 保留 90 天(RETENTION_DAYS):超過 90 天的 chunk 由背景 job 自動 drop。
+-- 壓縮 7 天後(COMPRESS_AFTER):較舊 chunk 轉列存壓縮省空間,查詢仍透明可讀。
+-- 兩者皆為背景排程,不影響近期(剛落庫)資料——不會刪/壓當下寫入的列,
+-- 故不影響 cloud-smoke 的落庫斷言。天數為 Phase 0 合理預設,正式部署可依合約調整。
+--
+-- 非 hypertable 的表(mission_progress / flight_events / device_heartbeat / flight_logs)
+-- 量小,Phase 0 暫不設保留;日後量大再轉 hypertable 並比照設政策。
+-- ============================================================================
+
+-- telemetry(1 Hz 摘要)
+ALTER TABLE telemetry SET (
+    timescaledb.compress,
+    timescaledb.compress_segmentby = 'drone_id',
+    timescaledb.compress_orderby = 'time DESC'
+);
+SELECT add_compression_policy('telemetry', INTERVAL '7 days', if_not_exists => true);
+SELECT add_retention_policy('telemetry', INTERVAL '90 days', if_not_exists => true);
+
+-- sensor_attitude(高頻,5 Hz)
+ALTER TABLE sensor_attitude SET (
+    timescaledb.compress,
+    timescaledb.compress_segmentby = 'drone_id',
+    timescaledb.compress_orderby = 'time DESC'
+);
+SELECT add_compression_policy('sensor_attitude', INTERVAL '7 days', if_not_exists => true);
+SELECT add_retention_policy('sensor_attitude', INTERVAL '90 days', if_not_exists => true);
+
+-- sensor_gps(高頻,5 Hz)
+ALTER TABLE sensor_gps SET (
+    timescaledb.compress,
+    timescaledb.compress_segmentby = 'drone_id',
+    timescaledb.compress_orderby = 'time DESC'
+);
+SELECT add_compression_policy('sensor_gps', INTERVAL '7 days', if_not_exists => true);
+SELECT add_retention_policy('sensor_gps', INTERVAL '90 days', if_not_exists => true);
+
+-- sensor_local_position(高頻,5 Hz)
+ALTER TABLE sensor_local_position SET (
+    timescaledb.compress,
+    timescaledb.compress_segmentby = 'drone_id',
+    timescaledb.compress_orderby = 'time DESC'
+);
+SELECT add_compression_policy('sensor_local_position', INTERVAL '7 days', if_not_exists => true);
+SELECT add_retention_policy('sensor_local_position', INTERVAL '90 days', if_not_exists => true);

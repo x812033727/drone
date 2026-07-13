@@ -55,6 +55,12 @@ messages_inflight = Gauge(
     "目前處理中的入站訊息數(handle() 進出各 ±1)",
     registry=registry,
 )
+dlq_total = Counter(
+    "ingest_dlq_total",
+    "DB 寫入重試耗盡後落入死信(DLQ)的訊息數(依主題末段)",
+    ["route"],
+    registry=registry,
+)
 
 
 def start_metrics_server() -> None:

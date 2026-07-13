@@ -75,9 +75,19 @@ async def create_fleet(conn: asyncpg.Connection, body: FleetCreate) -> Fleet:
     return _fleet(r)
 
 
-async def list_fleets(conn: asyncpg.Connection) -> list[Fleet]:
-    rows = await conn.fetch(f"SELECT {_FLEET_COLS} FROM fleet.fleet ORDER BY created_at DESC")
+async def list_fleets(
+    conn: asyncpg.Connection, limit: int = 100, offset: int = 0
+) -> list[Fleet]:
+    rows = await conn.fetch(
+        f"SELECT {_FLEET_COLS} FROM fleet.fleet ORDER BY created_at DESC LIMIT $1 OFFSET $2",
+        limit,
+        offset,
+    )
     return [_fleet(r) for r in rows]
+
+
+async def count_fleets(conn: asyncpg.Connection) -> int:
+    return await conn.fetchval("SELECT count(*) FROM fleet.fleet")
 
 
 async def get_fleet(conn: asyncpg.Connection, fleet_id: UUID) -> Fleet | None:
@@ -99,18 +109,31 @@ async def create_device(conn: asyncpg.Connection, body: DeviceCreate) -> Device:
 
 
 async def list_devices(
-    conn: asyncpg.Connection, fleet_id: UUID | None = None
+    conn: asyncpg.Connection, fleet_id: UUID | None = None, limit: int = 100, offset: int = 0
 ) -> list[Device]:
     if fleet_id is not None:
         rows = await conn.fetch(
-            f"SELECT {_DEVICE_COLS} FROM fleet.device WHERE fleet_id = $1 ORDER BY created_at DESC",
+            f"SELECT {_DEVICE_COLS} FROM fleet.device WHERE fleet_id = $1 "
+            "ORDER BY created_at DESC LIMIT $2 OFFSET $3",
             fleet_id,
+            limit,
+            offset,
         )
     else:
         rows = await conn.fetch(
-            f"SELECT {_DEVICE_COLS} FROM fleet.device ORDER BY created_at DESC"
+            f"SELECT {_DEVICE_COLS} FROM fleet.device ORDER BY created_at DESC LIMIT $1 OFFSET $2",
+            limit,
+            offset,
         )
     return [_device(r) for r in rows]
+
+
+async def count_devices(conn: asyncpg.Connection, fleet_id: UUID | None = None) -> int:
+    if fleet_id is not None:
+        return await conn.fetchval(
+            "SELECT count(*) FROM fleet.device WHERE fleet_id = $1", fleet_id
+        )
+    return await conn.fetchval("SELECT count(*) FROM fleet.device")
 
 
 async def get_device(conn: asyncpg.Connection, device_id: UUID) -> Device | None:

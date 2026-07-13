@@ -66,11 +66,27 @@ services:
       MQTT_HOST: mosquitto
       MQTT_PORT: "1883"
       PG_DSN: postgresql://drone:${PG_PASSWORD:-dronedev}@timescaledb:5432/drone
+      HEALTH_PORT: "8081"
     depends_on:
       mosquitto:
         condition: service_healthy
       timescaledb:
         condition: service_healthy
+    healthcheck:
+      # G21:base image 無 curl,用 stdlib urllib 打 health 埠。
+      # 用 /livez(health server 一啟動即 200,先於 DB 連線)避免 --wait 卡 readiness;
+      # /healthz(MQTT+DB 就緒)語意留給 K8s readiness 探針。
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://localhost:8081/livez', timeout=3)",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
     restart: unless-stopped
 
   logsvc:
