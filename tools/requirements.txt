@@ -1,10 +1,10 @@
-mavsdk>=2.0
-pyulog>=1.0
-numpy>=1.24
+mavsdk>=3.15.3
+pyulog>=1.2.3
+numpy>=2.2.6
 
 # publish_fake_telemetry.py
-paho-mqtt>=2.0,<3
-protobuf>=5.26,<8
+paho-mqtt>=2.1.0,<3
+protobuf>=7.35.1,<8
 
 # dispatch_mission.py(另需契約生成碼:pip install -e ../interfaces/proto/gen/python)
-aiomqtt>=2,<3
+aiomqtt>=2.5.1,<3
