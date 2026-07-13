@@ -338,6 +338,13 @@ async def list_all_status(
     return [_status(r) for r in rows]
 
 
+async def list_org_serials(conn: asyncpg.Connection, org: str) -> set[str]:
+    """回傳某租戶的所有裝置 serial(=遙測 drone_id)。供 SSE 串流依 org 過濾(G11b):
+    遙測 hub 以 drone_id 為鍵,非 admin 訂閱者只放行本 org 裝置的即時遙測。"""
+    rows = await conn.fetch("SELECT serial FROM fleet.device WHERE org_id = $1", org)
+    return {r["serial"] for r in rows}
+
+
 # ---- audit(G14 稽核查詢;寫入在 fleet_svc.audit) ----
 _AUDIT_COLS = "id, at, actor, role, action, resource_type, resource_id, details, source_ip"
 
