@@ -31,8 +31,9 @@ def _non_blank(v: str, field: str) -> str:
 
 # ---- fleet ----
 class FleetCreate(BaseModel):
+    """建立機隊。org_id 不在此——租戶由呼叫者 JWT claim 決定(不採信 client 傳入)。"""
+
     name: str
-    org_id: str | None = None
 
     @field_validator("name")
     @classmethod
@@ -43,7 +44,7 @@ class FleetCreate(BaseModel):
 class Fleet(BaseModel):
     id: UUID
     name: str
-    org_id: str | None = None
+    org_id: str  # 租戶邊界(G11):NOT NULL,建立時取自呼叫者 claim
     created_at: datetime
 
 
@@ -74,6 +75,7 @@ class Device(BaseModel):
     serial: str
     name: str | None = None
     fleet_id: UUID | None = None
+    org_id: str  # 租戶邊界(G11):NOT NULL,建立時取自呼叫者 claim
     model: str | None = None
     status: DeviceStatus
     cert_fingerprint: str | None = None

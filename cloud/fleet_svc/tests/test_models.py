@@ -52,6 +52,7 @@ def test_device_row_mapping_from_dict():
         "serial": "SN-9",
         "name": None,
         "fleet_id": None,
+        "org_id": "acme",
         "model": "PA-1",
         "status": "active",
         "cert_fingerprint": None,
@@ -61,3 +62,4 @@ def test_device_row_mapping_from_dict():
     d = Device.model_validate(row)
     assert d.status is DeviceStatus.active
     assert d.model == "PA-1"
+    assert d.org_id == "acme"

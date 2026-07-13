@@ -16,7 +16,13 @@ import asyncpg
 from fastapi import Depends, FastAPI, HTTPException, Query, Request, Response
 
 from mission_svc import audit, dispatch, metrics, repo
-from mission_svc.auth import AUTH_ENABLED, require_role
+from mission_svc.auth import (
+    AUTH_ENABLED,
+    Principal,
+    read_org,
+    require_principal,
+    require_role,
+)
 from mission_svc.consumer import run_consumer
 from mission_svc.migrate import apply_migrations
 from mission_svc.models import (
@@ -76,9 +82,11 @@ if not AUTH_ENABLED:
     log.warning("⚠ JWT 認證未啟用(dev 模式,全放行)——正式部署須設 JWT_SECRET 或 JWT_JWKS_URL")
 
 # RBAC:讀取需 viewer,派遣/控制/建立需 operator(healthz 不設);審計稽核檢視需 admin。
-# 變更端點以參數注入 claims(= Depends 值)供審計取 actor,FastAPI 對同一 Depends 快取。
-VIEWER = Depends(require_role("viewer"))
-OPERATOR = Depends(require_role("operator"))
+# 依賴回 Principal(含租戶 org),端點據此做多租戶隔離(G11)並供審計取 actor
+# (claims 在 principal.claims)。注入 Principal 不增加 OpenAPI 參數;同一 Depends 快取。
+VIEWER = Depends(require_principal("viewer"))
+OPERATOR = Depends(require_principal("operator"))
+# 稽核端點 admin-only 且全域(不做 org 過濾),沿用回 claims 的 require_role 閘。
 ADMIN = Depends(require_role("admin"))
 
 
@@ -107,47 +115,58 @@ async def healthz() -> dict:
 
 # ---- routes ----
 @app.post("/api/v1/routes", response_model=Route, status_code=201)
-async def create_route(body: RouteCreate, request: Request, claims: dict = OPERATOR) -> Route:
+async def create_route(
+    body: RouteCreate, request: Request, principal: Principal = OPERATOR
+) -> Route:
+    # 租戶邊界:org 取自呼叫者 claim,不採信 client。
     async with _pool(app).acquire() as conn:
-        route = await repo.create_route(conn, body)
+        route = await repo.create_route(conn, body, principal.org)
         await audit.record(
-            conn, claims=claims, action="create", resource_type="route", resource_id=route.id,
+            conn, claims=principal.claims, action="create", resource_type="route",
+            resource_id=route.id,
             details={"name": route.name, "waypoints": len(route.waypoints)}, request=request,
         )
     return route
 
 
-@app.get("/api/v1/routes", response_model=list[Route], dependencies=[VIEWER])
+@app.get("/api/v1/routes", response_model=list[Route])
 async def list_routes(
     response: Response,
+    org: str | None = Query(default=None, description="僅 admin:限定單一租戶(略則看全部)"),
     limit: int = Query(default=PAGE_LIMIT_DEFAULT, ge=1, le=PAGE_LIMIT_MAX),
     offset: int = Query(default=0, ge=0),
+    principal: Principal = VIEWER,
 ) -> list[Route]:
+    scope = read_org(principal, org)
     async with _pool(app).acquire() as conn:
-        total = await repo.count_routes(conn)
-        items = await repo.list_routes(conn, limit=limit, offset=offset)
+        total = await repo.count_routes(conn, scope)
+        items = await repo.list_routes(conn, org=scope, limit=limit, offset=offset)
     _set_page_headers(response, total, limit, offset)
     return items
 
 
-@app.get("/api/v1/routes/{route_id}", response_model=Route, dependencies=[VIEWER])
-async def get_route(route_id: UUID) -> Route:
+@app.get("/api/v1/routes/{route_id}", response_model=Route)
+async def get_route(route_id: UUID, principal: Principal = VIEWER) -> Route:
     async with _pool(app).acquire() as conn:
-        r = await repo.get_route(conn, route_id)
-    if r is None:
+        r = await repo.get_route(conn, route_id, read_org(principal))
+    if r is None:  # 跨 org 亦回 404
         raise HTTPException(status_code=404, detail="route 不存在")
     return r
 
 
 # ---- missions ----
 @app.post("/api/v1/missions", response_model=Mission, status_code=201)
-async def create_mission(body: MissionCreate, request: Request, claims: dict = OPERATOR) -> Mission:
+async def create_mission(
+    body: MissionCreate, request: Request, principal: Principal = OPERATOR
+) -> Mission:
+    # 租戶邊界:org 取自呼叫者 claim;route 亦以本 org 查找(他 org route → 404)。
     async with _pool(app).acquire() as conn:
-        m = await repo.create_mission(conn, body)
+        m = await repo.create_mission(conn, body, principal.org)
         if m is None:
             raise HTTPException(status_code=404, detail="route 不存在")
         await audit.record(
-            conn, claims=claims, action="create", resource_type="mission", resource_id=m.id,
+            conn, claims=principal.claims, action="create", resource_type="mission",
+            resource_id=m.id,
             details={"mission_id": m.mission_id, "drone_id": m.drone_id,
                      "route_id": str(m.route_id) if m.route_id else None},
             request=request,
@@ -155,36 +174,40 @@ async def create_mission(body: MissionCreate, request: Request, claims: dict = O
     return m
 
 
-@app.get("/api/v1/missions", response_model=list[Mission], dependencies=[VIEWER])
+@app.get("/api/v1/missions", response_model=list[Mission])
 async def list_missions(
     response: Response,
     drone_id: str | None = Query(default=None),
+    org: str | None = Query(default=None, description="僅 admin:限定單一租戶(略則看全部)"),
     limit: int = Query(default=PAGE_LIMIT_DEFAULT, ge=1, le=PAGE_LIMIT_MAX),
     offset: int = Query(default=0, ge=0),
+    principal: Principal = VIEWER,
 ) -> list[Mission]:
+    scope = read_org(principal, org)
     async with _pool(app).acquire() as conn:
-        total = await repo.count_missions(conn, drone_id)
-        items = await repo.list_missions(conn, drone_id, limit=limit, offset=offset)
+        total = await repo.count_missions(conn, drone_id, scope)
+        items = await repo.list_missions(conn, drone_id, org=scope, limit=limit, offset=offset)
     _set_page_headers(response, total, limit, offset)
     return items
 
 
-@app.get("/api/v1/missions/{mission_pk}", response_model=Mission, dependencies=[VIEWER])
-async def get_mission(mission_pk: UUID) -> Mission:
+@app.get("/api/v1/missions/{mission_pk}", response_model=Mission)
+async def get_mission(mission_pk: UUID, principal: Principal = VIEWER) -> Mission:
     async with _pool(app).acquire() as conn:
-        m = await repo.get_mission(conn, mission_pk)
-    if m is None:
+        m = await repo.get_mission(conn, mission_pk, read_org(principal))
+    if m is None:  # 跨 org 亦回 404
         raise HTTPException(status_code=404, detail="mission 不存在")
     return m
 
 
 @app.post("/api/v1/missions/{mission_pk}/dispatch", response_model=Mission)
 async def dispatch_mission(
-    mission_pk: UUID, request: Request, claims: dict = OPERATOR
+    mission_pk: UUID, request: Request, principal: Principal = OPERATOR
 ) -> Mission:
+    scope = read_org(principal)
     async with _pool(app).acquire() as conn:
-        m = await repo.get_mission(conn, mission_pk)
-        if m is None:
+        m = await repo.get_mission(conn, mission_pk, scope)
+        if m is None:  # 跨 org 亦回 404(不得派遣他 org 任務)
             raise HTTPException(status_code=404, detail="mission 不存在")
         if m.status != "created":
             raise HTTPException(status_code=409, detail=f"任務已派遣或進行中(status={m.status})")
@@ -194,24 +217,29 @@ async def dispatch_mission(
         await dispatch.publish_mission_plan(MQTT_HOST, MQTT_PORT, m.drone_id, plan_json)
         await repo.mark_dispatched(conn, mission_pk)
         await audit.record(
-            conn, claims=claims, action="dispatch", resource_type="mission", resource_id=mission_pk,
+            conn, claims=principal.claims, action="dispatch", resource_type="mission",
+            resource_id=mission_pk,
             details={"mission_id": m.mission_id, "drone_id": m.drone_id}, request=request,
         )
-        return await repo.get_mission(conn, mission_pk)  # type: ignore[return-value]
+        return await repo.get_mission(conn, mission_pk, scope)  # type: ignore[return-value]
 
 
 @app.post("/api/v1/missions/{mission_pk}/command", response_model=Mission)
 async def command_mission(
-    mission_pk: UUID, body: MissionCommandRequest, request: Request, claims: dict = OPERATOR
+    mission_pk: UUID,
+    body: MissionCommandRequest,
+    request: Request,
+    principal: Principal = OPERATOR,
 ) -> Mission:
     async with _pool(app).acquire() as conn:
-        m = await repo.get_mission(conn, mission_pk)
-        if m is None:
+        m = await repo.get_mission(conn, mission_pk, read_org(principal))
+        if m is None:  # 跨 org 亦回 404(不得控制他 org 任務)
             raise HTTPException(status_code=404, detail="mission 不存在")
         cmd_json = dispatch.build_mission_command_json(m.mission_id, body.command.value)
         await dispatch.publish_mission_command(MQTT_HOST, MQTT_PORT, m.drone_id, cmd_json)
         await audit.record(
-            conn, claims=claims, action="command", resource_type="mission", resource_id=mission_pk,
+            conn, claims=principal.claims, action="command", resource_type="mission",
+            resource_id=mission_pk,
             details={"mission_id": m.mission_id, "drone_id": m.drone_id,
                      "command": body.command.value},
             request=request,

@@ -153,6 +153,10 @@
             ],
             "title": "Name"
           },
+          "org_id": {
+            "title": "Org Id",
+            "type": "string"
+          },
           "serial": {
             "title": "Serial",
             "type": "string"
@@ -164,6 +168,7 @@
         "required": [
           "id",
           "serial",
+          "org_id",
           "status",
           "created_at"
         ],
@@ -565,41 +570,25 @@
             "type": "string"
           },
           "org_id": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Org Id"
+            "title": "Org Id",
+            "type": "string"
           }
         },
         "required": [
           "id",
           "name",
+          "org_id",
           "created_at"
         ],
         "title": "Fleet",
         "type": "object"
       },
       "FleetCreate": {
+        "description": "建立機隊。org_id 不在此——租戶由呼叫者 JWT claim 決定(不採信 client 傳入)。",
         "properties": {
           "name": {
             "title": "Name",
             "type": "string"
-          },
-          "org_id": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Org Id"
           }
         },
         "required": [
@@ -772,6 +761,24 @@
                 }
               ],
               "title": "Fleet Id"
+            }
+          },
+          {
+            "description": "僅 admin:限定單一租戶(略則看全部)",
+            "in": "query",
+            "name": "org",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "僅 admin:限定單一租戶(略則看全部)",
+              "title": "Org"
             }
           },
           {
@@ -1226,6 +1233,24 @@
       "get": {
         "operationId": "list_fleets_api_v1_fleets_get",
         "parameters": [
+          {
+            "description": "僅 admin:限定單一租戶(略則看全部)",
+            "in": "query",
+            "name": "org",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "僅 admin:限定單一租戶(略則看全部)",
+              "title": "Org"
+            }
+          },
           {
             "in": "query",
             "name": "limit",

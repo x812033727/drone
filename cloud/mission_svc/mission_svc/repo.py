@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from typing import Any
 from uuid import UUID, uuid4
 
 import asyncpg
@@ -12,9 +13,15 @@ from mission_svc.models import AuditEntry, Mission, MissionCreate, Route, RouteC
 
 _ROUTE_COLS = "id, name, org_id, waypoints, rtl_after_last, created_at"
 _MISSION_COLS = (
-    "id, mission_id, route_id, drone_id, status, waypoints, rtl_after_last, "
+    "id, mission_id, route_id, org_id, drone_id, status, waypoints, rtl_after_last, "
     "current_item, total_items, dispatched_at, finished_at, created_at"
 )
+
+
+# ---- 租戶(G11)過濾小工具 ----
+# org 語義:None = 不加 org 過濾(admin 跨 org / 內部呼叫);字串 = WHERE org_id = 該值。
+def _where(conds: list[str]) -> str:
+    return (" WHERE " + " AND ".join(conds)) if conds else ""
 
 
 def new_mission_id() -> str:
@@ -35,13 +42,14 @@ def _mission(r: asyncpg.Record) -> Mission:
 
 
 # ---- route ----
-async def create_route(conn: asyncpg.Connection, body: RouteCreate) -> Route:
+async def create_route(conn: asyncpg.Connection, body: RouteCreate, org: str) -> Route:
+    """建立航線。org 一律取自呼叫者 claim(不採信 client),寫入為租戶邊界。"""
     wps = json.dumps([w.model_dump() for w in body.waypoints])
     r = await conn.fetchrow(
         "INSERT INTO mission.route (name, org_id, waypoints, rtl_after_last) "
         f"VALUES ($1, $2, $3::jsonb, $4) RETURNING {_ROUTE_COLS}",
         body.name,
-        body.org_id,
+        org,
         wps,
         body.rtl_after_last,
     )
@@ -49,38 +57,66 @@ async def create_route(conn: asyncpg.Connection, body: RouteCreate) -> Route:
 
 
 async def list_routes(
-    conn: asyncpg.Connection, limit: int = 100, offset: int = 0
+    conn: asyncpg.Connection, org: str | None = None, limit: int = 100, offset: int = 0
 ) -> list[Route]:
+    conds: list[str] = []
+    params: list[Any] = []
+    if org is not None:
+        params.append(org)
+        conds.append(f"org_id = ${len(params)}")
+    params.append(limit)
+    lim = len(params)
+    params.append(offset)
+    off = len(params)
     rows = await conn.fetch(
-        f"SELECT {_ROUTE_COLS} FROM mission.route ORDER BY created_at DESC LIMIT $1 OFFSET $2",
-        limit,
-        offset,
+        f"SELECT {_ROUTE_COLS} FROM mission.route{_where(conds)} "
+        f"ORDER BY created_at DESC LIMIT ${lim} OFFSET ${off}",
+        *params,
     )
     return [_route(r) for r in rows]
 
 
-async def count_routes(conn: asyncpg.Connection) -> int:
+async def count_routes(conn: asyncpg.Connection, org: str | None = None) -> int:
+    if org is not None:
+        return await conn.fetchval("SELECT count(*) FROM mission.route WHERE org_id = $1", org)
     return await conn.fetchval("SELECT count(*) FROM mission.route")
 
 
-async def get_route(conn: asyncpg.Connection, route_id: UUID) -> Route | None:
-    r = await conn.fetchrow(f"SELECT {_ROUTE_COLS} FROM mission.route WHERE id = $1", route_id)
+async def get_route(
+    conn: asyncpg.Connection, route_id: UUID, org: str | None = None
+) -> Route | None:
+    """依 id 取航線;org 指定時加租戶過濾(跨 org 回 None → 端點轉 404)。"""
+    if org is not None:
+        r = await conn.fetchrow(
+            f"SELECT {_ROUTE_COLS} FROM mission.route WHERE id = $1 AND org_id = $2",
+            route_id,
+            org,
+        )
+    else:
+        r = await conn.fetchrow(f"SELECT {_ROUTE_COLS} FROM mission.route WHERE id = $1", route_id)
     return _route(r) if r else None
 
 
 # ---- mission ----
-async def create_mission(conn: asyncpg.Connection, body: MissionCreate) -> Mission | None:
-    """由 route 建任務:凍結 route 當下航點、產生 mission_id。route 不存在回 None。"""
-    route = await get_route(conn, body.route_id)
+async def create_mission(
+    conn: asyncpg.Connection, body: MissionCreate, org: str
+) -> Mission | None:
+    """由 route 建任務:凍結 route 當下航點、產生 mission_id。org 取自呼叫者 claim。
+
+    route 以呼叫者 org 過濾查找:route 不存在或屬他 org 皆回 None(端點轉 404,
+    杜絕跨 org 以他人 route 建任務)。mission.org_id 綁定呼叫者 org。
+    """
+    route = await get_route(conn, body.route_id, org)
     if route is None:
         return None
     wps = json.dumps([w.model_dump() for w in route.waypoints])
     r = await conn.fetchrow(
         "INSERT INTO mission.mission "
-        "(mission_id, route_id, drone_id, waypoints, rtl_after_last, total_items) "
-        f"VALUES ($1, $2, $3, $4::jsonb, $5, $6) RETURNING {_MISSION_COLS}",
+        "(mission_id, route_id, org_id, drone_id, waypoints, rtl_after_last, total_items) "
+        f"VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7) RETURNING {_MISSION_COLS}",
         new_mission_id(),
         body.route_id,
+        org,
         body.drone_id,
         wps,
         route.rtl_after_last,
@@ -90,38 +126,60 @@ async def create_mission(conn: asyncpg.Connection, body: MissionCreate) -> Missi
 
 
 async def list_missions(
-    conn: asyncpg.Connection, drone_id: str | None = None, limit: int = 100, offset: int = 0
+    conn: asyncpg.Connection,
+    drone_id: str | None = None,
+    org: str | None = None,
+    limit: int = 100,
+    offset: int = 0,
 ) -> list[Mission]:
+    conds: list[str] = []
+    params: list[Any] = []
     if drone_id is not None:
-        rows = await conn.fetch(
-            f"SELECT {_MISSION_COLS} FROM mission.mission WHERE drone_id = $1 "
-            "ORDER BY created_at DESC LIMIT $2 OFFSET $3",
-            drone_id,
-            limit,
-            offset,
-        )
-    else:
-        rows = await conn.fetch(
-            f"SELECT {_MISSION_COLS} FROM mission.mission ORDER BY created_at DESC "
-            "LIMIT $1 OFFSET $2",
-            limit,
-            offset,
-        )
+        params.append(drone_id)
+        conds.append(f"drone_id = ${len(params)}")
+    if org is not None:
+        params.append(org)
+        conds.append(f"org_id = ${len(params)}")
+    params.append(limit)
+    lim = len(params)
+    params.append(offset)
+    off = len(params)
+    rows = await conn.fetch(
+        f"SELECT {_MISSION_COLS} FROM mission.mission{_where(conds)} "
+        f"ORDER BY created_at DESC LIMIT ${lim} OFFSET ${off}",
+        *params,
+    )
     return [_mission(r) for r in rows]
 
 
-async def count_missions(conn: asyncpg.Connection, drone_id: str | None = None) -> int:
+async def count_missions(
+    conn: asyncpg.Connection, drone_id: str | None = None, org: str | None = None
+) -> int:
+    conds: list[str] = []
+    params: list[Any] = []
     if drone_id is not None:
-        return await conn.fetchval(
-            "SELECT count(*) FROM mission.mission WHERE drone_id = $1", drone_id
+        params.append(drone_id)
+        conds.append(f"drone_id = ${len(params)}")
+    if org is not None:
+        params.append(org)
+        conds.append(f"org_id = ${len(params)}")
+    return await conn.fetchval(f"SELECT count(*) FROM mission.mission{_where(conds)}", *params)
+
+
+async def get_mission(
+    conn: asyncpg.Connection, mission_pk: UUID, org: str | None = None
+) -> Mission | None:
+    """依 id 取任務;org 指定時加租戶過濾(跨 org 回 None → 端點轉 404)。"""
+    if org is not None:
+        r = await conn.fetchrow(
+            f"SELECT {_MISSION_COLS} FROM mission.mission WHERE id = $1 AND org_id = $2",
+            mission_pk,
+            org,
         )
-    return await conn.fetchval("SELECT count(*) FROM mission.mission")
-
-
-async def get_mission(conn: asyncpg.Connection, mission_pk: UUID) -> Mission | None:
-    r = await conn.fetchrow(
-        f"SELECT {_MISSION_COLS} FROM mission.mission WHERE id = $1", mission_pk
-    )
+    else:
+        r = await conn.fetchrow(
+            f"SELECT {_MISSION_COLS} FROM mission.mission WHERE id = $1", mission_pk
+        )
     return _mission(r) if r else None
 
 

@@ -34,8 +34,9 @@ class Waypoint(BaseModel):
 
 
 class RouteCreate(BaseModel):
+    """建立航線。org_id 不在此——租戶由呼叫者 JWT claim 決定(不採信 client 傳入)。"""
+
     name: str
-    org_id: str | None = None
     waypoints: list[Waypoint] = Field(min_length=1)
     rtl_after_last: bool = True
 
@@ -50,7 +51,7 @@ class RouteCreate(BaseModel):
 class Route(BaseModel):
     id: UUID
     name: str
-    org_id: str | None = None
+    org_id: str  # 租戶邊界(G11):NOT NULL,建立時取自呼叫者 claim
     waypoints: list[Waypoint]
     rtl_after_last: bool
     created_at: datetime
@@ -85,6 +86,7 @@ class Mission(BaseModel):
     id: UUID
     mission_id: str
     route_id: UUID | None = None
+    org_id: str  # 租戶邊界(G11):NOT NULL,建立時取自呼叫者 claim
     drone_id: str
     status: MissionStatus
     waypoints: list[Waypoint]
