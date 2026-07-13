@@ -86,7 +86,7 @@
 | P0 | 純安全邏輯庫(零 ROS,每 PR 回歸) | ✅ #59 |
 | P1 | obstacle_guard node(colcon ROS,ros-build-ci) | ✅ #74 |
 | P2 | SITL 合成整合(Tier 1) | 🟡 nightly SITL 觀察中 |
-| P3 | precision_land 狀態機 + node | ⬜ **未做** |
+| P3 | precision_land 狀態機 + node | ✅ #117(狀態機 SEARCH→ACQUIRED→DESCEND→LANDED+REACQUIRE/ABORT,colcon 實建,32 測試;真感知源/PX4 橋接屬 Phase 1) |
 | P4 | nightly 佈線 | 🟡 部分(sitl-integration + ros/dds 煙霧) |
 
 ### Wave 6 — 部署交付 + 供應鏈
@@ -120,6 +120,8 @@
 > Wave 0–6 已交付後,對「可商用 + 可直接部署」做全架構稽核,列**程式可達**的剩餘缺口(需外部認證/硬體者見 §5)。逐項以 PR 補齊,CI 綠自動合併。
 >
 > **完成進度(2026-07-13,全數清零)**:✅ **P0 G1–G10 全數完成**(可直接部署門檻達標)。✅ **P1/前瞻缺口 G11–G31 全數完成**(含 G11 org 多租戶隔離 + G11b SSE 串流隔離、G23 OTA 機載代理、G27 dialect 定案、G28 派遣 proto、G30 用量/配額/限流、G31 前端 runtime 注入)。**所有「程式可達」缺口皆已補足並端到端驗證合併**。**唯一剩餘 = 需外部/決策**:金流 payment provider 串接(需綠界/Stripe 決策;計量底座 usage_counter 已備)、UN38.3/SORA/SOC2 認證與實體硬體製造(需外部機構/工廠,見 §5)。
+>
+> **運營化補完(2026-07-13 續)**:✅ org/租戶/配額管理後端(#118,fleet.org plan/status/配額覆寫 + admin /orgs CRUD + suspended 擋寫)· ✅ 租戶管理 + 用量檢視 UI(#119,admin gating)· ✅ **綠界 ECPay 訂閱金流(#120)**:checkout + CheckMacValue 驗章(綠界官方測試向量 known-answer 驗證)+ webhook 啟用方案 + billing_transaction,零硬編憑證(沙箱/正式走 env)· ✅ precision_land 精準降落(#117,Wave5 P3)。**商業化全可運營;綠界正式上線僅需填 ECPAY_* env。**
 
 ### P0 — 部署阻擋 / 對外裸奔(✅ 全數完成)
 | # | 缺口 | 狀態 |
