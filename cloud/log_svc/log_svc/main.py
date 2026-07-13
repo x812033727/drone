@@ -22,8 +22,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import asyncpg
-from fastapi import BackgroundTasks, FastAPI, HTTPException, UploadFile
+from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, UploadFile
 
+from log_svc.auth import require_role
 from log_svc.report import excerpt, parse_alerts, run_report
 
 log = logging.getLogger("log_svc")
@@ -79,6 +80,11 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="log-svc", lifespan=lifespan)
 
+# RBAC 依賴(對齊 fleet-svc / mission-svc):讀取需 viewer,上傳/寫入需 operator。
+# dev 模式(未設 JWT_SECRET/JWKS)authorize_token 放行為 admin,cloud-smoke 免帶 token。
+VIEWER = Depends(require_role("viewer"))
+OPERATOR = Depends(require_role("operator"))
+
 
 async def process_log(drone_id: str, path: Path, size_bytes: int) -> None:
     """背景任務:跑報告 → 摘要落庫。報告失敗不擋(report_ok=false 照落庫)。
@@ -107,7 +113,7 @@ async def healthz() -> dict:
     return {"status": "ok"}
 
 
-@app.post("/api/v1/logs/{drone_id}", status_code=201)
+@app.post("/api/v1/logs/{drone_id}", status_code=201, dependencies=[OPERATOR])
 async def upload_log(drone_id: str, file: UploadFile, background_tasks: BackgroundTasks) -> dict:
     validate_drone_id(drone_id)
     dest_dir = ULOG_DIR / drone_id
@@ -125,7 +131,7 @@ async def upload_log(drone_id: str, file: UploadFile, background_tasks: Backgrou
     return {"drone_id": drone_id, "stored_as": dest.name, "size_bytes": size}
 
 
-@app.get("/api/v1/logs/{drone_id}")
+@app.get("/api/v1/logs/{drone_id}", dependencies=[VIEWER])
 async def list_logs(drone_id: str) -> dict:
     validate_drone_id(drone_id)
     rows = await app.state.pool.fetch(LIST_SQL, drone_id)
