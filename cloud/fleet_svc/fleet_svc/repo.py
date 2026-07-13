@@ -11,12 +11,16 @@ from fleet_svc.models import (
     Device,
     DeviceCreate,
     DeviceFirmware,
+    DeviceStatusView,
     DeviceUpdate,
     Firmware,
     FirmwareCreate,
     Fleet,
     FleetCreate,
 )
+
+# 在線判定門檻(秒):遙測 1 Hz,last_seen 超過此值視為離線
+ONLINE_THRESHOLD_S = 10
 
 _DEVICE_COLS = (
     "id, serial, name, fleet_id, model, status, cert_fingerprint, cert_not_after, created_at"
@@ -179,3 +183,40 @@ async def list_device_firmware(
         device_id,
     )
     return [DeviceFirmware.model_validate(dict(r)) for r in rows]
+
+
+# ---- status(device ⨝ device_state) ----
+_STATUS_SELECT = """
+SELECT d.id AS device_id, d.serial, d.name, d.fleet_id, d.status,
+       (s.last_seen IS NOT NULL AND s.last_seen > now() - make_interval(secs => $1)) AS online,
+       s.last_seen, s.lat_deg, s.lon_deg, s.rel_alt_m, s.battery_pct, s.flight_mode, s.armed
+FROM fleet.device d
+LEFT JOIN fleet.device_state s ON s.drone_id = d.serial
+"""
+
+
+def _status(r: asyncpg.Record) -> DeviceStatusView:
+    return DeviceStatusView.model_validate(dict(r))
+
+
+async def get_device_status(
+    conn: asyncpg.Connection, device_id: UUID, threshold_s: int = ONLINE_THRESHOLD_S
+) -> DeviceStatusView | None:
+    r = await conn.fetchrow(_STATUS_SELECT + " WHERE d.id = $2", threshold_s, device_id)
+    return _status(r) if r else None
+
+
+async def list_fleet_status(
+    conn: asyncpg.Connection, fleet_id: UUID, threshold_s: int = ONLINE_THRESHOLD_S
+) -> list[DeviceStatusView]:
+    rows = await conn.fetch(
+        _STATUS_SELECT + " WHERE d.fleet_id = $2 ORDER BY d.serial", threshold_s, fleet_id
+    )
+    return [_status(r) for r in rows]
+
+
+async def list_all_status(
+    conn: asyncpg.Connection, threshold_s: int = ONLINE_THRESHOLD_S
+) -> list[DeviceStatusView]:
+    rows = await conn.fetch(_STATUS_SELECT + " ORDER BY d.serial", threshold_s)
+    return [_status(r) for r in rows]

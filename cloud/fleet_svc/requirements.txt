@@ -3,3 +3,5 @@ fastapi==0.139.0
 uvicorn==0.51.0
 asyncpg==0.31.0
 pydantic>=2.7,<3   # 由 fastapi 帶入,顯式約束大版本
+aiomqtt>=2.0,<3    # 遙測消費者(對齊 cloud/ingest)
+protobuf>=5.26,<8  # drone-proto 契約解析(對齊 cloud/ingest)
