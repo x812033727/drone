@@ -20,6 +20,9 @@ testpaths = [
     "cloud",
     "tools",
 ]
+# importlib 匯入模式:各服務 tests/ 無 __init__.py 且常有同名檔(test_models.py 等),
+# 預設 prepend 模式會 "import file mismatch" 衝突;importlib 以完整路徑匯入,不衝突。
+addopts = ["--import-mode=importlib"]
 
 [tool.coverage.run]
 branch = true
