@@ -1,0 +1,32 @@
+# mTLS overlay:在預設棧上疊加「機-雲全程 mTLS」的安全部署(不動預設明文棧)。
+# 用法:MTLS_CERTS_DIR=/path/to/certs \
+#   docker-compose -f docker-compose.yml -f docker-compose.mtls.yml up -d --build \
+#     mosquitto-mtls timescaledb ingest
+# certs 目錄需含 ca.cert.pem / server.cert.pem / server.key.pem / ca.crl.pem /
+#   backend.cert.pem / backend.key.pem(由 cloud/pki 簽發;見 verify_stack_mtls.sh)。
+#
+# 新增獨立 mosquitto-mtls(避免與預設 mosquitto 的 config volume 衝突);
+# ingest 改連 mosquitto-mtls:8883 並帶 backend client 憑證(#67 _tls_from_env)。
+services:
+  mosquitto-mtls:
+    image: eclipse-mosquitto:2
+    ports:
+      - "127.0.0.1:${MQTT_TLS_PORT:-8883}:8883"
+    volumes:
+      - ../mqtt-tls/mosquitto-tls.conf:/mosquitto/config/mosquitto.conf:ro
+      - ../mqtt-tls/acl:/mosquitto/config/acl:ro
+      - ${MTLS_CERTS_DIR}:/mosquitto/certs:ro
+    restart: unless-stopped
+
+  ingest:
+    environment:
+      MQTT_HOST: mosquitto-mtls
+      MQTT_PORT: "8883"
+      MQTT_TLS_CA: /certs/ca.cert.pem
+      MQTT_TLS_CERT: /certs/backend.cert.pem
+      MQTT_TLS_KEY: /certs/backend.key.pem
+    volumes:
+      - ${MTLS_CERTS_DIR}:/certs:ro
+    depends_on:
+      mosquitto-mtls:
+        condition: service_started
