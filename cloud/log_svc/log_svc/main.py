@@ -24,6 +24,7 @@ from pathlib import Path
 import asyncpg
 from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, UploadFile
 
+from log_svc import metrics
 from log_svc.auth import require_role
 from log_svc.report import excerpt, parse_alerts, run_report
 
@@ -79,6 +80,7 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="log-svc", lifespan=lifespan)
+metrics.instrument(app)  # /metrics(Prometheus)+ HTTP 指標 middleware(G13)
 
 # RBAC 依賴(對齊 fleet-svc / mission-svc):讀取需 viewer,上傳/寫入需 operator。
 # dev 模式(未設 JWT_SECRET/JWKS)authorize_token 放行為 admin,cloud-smoke 免帶 token。

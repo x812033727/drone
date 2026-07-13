@@ -11,7 +11,7 @@ import os
 import aiomqtt
 import asyncpg
 
-from ingest import decode
+from ingest import decode, metrics
 
 log = logging.getLogger("ingest")
 
@@ -70,10 +70,22 @@ ROUTES: dict[str, tuple[str, object]] = {
 
 
 async def handle(pool: asyncpg.Pool, message: aiomqtt.Message) -> None:
+    metrics.messages_inflight.inc()
+    try:
+        await _handle(pool, message)
+    finally:
+        metrics.messages_inflight.dec()
+
+
+async def _handle(pool: asyncpg.Pool, message: aiomqtt.Message) -> None:
     topic = message.topic.value
     parts = topic.split("/")
-    route = ROUTES.get("/".join(parts[-2:])) or ROUTES.get(parts[-1])
+    key2 = "/".join(parts[-2:])
+    route = ROUTES.get(key2) or ROUTES.get(parts[-1])
+    # metrics 的 route 標籤:用有匹配到的主題末段,無匹配則 "unknown"(不含機隊 id,控基數)
+    route_key = key2 if key2 in ROUTES else parts[-1] if parts[-1] in ROUTES else "unknown"
     if route is None:
+        metrics.messages_total.labels(route="unknown", result="unknown_topic").inc()
         log.warning("未知主題,略過:%s", topic)
         return
     sql, to_row = route
@@ -84,14 +96,18 @@ async def handle(pool: asyncpg.Pool, message: aiomqtt.Message) -> None:
     except Exception:
         # 壞 payload(JSON 解析失敗、enum 超界、時間戳超界、非 UTF-8……)
         # 一律記錄後丟棄,不中斷訂閱迴圈
+        metrics.messages_total.labels(route=route_key, result="decode_error").inc()
         raw = bytes(message.payload) if isinstance(message.payload, (bytes, bytearray)) else b""
         log.exception("payload 解析失敗,丟棄 topic=%s payload=%r", topic, raw[:200])
         return
 
+    metrics.messages_total.labels(route=route_key, result="parsed").inc()
     try:
         await pool.execute(sql, *row)
+        metrics.db_writes_total.labels(result="ok").inc()
     except (asyncpg.PostgresError, OSError):
         # Phase 0:DB 寫入失敗記錄後丟棄該筆,不做重試佇列(Phase 1 gateway 再補)
+        metrics.db_writes_total.labels(result="error").inc()
         log.exception("DB 寫入失敗,丟棄該筆 topic=%s", topic)
 
 
@@ -120,6 +136,7 @@ async def _connect_pool() -> asyncpg.Pool:
 
 
 async def run() -> None:
+    metrics.start_metrics_server()  # /metrics 埠(G13);失敗不影響消費迴圈
     pool = await _connect_pool()
     while True:
         try:
