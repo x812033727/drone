@@ -59,5 +59,14 @@ keyUsage                = critical, digitalSignature, keyEncipherment
 extendedKeyUsage        = clientAuth
 subjectAltName          = $ENV::PKI_SAN
 
+# 伺服器(broker)憑證擴充:serverAuth,供 mTLS 監聽器的伺服器身分。SAN 由 PKI_SAN 帶入。
+[server_cert]
+basicConstraints        = CA:FALSE
+subjectKeyIdentifier    = hash
+authorityKeyIdentifier  = keyid,issuer
+keyUsage                = critical, digitalSignature, keyEncipherment
+extendedKeyUsage        = serverAuth
+subjectAltName          = $ENV::PKI_SAN
+
 [crl_ext]
 authorityKeyIdentifier  = keyid:always
