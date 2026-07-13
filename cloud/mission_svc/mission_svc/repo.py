@@ -275,6 +275,25 @@ async def get_usage_totals(conn: asyncpg.Connection, org: str) -> dict[str, int]
     return {r["metric"]: int(r["total"]) for r in rows}
 
 
+# ---- 限流計數(DB-backed 固定視窗):(org, window_start) 原子遞增回傳新值 ----
+_RATE_LIMIT_INC = """
+INSERT INTO mission.rate_limit_counter (org_id, window_start, count)
+VALUES ($1, $2, 1)
+ON CONFLICT (org_id, window_start)
+DO UPDATE SET count = mission.rate_limit_counter.count + 1
+RETURNING count
+"""
+
+
+async def incr_rate_limit(conn: asyncpg.Connection, org: str, window_start: int) -> int:
+    """某租戶某固定視窗計數 +1,回傳遞增後新值。單一共用 DB 下多副本限流精確。
+
+    window_start = 視窗起點 UTC epoch 秒(對齊 60 秒邊界),供固定視窗限流判定。
+    """
+    count = await conn.fetchval(_RATE_LIMIT_INC, org, window_start)
+    return int(count)
+
+
 # ---- audit(G14 稽核查詢;寫入在 mission_svc.audit) ----
 _AUDIT_COLS = "id, at, actor, role, action, resource_type, resource_id, details, source_ip"
 

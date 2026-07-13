@@ -19,7 +19,7 @@ import jwt
 import pytest
 from fastapi.testclient import TestClient
 from fleet_svc import auth, limits, main, repo
-from fleet_svc.limits import RateLimiter, effective_limit, enforce_org_active
+from fleet_svc.limits import effective_limit, enforce_org_active
 from fleet_svc.models import Org, OrgCreate, OrgPlan, OrgStatus, OrgUpdate
 from fleet_svc.repo import build_org_patch
 
@@ -314,7 +314,6 @@ def client(monkeypatch):
     monkeypatch.setattr(auth, "JWT_SECRET", SECRET)
     monkeypatch.setattr(auth, "_jwks_client", None)
     monkeypatch.setattr(auth, "JWT_ALGORITHM", "HS256")
-    monkeypatch.setattr(limits, "write_limiter", RateLimiter(rate_per_min=6000))
     conn = _MemConn()
     main.app.state.pool = _MemPool(conn)
     return TestClient(main.app), conn
@@ -473,7 +472,6 @@ def test_org_usage_summary(client):
 
 def test_dev_mode_org_management_and_writes(monkeypatch):
     monkeypatch.setattr(auth, "AUTH_ENABLED", False)
-    monkeypatch.setattr(limits, "write_limiter", RateLimiter(rate_per_min=6000))
     conn = _MemConn()
     main.app.state.pool = _MemPool(conn)
     c = TestClient(main.app)

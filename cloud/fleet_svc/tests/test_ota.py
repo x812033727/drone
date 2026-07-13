@@ -126,6 +126,12 @@ class _MemConn:
     def __init__(self, device: dict | None) -> None:
         self.device = device
 
+    async def fetchval(self, sql, *args):
+        # DB-backed 限流原子遞增:回小計數(遠低於預設 6000/分上限)→ 不誤觸 429。
+        if "rate_limit_counter" in sql:
+            return 1
+        return 0
+
     async def fetchrow(self, sql, *args):
         if "FROM fleet.org" in sql:
             return None  # org 未註冊 → _guard_write 放行
