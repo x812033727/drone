@@ -5,3 +5,4 @@ asyncpg==0.31.0
 pydantic>=2.7,<3
 aiomqtt>=2.0,<3    # 派遣發布 + 進度消費(對齊 cloud/ingest)
 protobuf>=5.26,<8  # drone-proto 契約組裝/解析
+pyjwt[crypto]>=2.9,<3  # JWT 認證(HS256 dev / JWKS RS256 生產)

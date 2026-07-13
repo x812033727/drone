@@ -28,7 +28,10 @@
 
 - **不另立 PostGIS 實例**:專案現況是單一 timescaledb(pg16)。fleet 關聯資料用同實例的 `fleet` schema;位置(B2)先存 lat/lon 雙精度。PostGIS geography 待有空間查詢需求(geofence/半徑搜尋)再以 migration 引入。
 - **輕量前向 SQL migration**(`fleet_svc.migrate`,asyncpg 原生),不引入 SQLAlchemy/Alembic;改 schema 一律新增 `NNNN_*.sql`,不改既有已套用檔。
-- **認證**:本 PR 端點未帶認證(Wave 4 C3 加 JWT);compose 綁 loopback,勿直接對外。
+- **認證(Wave 4 C3)**:REST 端點帶 JWT + RBAC(讀取需 viewer、變更需 operator)。
+  `JWT_SECRET`(HS256/dev)或 `JWT_JWKS_URL`(RS256/OIDC 生產)設定其一即啟用;
+  兩者皆空為 dev 模式(全放行,啟動警告)。`healthz` 與 SSE `/stream` 不 gate
+  (EventSource 無法帶 header;SSE 查詢參數 token 認證留後續)。
 
 ## 本機
 

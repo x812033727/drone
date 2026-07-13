@@ -28,7 +28,8 @@
 `created → dispatched →`(進度事件)`received/uploaded/in_progress/paused → completed/failed`。
 `mission_id` 為端到端追溯鍵(機-雲共用)。終態不可逆(首個終態為準)。
 
-## 認證邊界
+## 認證(Wave 4 C3)
 
-本 PR 端點未帶認證(Wave 4 C3 加 JWT);broker 為 Phase 0 anonymous(security.md §8),
-compose 綁 loopback,僅限開發內網。
+REST 端點帶 JWT + RBAC(讀取需 viewer、派遣/控制/建立需 operator)。`JWT_SECRET`
+(HS256/dev)或 `JWT_JWKS_URL`(RS256/OIDC 生產)設其一即啟用;皆空為 dev 模式全放行。
+broker 仍為 Phase 0 anonymous(security.md §8,mTLS+ACL 屬 C2);compose 綁 loopback。
