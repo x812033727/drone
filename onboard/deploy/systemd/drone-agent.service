@@ -1,0 +1,65 @@
+[Unit]
+# drone_agent 機載常駐服務(Jetson / 機載電腦)。
+# 解掉「drone_agent/README:MAVSDK 異常結束交給 systemd 重啟」卻無 unit 的矛盾。
+# drone_agent 為長駐:預設自 spawn mavsdk_server(佔 gRPC 50051 + 飛控埠),
+# 收到雲端派遣時 spawn mission_exec 子程序共用同一 server。
+Description=Drone onboard agent (telemetry + heartbeat + mission dispatch)
+Documentation=https://github.com/x812033727/drone/blob/main/onboard/drone_agent/README.md
+After=network-online.target time-sync.target
+Wants=network-online.target
+# 啟動限速屬 [Unit] 段(systemd 已從 [Service] 遷移至此)。
+StartLimitIntervalSec=60
+StartLimitBurst=10
+
+[Service]
+Type=simple
+User=drone
+Group=drone
+# 序列埠飛控(如 /dev/ttyUSB0)需放行 dialout;SITL/UDP 不需。按需取消註解:
+#SupplementaryGroups=dialout
+
+# 設定來自 /etc/drone/agent.env(見 drone-agent.env.example)。
+EnvironmentFile=/etc/drone/agent.env
+
+# ${VAR}=單一參數(值可含空白);$EXTRA_ARGS=依空白切詞(放選配旗標,如
+# --mavsdk-address localhost:50051 / --log-svc-url http://... / --no-enable-cmd)。
+ExecStart=/opt/drone/venv/bin/python -m drone_agent.main \
+    --drone-id ${DRONE_ID} \
+    --mqtt-host ${MQTT_HOST} \
+    --mqtt-port ${MQTT_PORT} \
+    --url ${MAVLINK_URL} \
+    --rate ${RATE} \
+    $EXTRA_ARGS
+
+# 失效復原:一律重啟(對齊 README 的「交給 systemd 重啟」),但用啟動限速避免
+# 崩潰迴圈把機器打爆(60s 內最多 10 次,超過則進入 failed 由維運介入)。
+Restart=always
+RestartSec=5
+
+# 資源上限(D7:防記憶體/CPU 失控拖垮同機的飛控相關程序)。按機型調整。
+MemoryMax=512M
+CPUQuota=80%
+TasksMax=256
+
+# 安全加固(以最小權限跑;drone_agent 唯讀遙測、不對 PX4 發飛行指令)。
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ProtectKernelTunables=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+# 執行期可寫路徑:ULog 暫存回收 / mission 暫存檔 / 執行期狀態。
+ReadWritePaths=/var/lib/drone /run/drone
+
+# 日誌走 journald(配 journald 的 SystemMaxUse 做輪替,見 onboard/deploy/README.md)。
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=drone-agent
+
+# 註:未設 WatchdogSec —— drone_agent 尚未實作 sd_notify(WATCHDOG=1);
+# 貿然設定會被 systemd 誤殺。看門狗語意目前由 Restart=always + 應用內遙測
+# 斷流偵測承擔;待 agent 支援 sd_notify 後再啟用硬看門狗(見 §G22 後續)。
+
+[Install]
+WantedBy=multi-user.target
