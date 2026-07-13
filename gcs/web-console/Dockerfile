@@ -1,6 +1,6 @@
 # 多階段:node 建置 → nginx 靜態服務 + /api 反代 fleetsvc。
 # build context 為 repo 根(與其他服務一致)。
-FROM node:22-slim AS build
+FROM node:26-slim AS build
 WORKDIR /app
 COPY gcs/web-console/package.json gcs/web-console/package-lock.json ./
 RUN npm ci
