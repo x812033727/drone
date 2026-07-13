@@ -118,23 +118,29 @@
 ## 7. as-built 缺口登錄(2026-07-13 五維架構稽核)
 
 > Wave 0–6 已交付後,對「可商用 + 可直接部署」做全架構稽核,列**程式可達**的剩餘缺口(需外部認證/硬體者見 §5)。逐項以 PR 補齊,CI 綠自動合併。
+>
+> **完成進度(2026-07-13)**:✅ **P0 G1–G10 全數完成**(可直接部署門檻達標)。✅ **P1 已完成 12 項**:G12/G13/G15/G16/G17/G18/G19/G20/G21/G25/G26(+G23 部分)。⬜ **P1 剩餘(程式可達,待排程)**:G14 審計日誌、G22 機載憑證輪換、G23 OTA 機載代理、G24 遙測離線緩衝、G27 MAVLink dialect/payload 定案、G28 派遣 proto、G29 依賴 lock+mypy。🔒 **需使用者產品決策**:G11 org 多租戶隔離、G30 計費/用量/配額、G31 前端執行期注入、租戶/使用者管理模型、token 安全策略。
 
-### P0 — 部署阻擋 / 對外裸奔(客戶當下無法成功部署或部署即不安全)
-| # | 缺口 | 佐證 | 維度 |
-|---|------|------|------|
-| G1 | **無 CI 建置/發布容器映像到 registry** — Helm values 指向 `ghcr.io/…:0.1.0` 從未 push → `helm install` 直接 ImagePullBackOff | `cloud/deploy/helm/README.md`、無 build-push workflow | devops |
-| G2 | **Helm 不 provision Grafana 儀表板/資料源** — 客戶 k8s 拿到空 Grafana | `templates/grafana.yaml`(僅 env) | devops |
-| G3 | **全 workload 缺 livenessProbe**(部分連 readiness 也缺) — 掛死不重啟 | helm `*.yaml` | devops |
-| G4 | **容器全以 root 跑、無 securityContext 加固** | Dockerfile 無 USER、helm 無 securityContext | devops |
-| G5 | **log_svc 零認證** — 任何人可上傳/列出飛行日誌 | `cloud/log_svc/log_svc/main.py` | cloud |
-| G6 | **機載無 systemd unit / 部署容器** — README 稱「交給 systemd 重啟」卻無 unit;drone_agent/mission_exec/video 無 Dockerfile | onboard 無 `*.service` | onboard |
-| G7 | **MediaMTX 影像串流零認證** — RTSP/WebRTC 開放推拉 | `video_pipeline/docker/mediamtx.yml` | onboard |
-| G8 | **預設 compose 棧仍明文 MQTT/匿名** — 安全棧在 mtls overlay,預設不安全 | `docker-compose.yml`(mosquitto anonymous) | 跨層 |
-| G9 | **無端到端部署 runbook** — 僅散落 README | `cloud/deploy/`、各 README | docs |
-| G10 | **web-console 缺任務派遣/裝置管理寫入 UI + 前端 RBAC gating** — 後端契約已存在,前端唯讀 | `gcs/web-console/src`(僅 status/stream) | gcs |
+### P0 — 部署阻擋 / 對外裸奔(✅ 全數完成)
+| # | 缺口 | 狀態 |
+|---|------|------|
+| G1 | 無 CI 建置/發布容器映像到 registry(`helm install` ImagePullBackOff) | ✅ #88 release.yml→GHCR+provenance/SBOM |
+| G2 | Helm 不 provision Grafana 儀表板/資料源 | ✅ #96 grafana-provisioning ConfigMap |
+| G3 | 全 workload 缺 livenessProbe | ✅ #96 全 workload liveness |
+| G4 | 容器以 root 跑、無 securityContext | ✅ #96 helm securityContext + #97 映像非 root uid 1000 |
+| G5 | log_svc 零認證 | ✅ #93 JWT+RBAC |
+| G6 | 機載無 systemd unit / 部署 | ✅ #94 drone-agent.service+install.sh+Jetson 文件 |
+| G7 | MediaMTX 影像串流零認證 | ✅ #98 authInternalUsers env 注入 |
+| G8 | 預設 compose 棧明文/匿名 | ✅ 文件涵蓋(#98 runbook 明列安全棧=mtls overlay+JWT) |
+| G9 | 無端到端部署 runbook | ✅ #98 deployment-runbook.md |
+| G10 | web-console 缺寫入 UI + 前端 RBAC | ✅ #99 裝置/任務/派遣/RBAC/告警 |
 
 ### P1 — 生產/商用必要
-G11 org 多租戶隔離未落地(org_id 純文字、查詢不過濾)·G12 API 無分頁·G13 無 metrics/tracing/結構化日誌(Prometheus/alert/SLO)·G14 無審計日誌·G15 DB 備份 CronJob + 還原 runbook·G16 migration 改 Helm pre-upgrade hook Job(多副本 race)·G17 NetworkPolicy + PDB·G18 SBOM attest/cosign sign 附掛映像·G19 CHANGELOG + tag/release 流程·G20 資料保留政策(timescale retention/壓縮)·G21 ingest 健康探針 + 失敗重試/DLQ·G22 憑證機載端輪換/CRL 拉取·G23 OTA 機載代理(設計已齊於 ota.md)·G24 遙測離線緩衝·G25 dependabot 補 fleet_svc/mission_svc/web-console 目錄·G26 OpenAPI/AsyncAPI 契約·G27 MAVLink dialect/payload schema 定案·G28 cloud 派遣 proto(FleetMission)·G29 依賴 lock + mypy·G30 計費/用量/配額/限流·G31 前端執行期環境注入(現 build-time 內嵌)。
+**✅ 已完成**:G12 API 分頁(#103,limit/offset+X-Total-Count)·G13 metrics/告警/SLO(#101)·G15 DB 備份 CronJob(#100)·G16 migration pre-upgrade hook Job(#100)·G17 NetworkPolicy+PDB(#100)·G18 cosign keyless 簽章(#102)·G19 CHANGELOG+GitHub Release(#102)·G20 資料保留(#103,timescale retention/壓縮)·G21 ingest healthz+重試/DLQ(#103)·G25 dependabot 補目錄+npm(#87)·G26 OpenAPI 契約+守門(#102)。
+
+**⬜ 剩餘(程式可達,待排程)**:G14 審計日誌·G22 憑證機載端輪換/CRL 拉取·G23 OTA 機載代理(設計已齊於 ota.md,實作量大)·G24 遙測離線緩衝·G27 MAVLink dialect/payload schema 定案(需欄位決策)·G28 cloud 派遣 proto(FleetMission)·G29 依賴 lock + mypy。
+
+**🔒 需使用者產品決策**:G11 org 多租戶隔離(需租戶模型)·G30 計費/用量/配額/限流(需計價維度)·G31 前端執行期環境注入。
 
 ### P1/P2 — 需設計決策或外部
 precision_land 狀態機、租戶/使用者管理模型、token 安全(localStorage/refresh)、多環境 values profile、HPA、SOC2/UN38.3/SORA(外部認證)、真實深度感知(硬體)。
@@ -145,3 +151,4 @@ precision_land 狀態機、租戶/使用者管理模型、token 安全(localStor
 |-----|------|------|
 | 1 | 2026-07 | 初版:軟體商用化四軌路線圖(Wave 0–6)+ 現況基線盤點 + 架構決策 |
 | 2 | 2026-07-13 | Wave 0–6 交付後對齊:§2 現況/§3 波次狀態更新為實際合併(#52–#75)、§4 改為 as-built(mosquitto/openssl/單一 timescaledb+前向 SQL,取代 EMQX/step-ca/PostGIS+Alembic)、新增 §7 as-built 缺口登錄(五維架構稽核,P0 G1–G10 逐項補齊) |
+| 3 | 2026-07-13 | §7 缺口補齊:P0 G1–G10 全數完成(可直接部署達標,#87–#99);P1 完成 12 項(#100–#103:備份/migration hook/NetworkPolicy+PDB/可觀測性/cosign/CHANGELOG/分頁/保留/ingest healthz+DLQ/OpenAPI 契約);標註剩餘程式可達 P1 與需產品決策項 |
