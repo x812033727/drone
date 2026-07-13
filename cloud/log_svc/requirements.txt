@@ -6,4 +6,4 @@ asyncpg==0.31.0
 
 # tools/ulog_report.py 子程序依賴(Dockerfile COPY tools/ulog_report.py 進映像)
 pyulog==1.2.3
-numpy==2.2.6
+numpy==2.5.1
