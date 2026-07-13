@@ -10,7 +10,17 @@ WEBRTC_UDP_PORT="${WEBRTC_UDP_PORT:-8189}" # WebRTC ICE 單一 UDP 埠(webrtcLoc
 API_PORT="${API_PORT:-9997}"
 FRAMES="${FRAMES:-300}"
 WIDTH="${WIDTH:-1920}" HEIGHT="${HEIGHT:-1080}" FPS="${FPS:-30}" BITRATE="${BITRATE:-4000}"
-RTSP_URL="rtsp://127.0.0.1:${RTSP_PORT}/stream"
+
+# --- 認證憑證(預設關閉匿名;正式使用請覆寫這四個環境變數)---
+# mediamtx.yml 的 authInternalUsers 留空,實際使用者在啟動時以 MTX_ 覆寫注入
+# (MediaMTX v1.12.3 不支援設定檔內 ${ENV} 內插,只能走 MTX_AUTHINTERNALUSERS_*)。
+VIDEO_PUBLISH_USER="${VIDEO_PUBLISH_USER:-publisher}"
+VIDEO_PUBLISH_PASS="${VIDEO_PUBLISH_PASS:-poc-publish-dev}"
+VIDEO_READ_USER="${VIDEO_READ_USER:-reader}"
+VIDEO_READ_PASS="${VIDEO_READ_PASS:-poc-read-dev}"
+# 推流(publish)帶 publish 帳密;量測與 WHEP(read)帶 read 帳密。
+PUBLISH_URL="rtsp://${VIDEO_PUBLISH_USER}:${VIDEO_PUBLISH_PASS}@127.0.0.1:${RTSP_PORT}/stream"
+READ_URL="rtsp://${VIDEO_READ_USER}:${VIDEO_READ_PASS}@127.0.0.1:${RTSP_PORT}/stream"
 
 # 暫存檔帶 PID 前綴,避免並行執行互踩固定檔名(/tmp/poc_*)
 TMP_PREFIX="${TMPDIR:-/tmp}/poc_$$"
@@ -50,9 +60,19 @@ fi
 
 # --- 1. MediaMTX ---
 "${DIR}/docker/get_mediamtx.sh"
+# 埠覆寫 + 認證使用者注入(mediamtx.yml 的 authInternalUsers 留空,見該檔註解)。
+# 0=publish 使用者、1=read 使用者、2=any 僅 api(apiAddress 綁 loopback)。
 MTX_RTSPADDRESS=":${RTSP_PORT}" MTX_WEBRTCADDRESS=":${WEBRTC_PORT}" \
     MTX_WEBRTCLOCALUDPADDRESS=":${WEBRTC_UDP_PORT}" \
     MTX_APIADDRESS="127.0.0.1:${API_PORT}" \
+    MTX_AUTHINTERNALUSERS_0_USER="${VIDEO_PUBLISH_USER}" \
+    MTX_AUTHINTERNALUSERS_0_PASS="${VIDEO_PUBLISH_PASS}" \
+    MTX_AUTHINTERNALUSERS_0_PERMISSIONS_0_ACTION="publish" \
+    MTX_AUTHINTERNALUSERS_1_USER="${VIDEO_READ_USER}" \
+    MTX_AUTHINTERNALUSERS_1_PASS="${VIDEO_READ_PASS}" \
+    MTX_AUTHINTERNALUSERS_1_PERMISSIONS_0_ACTION="read" \
+    MTX_AUTHINTERNALUSERS_2_USER="any" \
+    MTX_AUTHINTERNALUSERS_2_PERMISSIONS_0_ACTION="api" \
     "${DIR}/docker/bin/mediamtx" "${DIR}/docker/mediamtx.yml" >"${MTX_LOG}" 2>&1 &
 MTX_PID=$!
 MTX_READY=""
@@ -71,7 +91,7 @@ echo "[poc] MediaMTX 就緒(rtsp:${RTSP_PORT} webrtc:${WEBRTC_PORT} ice-udp:${WE
 
 # --- 2. sender 推流 ---
 python3 "${DIR}/sender.py" --width "${WIDTH}" --height "${HEIGHT}" --fps "${FPS}" \
-    --bitrate "${BITRATE}" --rtsp-url "${RTSP_URL}" &
+    --bitrate "${BITRATE}" --rtsp-url "${PUBLISH_URL}" &
 SENDER_PID=$!
 
 # 等 path 就緒(sender RECORD session 建立)再啟動量測端,避免 rtspsrc 404
@@ -88,7 +108,7 @@ if [[ "${READY:-}" != "True" ]]; then
 fi
 
 # --- 3. 端到端延遲量測 ---
-python3 "${DIR}/measure_latency.py" --rtsp-url "${RTSP_URL}" --frames "${FRAMES}" --json \
+python3 "${DIR}/measure_latency.py" --rtsp-url "${READ_URL}" --frames "${FRAMES}" --json \
     | tee "${LATENCY_JSON}"
 
 # --- 4. WebRTC(WHEP)腿檢查:同一路流可被 WebRTC 協商訂閱 ---
@@ -104,10 +124,13 @@ OFFER+=$'a=fingerprint:sha-256 4A:AD:B9:B1:3F:82:18:3B:54:02:12:DF:3E:5D:49:6B:1
 OFFER+=$'m=video 9 UDP/TLS/RTP/SAVPF 96\r\nc=IN IP4 0.0.0.0\r\na=mid:0\r\na=recvonly\r\n'
 OFFER+=$'a=rtpmap:96 H264/90000\r\na=fmtp:96 packetization-mode=1;profile-level-id=42e01f\r\n'
 OFFER+=$'a=setup:actpass\r\na=rtcp-mux\r\n'
+# WHEP 讀取需 read 帳密(Basic Auth);未帶帳密會被認證擋下(非 201)。
 WHEP_CODE=$(printf '%s' "${OFFER}" | curl -s -o "${WHEP_ANSWER}" -w '%{http_code}' \
+    -u "${VIDEO_READ_USER}:${VIDEO_READ_PASS}" \
     -X POST -H 'Content-Type: application/sdp' --data-binary @- \
     "http://127.0.0.1:${WEBRTC_PORT}/stream/whep")
 NOSTREAM_CODE=$(printf '%s' "${OFFER}" | curl -s -o /dev/null -w '%{http_code}' \
+    -u "${VIDEO_READ_USER}:${VIDEO_READ_PASS}" \
     -X POST -H 'Content-Type: application/sdp' --data-binary @- \
     "http://127.0.0.1:${WEBRTC_PORT}/no_such_stream/whep")
 echo "[poc]   WHEP:POST /stream/whep → HTTP ${WHEP_CODE}(應 201=協商成功," \

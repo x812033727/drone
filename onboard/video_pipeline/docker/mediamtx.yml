@@ -3,6 +3,24 @@
 # MTX_WEBRTCLOCALUDPADDRESS / MTX_APIADDRESS)。
 logLevel: info
 
+# --- 認證(預設關閉匿名)---
+# authInternalUsers 留空 [] 是為了「關掉 MediaMTX 內建的預設 any 全權使用者」
+# (未定義任何使用者時,MediaMTX 會自動放行一個 any 使用者可 publish/read,
+#  等於裸奔)。真正的帳密經環境變數在啟動時注入(見下)。
+#
+# ⚠️ MediaMTX v1.12.3 不支援在設定檔內做 ${ENV} 字串內插(實測 pass 會原樣
+#    存成字面 "${VAR}"),只支援 MTX_ 前綴的參數覆寫;而 authInternalUsers 這種
+#    「物件陣列」用 MTX_ 覆寫是「附加」語意(不是就地覆蓋)。因此這裡把整份
+#    使用者清單留空,由 run_poc.sh 以 MTX_AUTHINTERNALUSERS_* 注入下列三位:
+#      0) publish 使用者：VIDEO_PUBLISH_USER / VIDEO_PUBLISH_PASS(權限 publish)
+#      1) read    使用者：VIDEO_READ_USER    / VIDEO_READ_PASS   (權限 read)
+#      2) any            :僅 api(apiAddress 綁 127.0.0.1,供本機健康檢查輪詢)
+#    對應注入的環境變數(run_poc.sh 已內建預設值,正式使用請覆寫):
+#      MTX_AUTHINTERNALUSERS_0_USER / _0_PASS / _0_PERMISSIONS_0_ACTION=publish
+#      MTX_AUTHINTERNALUSERS_1_USER / _1_PASS / _1_PERMISSIONS_0_ACTION=read
+#      MTX_AUTHINTERNALUSERS_2_USER=any / _2_PERMISSIONS_0_ACTION=api
+authInternalUsers: []
+
 api: yes
 apiAddress: 127.0.0.1:9997
 

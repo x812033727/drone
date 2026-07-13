@@ -15,6 +15,15 @@ MTX_API_PORT="${MTX_API_PORT:-9997}"
 PROJECT="${COMPOSE_PROJECT:-video-smoke}"
 WORK="$(mktemp -d)"
 
+# MediaMTX 認證憑證:須與 docker-compose.yml mediamtx.environment 的預設一致
+# (兩邊都用同一組環境變數;compose 以 ${VAR:-default} 兜底,這裡的 :-default
+#  必須與之相同,否則推流會 401)。推流(publish)帶 publish 帳密;
+# 回放 /list、/get 走 any(playback,宿主埠綁 loopback)不需帳密。
+VIDEO_PUBLISH_USER="${VIDEO_PUBLISH_USER:-publisher}"
+VIDEO_PUBLISH_PASS="${VIDEO_PUBLISH_PASS:-dronedev-publish}"
+VIDEO_READ_USER="${VIDEO_READ_USER:-reader}"
+VIDEO_READ_PASS="${VIDEO_READ_PASS:-dronedev-read}"
+
 # CI 用 compose plugin;部分主機只有 docker-compose v2 binary,自動擇一
 if docker compose version >/dev/null 2>&1; then
     COMPOSE=(docker compose)
@@ -24,6 +33,8 @@ fi
 
 compose() {
     RTSP_PORT="${RTSP_PORT}" PLAYBACK_PORT="${PLAYBACK_PORT}" MTX_API_PORT="${MTX_API_PORT}" \
+        VIDEO_PUBLISH_USER="${VIDEO_PUBLISH_USER}" VIDEO_PUBLISH_PASS="${VIDEO_PUBLISH_PASS}" \
+        VIDEO_READ_USER="${VIDEO_READ_USER}" VIDEO_READ_PASS="${VIDEO_READ_PASS}" \
         "${COMPOSE[@]}" -f "${DIR}/docker-compose.yml" --project-directory "${DIR}" \
         -p "${PROJECT}" "$@"
 }
@@ -59,9 +70,11 @@ echo "[video-smoke] MediaMTX 就緒,推 10 秒測試流"
 # 推流(-re 實時步調;testsrc2 有跨幀運動,編碼負載較真實)。
 # 必須 -rtsp_transport tcp:預設 UDP 的 RTP 埠(8000/8001)未發布到宿主,
 # 媒體包進不了容器 → 錄不到任何幀(session 卻建得起來,極易誤判)。
+# 推流 URL 帶 publish 帳密(authInternalUsers 已關匿名,無帳密會 401 ANNOUNCE)。
 ffmpeg -hide_banner -loglevel error -re -f lavfi -i testsrc2=size=1280x720:rate=30 \
     -t 10 -c:v libx264 -preset ultrafast -tune zerolatency \
-    -f rtsp -rtsp_transport tcp "rtsp://127.0.0.1:${RTSP_PORT}/stream"
+    -f rtsp -rtsp_transport tcp \
+    "rtsp://${VIDEO_PUBLISH_USER}:${VIDEO_PUBLISH_PASS}@127.0.0.1:${RTSP_PORT}/stream"
 
 # 收流結束後 mediamtx 需片刻把最後的 part 落盤
 sleep 2

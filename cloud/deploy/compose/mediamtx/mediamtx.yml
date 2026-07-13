@@ -4,19 +4,20 @@
 # 容器內埠固定(8554/9996/9997),宿主埠由 compose 以環境變數映射。
 logLevel: info
 
-# 預設 authInternalUsers 只允許 127.0.0.1 打 api/playback,但容器內看到的
-# 來源是 docker 網段 IP(docker-proxy)→ 一律 401。Phase 0 內網豁免
-# (security.md §8):容器內全開;實際暴露面由 compose 控
-# (api/playback 宿主埠只綁 loopback)。正式部署換帳密+TLS。
-authInternalUsers:
-  - user: any
-    pass:
-    ips: []
-    permissions:
-      - action: publish
-      - action: read
-      - action: playback
-      - action: api
+# --- 認證(預設關閉匿名)---
+# authInternalUsers 留空 [] 以「關掉 MediaMTX 未定義使用者時自動放行的 any 全權
+# 使用者」(否則 RTSP :8554 對外裸奔可任意推/拉流)。真正的使用者由
+# docker-compose.yml 的 mediamtx.environment 以 MTX_AUTHINTERNALUSERS_* 注入:
+#   0) publish 使用者(VIDEO_PUBLISH_USER / VIDEO_PUBLISH_PASS):機上推流入口
+#   1) read    使用者(VIDEO_READ_USER    / VIDEO_READ_PASS)  :即時拉流訂閱
+#   2) any → api      、3) any → playback
+# api/playback 兩個宿主埠只綁 loopback(security.md §8 內網豁免),故留 any;
+# 對外的 RTSP publish/read 一律需帳密。正式部署覆寫帳密 + 上 TLS。
+#
+# ⚠️ MediaMTX v1.12.3 不支援設定檔內 ${ENV} 內插(pass 會原樣存字面 "${VAR}"),
+#    且 authInternalUsers 這類物件陣列用 MTX_ 覆寫是「附加」語意——故整份清單
+#    留空,全部使用者由環境變數在容器啟動時附加(見 docker-compose.yml)。
+authInternalUsers: []
 
 api: yes
 apiAddress: :9997
