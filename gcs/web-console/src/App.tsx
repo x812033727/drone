@@ -4,6 +4,7 @@ import { AuthError, clearToken, getToken, setToken } from "./auth";
 import { FleetList } from "./components/FleetList";
 import { FleetMap } from "./components/FleetMap";
 import { Login } from "./components/Login";
+import { handleCallback } from "./oidc";
 import type { DeviceStatusView } from "./types";
 
 const ONLINE_MS = 10_000; // 與 fleet-svc repo.ONLINE_THRESHOLD_S 對齊
@@ -15,6 +16,20 @@ export function App() {
   const [authRequired, setAuthRequired] = useState(false);
   const [authVersion, setAuthVersion] = useState(0); // 登入後 bump → 重訂閱/重載
   const [, setTick] = useState(0);
+
+  // OIDC 回呼:若本次載入帶 ?code(SSO 導回),交換 token 並登入
+  useEffect(() => {
+    handleCallback()
+      .then((token) => {
+        if (token) {
+          setToken(token);
+          setAuthRequired(false);
+          setDevices({});
+          setAuthVersion((v) => v + 1);
+        }
+      })
+      .catch(() => setAuthRequired(true));
+  }, []);
 
   // 權威來源:定期拉 /status(含尚未上線的已註冊機)
   useEffect(() => {
