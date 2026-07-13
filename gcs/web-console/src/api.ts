@@ -6,6 +6,12 @@ import type {
   DeviceCreate,
   DeviceStatusView,
   DeviceUpdate,
+  DeviceFirmware,
+  DeviceFirmwareSet,
+  DeviceOtaRequest,
+  DeviceOtaResult,
+  Firmware,
+  FirmwareCreate,
   Fleet,
   FleetCreate,
   Mission,
@@ -87,6 +93,25 @@ export const updateDevice = (id: string, body: DeviceUpdate) =>
   request<Device>(`/devices/${id}`, { method: "PATCH", body: JSON.stringify(body) });
 export const deleteDevice = (id: string) =>
   request<void>(`/devices/${id}`, { method: "DELETE" });
+
+// ---- fleet-svc:韌體型錄 + 裝置韌體指派 + OTA 觸發 ----
+// 型錄 CRUD(operator+ 建立;所有登入者可列),裝置韌體以 PUT 覆寫記錄,OTA 以 POST 發起。
+export const listFirmware = () => request<Firmware[]>("/firmware");
+export const createFirmware = (body: FirmwareCreate) =>
+  request<Firmware>("/firmware", { method: "POST", body: JSON.stringify(body) });
+export const listDeviceFirmware = (id: string) =>
+  request<DeviceFirmware[]>(`/devices/${id}/firmware`);
+export const setDeviceFirmware = (id: string, body: DeviceFirmwareSet) =>
+  request<DeviceFirmware>(`/devices/${id}/firmware`, {
+    method: "PUT",
+    body: JSON.stringify(body),
+  });
+// 觸發 OTA:發布 cmd/ota 到目標機;回應確認主題(進度看 /alerts kind=ota)。
+export const triggerOta = (id: string, body: DeviceOtaRequest) =>
+  request<DeviceOtaResult>(`/devices/${id}/ota`, {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
 
 // ---- mission-svc:routes / missions CRUD + 派遣 + 控制 ----
 export const listRoutes = () => request<Route[]>("/routes");

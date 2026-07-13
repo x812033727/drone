@@ -75,6 +75,71 @@ export type DeviceUpdate = {
   status?: DeviceStatus;
 };
 
+// ---- fleet-svc 韌體 / OTA 契約(對 cloud/fleet_svc/fleet_svc/models.py,openapi Firmware/OTA)----
+
+// 元件別(對後端 Component enum;韌體型錄、裝置韌體、OTA 皆共用)。
+export type FirmwareComponent = "px4" | "onboard" | "gcs" | "payload";
+
+// POST /api/v1/firmware(operator+):登錄一版韌體到型錄。released_at/sbom_ref 選填。
+export type FirmwareCreate = {
+  component: FirmwareComponent;
+  version: string;
+  released_at?: string | null;
+  sbom_ref?: string | null;
+};
+
+// GET /api/v1/firmware:韌體型錄一筆。
+export type Firmware = {
+  id: string;
+  component: FirmwareComponent;
+  version: string;
+  released_at: string | null;
+  sbom_ref: string | null;
+  created_at: string;
+};
+
+// PUT /api/v1/devices/{id}/firmware(operator+):記錄裝置某元件目前安裝的韌體版本。
+export type DeviceFirmwareSet = {
+  component: FirmwareComponent;
+  version: string;
+};
+
+// GET /api/v1/devices/{id}/firmware:裝置各元件目前安裝版本。
+export type DeviceFirmware = {
+  device_id: string;
+  component: FirmwareComponent;
+  version: string;
+  installed_at: string;
+};
+
+// OTA 指令動作(對後端 OtaAction,對齊機上 ota.py VALID_ACTIONS)。
+export type OtaAction = "install" | "pause" | "resume" | "rollback";
+
+// POST /api/v1/devices/{id}/ota(operator+):觸發裝置 OTA。欄位對齊機上 ota.py:
+// - install 需 update_id + component/version/url/sha256/signature 齊備(size 選填);
+// - pause/resume/rollback 只需 update_id(rollback 可帶 component)。
+//   sha256 須為 64 字元小寫 hex;簽章由離線 HSM 產,雲端只轉發不簽。
+export type DeviceOtaRequest = {
+  action: OtaAction;
+  update_id: string;
+  component?: FirmwareComponent | null;
+  version?: string | null;
+  url?: string | null;
+  size?: number | null;
+  sha256?: string | null;
+  signature?: string | null;
+};
+
+// POST /api/v1/devices/{id}/ota 回應:確認已發布 cmd/ota 到目標機主題(fire-and-forget;
+// 進度看 /alerts kind=ota)。
+export type DeviceOtaResult = {
+  device_id: string;
+  serial: string;
+  action: OtaAction;
+  update_id: string;
+  topic: string;
+};
+
 // ---- mission-svc 契約(對 cloud/mission_svc/mission_svc/models.py)----
 
 export type Waypoint = {

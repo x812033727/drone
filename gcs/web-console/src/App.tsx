@@ -10,6 +10,7 @@ import {
 } from "./auth";
 import { AlertsView, kindLabel } from "./components/AlertsView";
 import { DeviceManager } from "./components/DeviceManager";
+import { FirmwareManager } from "./components/FirmwareManager";
 import { FleetList } from "./components/FleetList";
 import { FleetMap } from "./components/FleetMap";
 import { Login } from "./components/Login";
@@ -23,12 +24,13 @@ import type { DeviceStatusView } from "./types";
 const ONLINE_MS = 10_000; // 與 fleet-svc repo.ONLINE_THRESHOLD_S 對齊
 const LOW_BATTERY_PCT = 20;
 
-type Tab = "map" | "fleet" | "missions" | "alerts" | "usage" | "tenants";
+type Tab = "map" | "fleet" | "firmware" | "missions" | "alerts" | "usage" | "tenants";
 
 // adminOnly 分頁僅 admin 可見(前端 UX 閘門;後端仍以 RBAC 強制 /orgs admin only)。
 const TABS: Array<{ key: Tab; label: string; adminOnly?: boolean }> = [
   { key: "map", label: "地圖監控" },
   { key: "fleet", label: "機隊管理" },
+  { key: "firmware", label: "韌體 / OTA" },
   { key: "missions", label: "任務" },
   { key: "alerts", label: "告警" },
   { key: "usage", label: "用量" },
@@ -264,6 +266,11 @@ export function App() {
       {tab === "fleet" && (
         <div className="view-scroll">
           <DeviceManager canWrite={canWrite} onAuthError={onAuthError} />
+        </div>
+      )}
+      {tab === "firmware" && (
+        <div className="view-scroll">
+          <FirmwareManager canWrite={canWrite} onAuthError={onAuthError} />
         </div>
       )}
       {tab === "missions" && (
