@@ -25,7 +25,8 @@ from fleet_svc.models import (
 ONLINE_THRESHOLD_S = 10
 
 _DEVICE_COLS = (
-    "id, serial, name, fleet_id, model, status, cert_fingerprint, cert_not_after, created_at"
+    "id, serial, name, fleet_id, org_id, model, status, "
+    "cert_fingerprint, cert_not_after, created_at"
 )
 _FLEET_COLS = "id, name, org_id, created_at"
 _FIRMWARE_COLS = "id, component, version, released_at, sbom_ref, created_at"
@@ -67,99 +68,165 @@ def _firmware(r: asyncpg.Record) -> Firmware:
     return Firmware.model_validate(dict(r))
 
 
+# ---- 租戶(G11)過濾小工具 ----
+# org 語義:None = 不加 org 過濾(admin 跨 org / 內部呼叫);字串 = WHERE org_id = 該值。
+def _where(conds: list[str]) -> str:
+    return (" WHERE " + " AND ".join(conds)) if conds else ""
+
+
 # ---- fleet ----
-async def create_fleet(conn: asyncpg.Connection, body: FleetCreate) -> Fleet:
+async def create_fleet(conn: asyncpg.Connection, body: FleetCreate, org: str) -> Fleet:
+    """建立機隊。org 一律取自呼叫者 claim(不採信 client),寫入為租戶邊界。"""
     r = await conn.fetchrow(
         f"INSERT INTO fleet.fleet (name, org_id) VALUES ($1, $2) RETURNING {_FLEET_COLS}",
         body.name,
-        body.org_id,
+        org,
     )
     return _fleet(r)
 
 
 async def list_fleets(
-    conn: asyncpg.Connection, limit: int = 100, offset: int = 0
+    conn: asyncpg.Connection, org: str | None = None, limit: int = 100, offset: int = 0
 ) -> list[Fleet]:
+    conds: list[str] = []
+    params: list[Any] = []
+    if org is not None:
+        params.append(org)
+        conds.append(f"org_id = ${len(params)}")
+    params.append(limit)
+    lim = len(params)
+    params.append(offset)
+    off = len(params)
     rows = await conn.fetch(
-        f"SELECT {_FLEET_COLS} FROM fleet.fleet ORDER BY created_at DESC LIMIT $1 OFFSET $2",
-        limit,
-        offset,
+        f"SELECT {_FLEET_COLS} FROM fleet.fleet{_where(conds)} "
+        f"ORDER BY created_at DESC LIMIT ${lim} OFFSET ${off}",
+        *params,
     )
     return [_fleet(r) for r in rows]
 
 
-async def count_fleets(conn: asyncpg.Connection) -> int:
+async def count_fleets(conn: asyncpg.Connection, org: str | None = None) -> int:
+    if org is not None:
+        return await conn.fetchval("SELECT count(*) FROM fleet.fleet WHERE org_id = $1", org)
     return await conn.fetchval("SELECT count(*) FROM fleet.fleet")
 
 
-async def get_fleet(conn: asyncpg.Connection, fleet_id: UUID) -> Fleet | None:
-    r = await conn.fetchrow(f"SELECT {_FLEET_COLS} FROM fleet.fleet WHERE id = $1", fleet_id)
+async def get_fleet(
+    conn: asyncpg.Connection, fleet_id: UUID, org: str | None = None
+) -> Fleet | None:
+    """依 id 取機隊;org 指定時加租戶過濾(跨 org 回 None → 端點轉 404,不洩存在性)。"""
+    if org is not None:
+        r = await conn.fetchrow(
+            f"SELECT {_FLEET_COLS} FROM fleet.fleet WHERE id = $1 AND org_id = $2",
+            fleet_id,
+            org,
+        )
+    else:
+        r = await conn.fetchrow(f"SELECT {_FLEET_COLS} FROM fleet.fleet WHERE id = $1", fleet_id)
     return _fleet(r) if r else None
 
 
 # ---- device ----
-async def create_device(conn: asyncpg.Connection, body: DeviceCreate) -> Device:
+async def create_device(conn: asyncpg.Connection, body: DeviceCreate, org: str) -> Device:
+    """建立裝置。org 取自呼叫者 claim(不採信 client),與 fleet 綁定無關(裝置可無 fleet)。"""
     r = await conn.fetchrow(
-        "INSERT INTO fleet.device (serial, name, fleet_id, model) "
-        f"VALUES ($1, $2, $3, $4) RETURNING {_DEVICE_COLS}",
+        "INSERT INTO fleet.device (serial, name, fleet_id, org_id, model) "
+        f"VALUES ($1, $2, $3, $4, $5) RETURNING {_DEVICE_COLS}",
         body.serial,
         body.name,
         body.fleet_id,
+        org,
         body.model,
     )
     return _device(r)
 
 
 async def list_devices(
-    conn: asyncpg.Connection, fleet_id: UUID | None = None, limit: int = 100, offset: int = 0
+    conn: asyncpg.Connection,
+    fleet_id: UUID | None = None,
+    org: str | None = None,
+    limit: int = 100,
+    offset: int = 0,
 ) -> list[Device]:
+    conds: list[str] = []
+    params: list[Any] = []
     if fleet_id is not None:
-        rows = await conn.fetch(
-            f"SELECT {_DEVICE_COLS} FROM fleet.device WHERE fleet_id = $1 "
-            "ORDER BY created_at DESC LIMIT $2 OFFSET $3",
-            fleet_id,
-            limit,
-            offset,
-        )
-    else:
-        rows = await conn.fetch(
-            f"SELECT {_DEVICE_COLS} FROM fleet.device ORDER BY created_at DESC LIMIT $1 OFFSET $2",
-            limit,
-            offset,
-        )
+        params.append(fleet_id)
+        conds.append(f"fleet_id = ${len(params)}")
+    if org is not None:
+        params.append(org)
+        conds.append(f"org_id = ${len(params)}")
+    params.append(limit)
+    lim = len(params)
+    params.append(offset)
+    off = len(params)
+    rows = await conn.fetch(
+        f"SELECT {_DEVICE_COLS} FROM fleet.device{_where(conds)} "
+        f"ORDER BY created_at DESC LIMIT ${lim} OFFSET ${off}",
+        *params,
+    )
     return [_device(r) for r in rows]
 
 
-async def count_devices(conn: asyncpg.Connection, fleet_id: UUID | None = None) -> int:
+async def count_devices(
+    conn: asyncpg.Connection, fleet_id: UUID | None = None, org: str | None = None
+) -> int:
+    conds: list[str] = []
+    params: list[Any] = []
     if fleet_id is not None:
-        return await conn.fetchval(
-            "SELECT count(*) FROM fleet.device WHERE fleet_id = $1", fleet_id
+        params.append(fleet_id)
+        conds.append(f"fleet_id = ${len(params)}")
+    if org is not None:
+        params.append(org)
+        conds.append(f"org_id = ${len(params)}")
+    return await conn.fetchval(f"SELECT count(*) FROM fleet.device{_where(conds)}", *params)
+
+
+async def get_device(
+    conn: asyncpg.Connection, device_id: UUID, org: str | None = None
+) -> Device | None:
+    """依 id 取裝置;org 指定時加租戶過濾(跨 org 回 None → 端點轉 404,不洩存在性)。"""
+    if org is not None:
+        r = await conn.fetchrow(
+            f"SELECT {_DEVICE_COLS} FROM fleet.device WHERE id = $1 AND org_id = $2",
+            device_id,
+            org,
         )
-    return await conn.fetchval("SELECT count(*) FROM fleet.device")
-
-
-async def get_device(conn: asyncpg.Connection, device_id: UUID) -> Device | None:
-    r = await conn.fetchrow(f"SELECT {_DEVICE_COLS} FROM fleet.device WHERE id = $1", device_id)
+    else:
+        r = await conn.fetchrow(
+            f"SELECT {_DEVICE_COLS} FROM fleet.device WHERE id = $1", device_id
+        )
     return _device(r) if r else None
 
 
 async def update_device(
-    conn: asyncpg.Connection, device_id: UUID, update: DeviceUpdate
+    conn: asyncpg.Connection, device_id: UUID, update: DeviceUpdate, org: str | None = None
 ) -> Device | None:
     set_clause, values = build_device_patch(update, start_index=1)
     if not set_clause:
-        return await get_device(conn, device_id)
+        return await get_device(conn, device_id, org)
     id_index = len(values) + 1
+    where = f"id = ${id_index}"
+    args: list[Any] = [*values, device_id]
+    if org is not None:
+        args.append(org)
+        where += f" AND org_id = ${id_index + 1}"
     r = await conn.fetchrow(
-        f"UPDATE fleet.device SET {set_clause} WHERE id = ${id_index} RETURNING {_DEVICE_COLS}",
-        *values,
-        device_id,
+        f"UPDATE fleet.device SET {set_clause} WHERE {where} RETURNING {_DEVICE_COLS}",
+        *args,
     )
     return _device(r) if r else None
 
 
-async def delete_device(conn: asyncpg.Connection, device_id: UUID) -> bool:
-    result = await conn.execute("DELETE FROM fleet.device WHERE id = $1", device_id)
+async def delete_device(
+    conn: asyncpg.Connection, device_id: UUID, org: str | None = None
+) -> bool:
+    if org is not None:
+        result = await conn.execute(
+            "DELETE FROM fleet.device WHERE id = $1 AND org_id = $2", device_id, org
+        )
+    else:
+        result = await conn.execute("DELETE FROM fleet.device WHERE id = $1", device_id)
     return result.endswith("1")
 
 
@@ -225,25 +292,49 @@ def _status(r: asyncpg.Record) -> DeviceStatusView:
 
 
 async def get_device_status(
-    conn: asyncpg.Connection, device_id: UUID, threshold_s: int = ONLINE_THRESHOLD_S
+    conn: asyncpg.Connection,
+    device_id: UUID,
+    org: str | None = None,
+    threshold_s: int = ONLINE_THRESHOLD_S,
 ) -> DeviceStatusView | None:
-    r = await conn.fetchrow(_STATUS_SELECT + " WHERE d.id = $2", threshold_s, device_id)
+    if org is not None:
+        r = await conn.fetchrow(
+            _STATUS_SELECT + " WHERE d.id = $2 AND d.org_id = $3", threshold_s, device_id, org
+        )
+    else:
+        r = await conn.fetchrow(_STATUS_SELECT + " WHERE d.id = $2", threshold_s, device_id)
     return _status(r) if r else None
 
 
 async def list_fleet_status(
-    conn: asyncpg.Connection, fleet_id: UUID, threshold_s: int = ONLINE_THRESHOLD_S
+    conn: asyncpg.Connection,
+    fleet_id: UUID,
+    org: str | None = None,
+    threshold_s: int = ONLINE_THRESHOLD_S,
 ) -> list[DeviceStatusView]:
-    rows = await conn.fetch(
-        _STATUS_SELECT + " WHERE d.fleet_id = $2 ORDER BY d.serial", threshold_s, fleet_id
-    )
+    if org is not None:
+        rows = await conn.fetch(
+            _STATUS_SELECT + " WHERE d.fleet_id = $2 AND d.org_id = $3 ORDER BY d.serial",
+            threshold_s,
+            fleet_id,
+            org,
+        )
+    else:
+        rows = await conn.fetch(
+            _STATUS_SELECT + " WHERE d.fleet_id = $2 ORDER BY d.serial", threshold_s, fleet_id
+        )
     return [_status(r) for r in rows]
 
 
 async def list_all_status(
-    conn: asyncpg.Connection, threshold_s: int = ONLINE_THRESHOLD_S
+    conn: asyncpg.Connection, org: str | None = None, threshold_s: int = ONLINE_THRESHOLD_S
 ) -> list[DeviceStatusView]:
-    rows = await conn.fetch(_STATUS_SELECT + " ORDER BY d.serial", threshold_s)
+    if org is not None:
+        rows = await conn.fetch(
+            _STATUS_SELECT + " WHERE d.org_id = $2 ORDER BY d.serial", threshold_s, org
+        )
+    else:
+        rows = await conn.fetch(_STATUS_SELECT + " ORDER BY d.serial", threshold_s)
     return [_status(r) for r in rows]
 
 

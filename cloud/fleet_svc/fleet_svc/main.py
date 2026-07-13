@@ -19,7 +19,14 @@ from fastapi import Depends, FastAPI, HTTPException, Query, Request, Response
 from fastapi.responses import StreamingResponse
 
 from fleet_svc import audit, metrics, repo
-from fleet_svc.auth import AUTH_ENABLED, authorize_token, require_role
+from fleet_svc.auth import (
+    AUTH_ENABLED,
+    Principal,
+    authorize_token,
+    read_org,
+    require_principal,
+    require_role,
+)
 from fleet_svc.consumer import run_consumer
 from fleet_svc.hub import TelemetryHub
 from fleet_svc.migrate import apply_migrations
@@ -90,10 +97,12 @@ if not AUTH_ENABLED:
     log.warning("⚠ JWT 認證未啟用(dev 模式,全放行)——正式部署須設 JWT_SECRET 或 JWT_JWKS_URL")
 
 # RBAC 依賴:讀取需 viewer,變更需 operator(healthz 不設,供 compose healthcheck);
-# 審計稽核檢視需 admin。變更端點以參數注入 claims(= Depends 值)供審計取 actor,
+# 審計稽核檢視需 admin。依賴回 Principal(含租戶 org),端點據此做多租戶隔離(G11)並
+# 供審計取 actor(claims 在 principal.claims)。注入 Principal 不增加 OpenAPI 參數。
 # FastAPI 對同一 Depends 物件快取,故不會重複驗證。
-VIEWER = Depends(require_role("viewer"))
-OPERATOR = Depends(require_role("operator"))
+VIEWER = Depends(require_principal("viewer"))
+OPERATOR = Depends(require_principal("operator"))
+# 稽核端點 admin-only 且全域(不做 org 過濾),沿用回 claims 的 require_role 閘。
 ADMIN = Depends(require_role("admin"))
 
 
@@ -124,49 +133,58 @@ async def healthz() -> dict:
 
 # ---- fleets ----
 @app.post("/api/v1/fleets", response_model=Fleet, status_code=201)
-async def create_fleet(body: FleetCreate, request: Request, claims: dict = OPERATOR) -> Fleet:
+async def create_fleet(
+    body: FleetCreate, request: Request, principal: Principal = OPERATOR
+) -> Fleet:
+    # 租戶邊界:org 取自呼叫者 claim(principal.org),不採信 client 傳入。
     async with _pool(app).acquire() as conn:
-        fleet = await repo.create_fleet(conn, body)
+        fleet = await repo.create_fleet(conn, body, principal.org)
         await audit.record(
-            conn, claims=claims, action="create", resource_type="fleet",
+            conn, claims=principal.claims, action="create", resource_type="fleet",
             resource_id=fleet.id, details={"name": fleet.name, "org_id": fleet.org_id},
             request=request,
         )
     return fleet
 
 
-@app.get("/api/v1/fleets", response_model=list[Fleet], dependencies=[VIEWER])
+@app.get("/api/v1/fleets", response_model=list[Fleet])
 async def list_fleets(
     response: Response,
+    org: str | None = Query(default=None, description="僅 admin:限定單一租戶(略則看全部)"),
     limit: int = Query(default=PAGE_LIMIT_DEFAULT, ge=1, le=PAGE_LIMIT_MAX),
     offset: int = Query(default=0, ge=0),
+    principal: Principal = VIEWER,
 ) -> list[Fleet]:
+    scope = read_org(principal, org)  # 非 admin 一律限本 org;admin 可跨/指定
     async with _pool(app).acquire() as conn:
-        total = await repo.count_fleets(conn)
-        items = await repo.list_fleets(conn, limit=limit, offset=offset)
+        total = await repo.count_fleets(conn, scope)
+        items = await repo.list_fleets(conn, org=scope, limit=limit, offset=offset)
     _set_page_headers(response, total, limit, offset)
     return items
 
 
-@app.get("/api/v1/fleets/{fleet_id}", response_model=Fleet, dependencies=[VIEWER])
-async def get_fleet(fleet_id: UUID) -> Fleet:
+@app.get("/api/v1/fleets/{fleet_id}", response_model=Fleet)
+async def get_fleet(fleet_id: UUID, principal: Principal = VIEWER) -> Fleet:
     async with _pool(app).acquire() as conn:
-        f = await repo.get_fleet(conn, fleet_id)
-    if f is None:
+        f = await repo.get_fleet(conn, fleet_id, read_org(principal))
+    if f is None:  # 跨 org 亦回 404(不洩漏存在性)
         raise HTTPException(status_code=404, detail="fleet 不存在")
     return f
 
 
 # ---- devices ----
 @app.post("/api/v1/devices", response_model=Device, status_code=201)
-async def create_device(body: DeviceCreate, request: Request, claims: dict = OPERATOR) -> Device:
+async def create_device(
+    body: DeviceCreate, request: Request, principal: Principal = OPERATOR
+) -> Device:
+    # 租戶邊界:org 取自呼叫者 claim,不採信 client。
     async with _pool(app).acquire() as conn:
         try:
-            device = await repo.create_device(conn, body)
+            device = await repo.create_device(conn, body, principal.org)
         except asyncpg.UniqueViolationError:
             raise HTTPException(status_code=409, detail=f"serial 已存在:{body.serial}")
         await audit.record(
-            conn, claims=claims, action="create", resource_type="device",
+            conn, claims=principal.claims, action="create", resource_type="device",
             resource_id=device.id,
             details={"serial": device.serial, "name": device.name, "model": device.model},
             request=request,
@@ -174,52 +192,58 @@ async def create_device(body: DeviceCreate, request: Request, claims: dict = OPE
     return device
 
 
-@app.get("/api/v1/devices", response_model=list[Device], dependencies=[VIEWER])
+@app.get("/api/v1/devices", response_model=list[Device])
 async def list_devices(
     response: Response,
     fleet_id: UUID | None = Query(default=None),
+    org: str | None = Query(default=None, description="僅 admin:限定單一租戶(略則看全部)"),
     limit: int = Query(default=PAGE_LIMIT_DEFAULT, ge=1, le=PAGE_LIMIT_MAX),
     offset: int = Query(default=0, ge=0),
+    principal: Principal = VIEWER,
 ) -> list[Device]:
+    scope = read_org(principal, org)
     async with _pool(app).acquire() as conn:
-        total = await repo.count_devices(conn, fleet_id)
-        items = await repo.list_devices(conn, fleet_id, limit=limit, offset=offset)
+        total = await repo.count_devices(conn, fleet_id, scope)
+        items = await repo.list_devices(conn, fleet_id, org=scope, limit=limit, offset=offset)
     _set_page_headers(response, total, limit, offset)
     return items
 
 
-@app.get("/api/v1/devices/{device_id}", response_model=Device, dependencies=[VIEWER])
-async def get_device(device_id: UUID) -> Device:
+@app.get("/api/v1/devices/{device_id}", response_model=Device)
+async def get_device(device_id: UUID, principal: Principal = VIEWER) -> Device:
     async with _pool(app).acquire() as conn:
-        d = await repo.get_device(conn, device_id)
-    if d is None:
+        d = await repo.get_device(conn, device_id, read_org(principal))
+    if d is None:  # 跨 org 亦回 404
         raise HTTPException(status_code=404, detail="device 不存在")
     return d
 
 
 @app.patch("/api/v1/devices/{device_id}", response_model=Device)
 async def update_device(
-    device_id: UUID, body: DeviceUpdate, request: Request, claims: dict = OPERATOR
+    device_id: UUID, body: DeviceUpdate, request: Request, principal: Principal = OPERATOR
 ) -> Device:
     async with _pool(app).acquire() as conn:
-        d = await repo.update_device(conn, device_id, body)
-        if d is None:
+        d = await repo.update_device(conn, device_id, body, read_org(principal))
+        if d is None:  # 跨 org 亦回 404(不得改他 org 資源)
             raise HTTPException(status_code=404, detail="device 不存在")
         await audit.record(
-            conn, claims=claims, action="update", resource_type="device", resource_id=device_id,
+            conn, claims=principal.claims, action="update", resource_type="device",
+            resource_id=device_id,
             details=body.model_dump(exclude_unset=True, mode="json"), request=request,
         )
     return d
 
 
 @app.delete("/api/v1/devices/{device_id}", status_code=204)
-async def delete_device(device_id: UUID, request: Request, claims: dict = OPERATOR) -> None:
+async def delete_device(
+    device_id: UUID, request: Request, principal: Principal = OPERATOR
+) -> None:
     async with _pool(app).acquire() as conn:
-        ok = await repo.delete_device(conn, device_id)
-        if not ok:
+        ok = await repo.delete_device(conn, device_id, read_org(principal))
+        if not ok:  # 跨 org 亦回 404
             raise HTTPException(status_code=404, detail="device 不存在")
         await audit.record(
-            conn, claims=claims, action="delete", resource_type="device",
+            conn, claims=principal.claims, action="delete", resource_type="device",
             resource_id=device_id, request=request,
         )
 
@@ -227,8 +251,9 @@ async def delete_device(device_id: UUID, request: Request, claims: dict = OPERAT
 # ---- firmware ----
 @app.post("/api/v1/firmware", response_model=Firmware, status_code=201)
 async def create_firmware(
-    body: FirmwareCreate, request: Request, claims: dict = OPERATOR
+    body: FirmwareCreate, request: Request, principal: Principal = OPERATOR
 ) -> Firmware:
+    # 韌體版本為平台共用目錄(非租戶資料),不做 org 綁定;僅 operator 可維護。
     async with _pool(app).acquire() as conn:
         try:
             fw = await repo.create_firmware(conn, body)
@@ -237,7 +262,8 @@ async def create_firmware(
                 status_code=409, detail=f"{body.component.value} {body.version} 已存在"
             )
         await audit.record(
-            conn, claims=claims, action="create", resource_type="firmware", resource_id=fw.id,
+            conn, claims=principal.claims, action="create", resource_type="firmware",
+            resource_id=fw.id,
             details={"component": fw.component.value, "version": fw.version}, request=request,
         )
     return fw
@@ -245,63 +271,63 @@ async def create_firmware(
 
 @app.get("/api/v1/firmware", response_model=list[Firmware], dependencies=[VIEWER])
 async def list_firmware() -> list[Firmware]:
+    # 平台共用韌體目錄,不含租戶資料,全體 viewer 可見(見上註)。
     async with _pool(app).acquire() as conn:
         return await repo.list_firmware(conn)
 
 
 @app.put("/api/v1/devices/{device_id}/firmware", response_model=DeviceFirmware)
 async def set_device_firmware(
-    device_id: UUID, body: DeviceFirmwareSet, request: Request, claims: dict = OPERATOR
+    device_id: UUID, body: DeviceFirmwareSet, request: Request, principal: Principal = OPERATOR
 ) -> DeviceFirmware:
     async with _pool(app).acquire() as conn:
-        d = await repo.get_device(conn, device_id)
-        if d is None:
+        d = await repo.get_device(conn, device_id, read_org(principal))
+        if d is None:  # 跨 org 亦回 404(不得改他 org 裝置韌體)
             raise HTTPException(status_code=404, detail="device 不存在")
         df = await repo.set_device_firmware(conn, device_id, body.component.value, body.version)
         await audit.record(
-            conn, claims=claims, action="set_firmware", resource_type="device",
+            conn, claims=principal.claims, action="set_firmware", resource_type="device",
             resource_id=device_id,
             details={"component": body.component.value, "version": body.version}, request=request,
         )
     return df
 
 
-@app.get(
-    "/api/v1/devices/{device_id}/firmware",
-    response_model=list[DeviceFirmware],
-    dependencies=[VIEWER],
-)
-async def list_device_firmware(device_id: UUID) -> list[DeviceFirmware]:
+@app.get("/api/v1/devices/{device_id}/firmware", response_model=list[DeviceFirmware])
+async def list_device_firmware(
+    device_id: UUID, principal: Principal = VIEWER
+) -> list[DeviceFirmware]:
     async with _pool(app).acquire() as conn:
+        d = await repo.get_device(conn, device_id, read_org(principal))
+        if d is None:  # 先確認裝置屬本 org,否則不洩其韌體清單
+            raise HTTPException(status_code=404, detail="device 不存在")
         return await repo.list_device_firmware(conn, device_id)
 
 
 # ---- status(裝置 + 最新遙測)----
-@app.get("/api/v1/status", response_model=list[DeviceStatusView], dependencies=[VIEWER])
-async def list_all_status() -> list[DeviceStatusView]:
+@app.get("/api/v1/status", response_model=list[DeviceStatusView])
+async def list_all_status(principal: Principal = VIEWER) -> list[DeviceStatusView]:
     async with _pool(app).acquire() as conn:
-        return await repo.list_all_status(conn)
+        return await repo.list_all_status(conn, read_org(principal))
 
 
-@app.get(
-    "/api/v1/devices/{device_id}/status", response_model=DeviceStatusView, dependencies=[VIEWER]
-)
-async def get_device_status(device_id: UUID) -> DeviceStatusView:
+@app.get("/api/v1/devices/{device_id}/status", response_model=DeviceStatusView)
+async def get_device_status(
+    device_id: UUID, principal: Principal = VIEWER
+) -> DeviceStatusView:
     async with _pool(app).acquire() as conn:
-        s = await repo.get_device_status(conn, device_id)
-    if s is None:
+        s = await repo.get_device_status(conn, device_id, read_org(principal))
+    if s is None:  # 跨 org 亦回 404
         raise HTTPException(status_code=404, detail="device 不存在")
     return s
 
 
-@app.get(
-    "/api/v1/fleets/{fleet_id}/status",
-    response_model=list[DeviceStatusView],
-    dependencies=[VIEWER],
-)
-async def list_fleet_status(fleet_id: UUID) -> list[DeviceStatusView]:
+@app.get("/api/v1/fleets/{fleet_id}/status", response_model=list[DeviceStatusView])
+async def list_fleet_status(
+    fleet_id: UUID, principal: Principal = VIEWER
+) -> list[DeviceStatusView]:
     async with _pool(app).acquire() as conn:
-        return await repo.list_fleet_status(conn, fleet_id)
+        return await repo.list_fleet_status(conn, fleet_id, read_org(principal))
 
 
 # ---- audit(G14 稽核查詢,admin only;分頁同 G12 慣例)----

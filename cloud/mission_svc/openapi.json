@@ -151,6 +151,10 @@
             "title": "Mission Id",
             "type": "string"
           },
+          "org_id": {
+            "title": "Org Id",
+            "type": "string"
+          },
           "route_id": {
             "anyOf": [
               {
@@ -192,6 +196,7 @@
         "required": [
           "id",
           "mission_id",
+          "org_id",
           "drone_id",
           "status",
           "waypoints",
@@ -264,15 +269,8 @@
             "type": "string"
           },
           "org_id": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Org Id"
+            "title": "Org Id",
+            "type": "string"
           },
           "rtl_after_last": {
             "title": "Rtl After Last",
@@ -289,6 +287,7 @@
         "required": [
           "id",
           "name",
+          "org_id",
           "waypoints",
           "rtl_after_last",
           "created_at"
@@ -297,21 +296,11 @@
         "type": "object"
       },
       "RouteCreate": {
+        "description": "建立航線。org_id 不在此——租戶由呼叫者 JWT claim 決定(不採信 client 傳入)。",
         "properties": {
           "name": {
             "title": "Name",
             "type": "string"
-          },
-          "org_id": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Org Id"
           },
           "rtl_after_last": {
             "default": true,
@@ -518,6 +507,24 @@
                 }
               ],
               "title": "Drone Id"
+            }
+          },
+          {
+            "description": "僅 admin:限定單一租戶(略則看全部)",
+            "in": "query",
+            "name": "org",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "僅 admin:限定單一租戶(略則看全部)",
+              "title": "Org"
             }
           },
           {
@@ -768,6 +775,24 @@
       "get": {
         "operationId": "list_routes_api_v1_routes_get",
         "parameters": [
+          {
+            "description": "僅 admin:限定單一租戶(略則看全部)",
+            "in": "query",
+            "name": "org",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "僅 admin:限定單一租戶(略則看全部)",
+              "title": "Org"
+            }
+          },
           {
             "in": "query",
             "name": "limit",
