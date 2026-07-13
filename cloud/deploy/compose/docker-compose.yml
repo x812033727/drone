@@ -111,11 +111,15 @@ services:
       dockerfile: cloud/fleet_svc/Dockerfile
     environment:
       PG_DSN: postgresql://drone:${PG_PASSWORD:-dronedev}@timescaledb:5432/drone
+      MQTT_HOST: mosquitto
+      MQTT_PORT: "1883"
     ports:
       # 只綁 loopback:Phase 0 無認證,不對外網開(security.md §8 內網豁免)
       - "127.0.0.1:${FLEETSVC_PORT:-8091}:8091"
     depends_on:
       timescaledb:
+        condition: service_healthy
+      mosquitto:
         condition: service_healthy
     healthcheck:
       # base image 無 curl,用 stdlib urllib 探活(/healthz 內含 DB SELECT 1)

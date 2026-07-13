@@ -115,3 +115,21 @@ class DeviceFirmware(BaseModel):
     component: Component
     version: str
     installed_at: datetime
+
+
+class DeviceStatusView(BaseModel):
+    """裝置 + 最新即時狀態(機隊儀表板/地圖用)。online 於查詢時依 last_seen 新鮮度計算。"""
+
+    device_id: UUID
+    serial: str
+    name: str | None = None
+    fleet_id: UUID | None = None
+    status: DeviceStatus
+    online: bool
+    last_seen: datetime | None = None
+    lat_deg: float | None = None
+    lon_deg: float | None = None
+    rel_alt_m: float | None = None
+    battery_pct: float | None = None
+    flight_mode: str | None = None
+    armed: bool | None = None

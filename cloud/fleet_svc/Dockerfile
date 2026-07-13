@@ -6,6 +6,10 @@ WORKDIR /app
 COPY cloud/fleet_svc/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
+# 機-雲契約生成碼(遙測消費者解析 telemetry proto 需要)
+COPY interfaces/proto/gen/python /opt/drone-proto
+RUN pip install --no-cache-dir /opt/drone-proto
+
 COPY cloud/fleet_svc/fleet_svc ./fleet_svc
 COPY cloud/fleet_svc/migrations ./migrations
 
