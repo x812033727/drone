@@ -3,7 +3,7 @@ mavsdk>=3.15.3
 aiomqtt>=2.5.1,<3
 protobuf>=7.35.1,<8
 httpx>=0.28.1,<1   # S20 ULog 上傳(async multipart);G23 OTA 斷點續傳下載
-cryptography>=44   # G23 OTA Ed25519 簽章驗證(公鑰驗簽)
+cryptography>=49.0.0   # G23 OTA Ed25519 簽章驗證(公鑰驗簽)
 
 # 契約生成碼 drone-proto(repo 內套件,另行安裝):
 #   pip install -e ../../interfaces/proto/gen/python
