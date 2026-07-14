@@ -32,7 +32,7 @@ idna==3.18
     # via anyio
 paho-mqtt==2.1.0
     # via aiomqtt
-prometheus-client==0.22.1
+prometheus-client==0.25.0
     # via -r cloud/mission_svc/requirements.txt
 protobuf==7.35.1
     # via -r cloud/mission_svc/requirements.txt
