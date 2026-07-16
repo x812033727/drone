@@ -139,6 +139,13 @@ async def run(args: argparse.Namespace) -> None:
         )
     else:
         logger.info("未設 MQTT_TLS_CERT(明文模式),略過憑證到期監控")
+    if args.payload_port:
+        # dialect 消費端(G7,預設關):pymavlink 收自訂訊息 → fleet/{id}/payload/*
+        from drone_agent.payload_listener import payload_listener
+
+        coros.append(
+            payload_listener(args.drone_id, args.mqtt_host, args.mqtt_port, args.payload_port)
+        )
     if args.enable_cmd:
         # mission_exec 子程序共用的 mavsdk_server 位址:agent 連既有 server 就透傳
         # 同一個;自行 spawn 時為內嵌 server 的 localhost:50051
@@ -263,6 +270,13 @@ def main() -> None:
         type=int,
         default=DEFAULT_MAX_RETRIES,
         help=f"OTA 下載斷線續傳重試上限(預設 {DEFAULT_MAX_RETRIES})",
+    )
+    parser.add_argument(
+        "--payload-port",
+        type=int,
+        default=None,
+        help="dialect 消費端的 MAVLink udpin 埠(如 SITL onboard 低速埠 14030);"
+        "未給則停用 payload 遙測外發",
     )
     args = parser.parse_args()
 
