@@ -29,14 +29,23 @@ playbackAddress: :9996
 rtsp: yes
 rtspAddress: :8554
 
-# 常駐棧只收 RTSP + 錄存 + 回放;其餘協議全關,少開埠
+# 常駐棧收 RTSP(機上推流)+ WebRTC/WHEP(操作端瀏覽器訂閱)+ 錄存 + 回放;
+# 其餘協議全關,少開埠
 rtmp: no
 hls: no
 srt: no
-webrtc: no
+
+# WebRTC(WHEP 訂閱端):信令 :8889(HTTP),媒體面走單一 UDP :8189。
+# ⚠️ ICE candidate 通告的是容器內埠——宿主映射必須同號(compose 8189:8189/udp);
+# 跨機觀看需以 MTX_WEBRTCADDITIONALHOSTS 通告宿主 IP(見 deployment-runbook)。
+webrtc: yes
+webrtcAddress: :8889
+webrtcLocalUDPAddress: :8189
 
 paths:
-  stream:
+  # 每台機一條流:drone/<serial>(serial = fleet 裝置序號 = MQTT drone_id)。
+  # 正則 path 承接任意機號;錄存以 %path 按機分流。
+  "~^drone/[A-Za-z0-9_-]+$":
     record: yes
     recordPath: /recordings/%path/%Y-%m-%d_%H-%M-%S-%f
     recordFormat: fmp4
