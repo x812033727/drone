@@ -1,0 +1,82 @@
+name: web-e2e-stack
+
+# tier-2 E2E(R6):對 compose 真棧驗端到端資料流——mqtt_fanin 灌假機 →
+# 地圖真裝置 → UI 新增航線 → 真 mission_svc 落庫並列出。tier-1(mock API +
+# mock_oidc,web-ci blocking)驗登入/RBAC/UI;tier-2 驗真資料流。
+# nightly(台北 04:10,錯開其他 nightly)+ 手動;觀測期 continue-on-error。
+
+on:
+  schedule:
+    - cron: "10 20 * * *" # 台北 04:10
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  stack-e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: gcs/web-console/package-lock.json
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.10"
+
+      - name: 起 compose 全棧(dev 模式)
+        working-directory: cloud/deploy/compose
+        run: docker compose up -d --build --wait mosquitto timescaledb ingest fleetsvc missionsvc webconsole
+
+      - name: 註冊假機 + 背景灌遙測(SSE 來源)
+        run: |
+          python -m venv /tmp/lv && /tmp/lv/bin/pip install -q -r tools/loadgen/requirements.txt
+          /tmp/lv/bin/pip install -q -e interfaces/proto/gen/python
+          for s in loadgen-000 loadgen-001; do
+            curl -s -X POST -H 'Content-Type: application/json' \
+              -d "{\"serial\":\"$s\",\"model\":\"sim\"}" http://127.0.0.1:8091/api/v1/devices >/dev/null
+          done
+          # 背景持續灌遙測 5 分鐘(playwright 期間 SSE 有活流)
+          nohup /tmp/lv/bin/python tools/loadgen/mqtt_fanin.py \
+            --drones 2 --rate 2 --seconds 300 >/tmp/fanin.log 2>&1 &
+
+      - name: Playwright chromium 快取
+        uses: actions/cache@v5
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('gcs/web-console/package-lock.json') }}
+
+      - name: tier-2 E2E(真棧)
+        working-directory: gcs/web-console
+        env:
+          STACK_BASE_URL: http://127.0.0.1:8080
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+          npm run test:e2e:stack
+
+      - name: 失敗開 issue
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh issue create \
+            --title "web-e2e-stack nightly 失敗($(date -u +%F))" \
+            --body "run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}——tier-2 真棧 E2E 未通過。" \
+            --label bug || true
+
+      - name: 失敗傾印
+        if: failure()
+        working-directory: cloud/deploy/compose
+        run: docker compose logs --tail 80 fleetsvc missionsvc webconsole
+
+      - name: 收攤
+        if: always()
+        working-directory: cloud/deploy/compose
+        run: docker compose down -v

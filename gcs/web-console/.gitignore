@@ -1,7 +1,7 @@
-node_modules/
-dist/
 *.local
-.vite/
 *.tsbuildinfo
-test-results/
+.vite/
+dist/
+node_modules/
 playwright-report/
+test-results/

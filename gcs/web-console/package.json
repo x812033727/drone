@@ -10,7 +10,8 @@
     "preview": "vite preview",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "test:e2e:stack": "playwright test -c playwright.stack.config.ts"
   },
   "dependencies": {
     "maplibre-gl": "^5.24.0",
