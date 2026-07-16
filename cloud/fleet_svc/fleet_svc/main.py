@@ -19,7 +19,7 @@ import asyncpg
 from fastapi import Depends, FastAPI, HTTPException, Query, Request, Response
 from fastapi.responses import PlainTextResponse, StreamingResponse
 
-from fleet_svc import audit, billing, limits, metrics, ota, repo
+from fleet_svc import audit, billing, limits, metrics, ota, repo, video_auth
 from fleet_svc.auth import (
     AUTH_ENABLED,
     Principal,
@@ -705,6 +705,39 @@ async def _sse_events(request: Request, hub: TelemetryHub, principal: Principal)
                 yield ": keepalive\n\n"
     finally:
         hub.unsubscribe(q)
+
+
+@app.post("/api/v1/video/auth", status_code=204)
+async def video_auth_callback(body: video_auth.VideoAuthRequest) -> Response:
+    """MediaMTX authHTTPAddress 回呼(authMethod: http;策略見 video_auth 模組)。
+
+    本端點由 MediaMTX 於 compose 內網呼叫,不掛使用者 RBAC;
+    對外仍安全:publish 憑證 constant-time、read 走 fleet JWT + org 隔離。
+    """
+    if body.action == "publish":
+        if video_auth.publish_credentials_ok(body.user, body.password):
+            return Response(status_code=204)
+        # 401:RTSP 客戶端要收到 401 才會補送憑證(MediaMTX README)
+        raise HTTPException(status_code=401, detail="publish 帳密無效")
+    if body.action == "read":
+        if not AUTH_ENABLED:
+            return Response(status_code=204)  # dev 模式對齊全站語意
+        token = video_auth.extract_jwt(body)
+        if token is None:
+            raise HTTPException(status_code=401, detail="缺少 token(?jwt= / Basic)")
+        principal = build_principal(authorize_token(token, "viewer"))
+        serial = video_auth.stream_serial(body.path)
+        if serial is None:
+            raise HTTPException(status_code=403, detail="path 非 drone/<serial> 慣例")
+        if principal.is_admin:
+            return Response(status_code=204)
+        async with _pool(app).acquire() as conn:
+            serials = await repo.list_org_serials(conn, principal.org)
+        if serial in serials:
+            return Response(status_code=204)
+        raise HTTPException(status_code=403, detail="裝置不屬於此租戶")
+    # playback/api/metrics 等應由 authHTTPExclude 排除;打進來一律拒
+    raise HTTPException(status_code=403, detail=f"action {body.action!r} 不在橋接範圍")
 
 
 @app.get("/api/v1/stream")
