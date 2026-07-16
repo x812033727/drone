@@ -133,3 +133,42 @@ jobs:
 
       - name: 錄存回放煙霧(推流 → list → get → ffprobe)
         run: COMPOSE_PROJECT=video-smoke-ci ./video_smoke.sh
+
+  # V4 合成相機:build simcam → 推流 drone/sim-1 → path ready → WHEP 201。
+  # path-gate 由 workflow 觸發條件涵蓋(cloud/** 與 onboard/video_pipeline/**)。
+  simcam-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: cloud/deploy/compose
+    steps:
+      - uses: actions/checkout@v7
+      - name: 起 mediamtx + simcam
+        run: docker compose --profile simcam up -d --build --wait mediamtx simcam
+      - name: 等 path ready(drone/sim-1)
+        run: |
+          for i in $(seq 1 60); do
+            READY=$(curl -fsS "http://127.0.0.1:9997/v3/paths/get/drone%2Fsim-1" 2>/dev/null \
+              | python3 -c 'import json,sys; print(json.load(sys.stdin).get("ready"))' 2>/dev/null || true)
+            [ "$READY" = "True" ] && exit 0
+            sleep 1
+          done
+          echo "path 未就緒" >&2
+          docker compose logs --tail 50 simcam mediamtx >&2
+          exit 1
+      - name: WHEP 信令 201(帶讀取帳密)
+        run: |
+          # 直接寫檔:$(printf) 命令替換會剝尾端 CRLF → SDP 缺結尾 → 400(實測)
+          printf 'v=0\r\no=- 0 0 IN IP4 127.0.0.1\r\ns=-\r\nt=0 0\r\na=group:BUNDLE 0\r\na=ice-ufrag:cisimcam\r\na=ice-pwd:cisimcamcisimcamcisimcam\r\na=fingerprint:sha-256 4A:AD:B9:B1:3F:82:18:3B:54:02:12:DF:3E:5D:49:6B:19:E5:7C:AB:11:22:33:44:55:66:77:88:99:AA:BB:CC\r\nm=video 9 UDP/TLS/RTP/SAVPF 96\r\nc=IN IP4 0.0.0.0\r\na=mid:0\r\na=recvonly\r\na=rtpmap:96 H264/90000\r\na=fmtp:96 packetization-mode=1;profile-level-id=42e01f\r\na=setup:actpass\r\na=rtcp-mux\r\n' > /tmp/offer.sdp
+          CODE=$(curl -s -o /dev/null -w '%{http_code}' \
+            -u reader:dronedev-read -X POST -H 'Content-Type: application/sdp' \
+            --data-binary @/tmp/offer.sdp "http://127.0.0.1:8889/drone/sim-1/whep")
+          echo "WHEP: $CODE"
+          test "$CODE" = "201"
+      - name: 失敗傾印
+        if: failure()
+        run: docker compose logs --tail 100
+      - name: 收攤
+        if: always()
+        run: docker compose --profile simcam down -v

@@ -245,6 +245,22 @@ services:
       - mediamtx-recordings:/recordings
     restart: unless-stopped
 
+  # 合成相機(V4;profiles 選配,預設不起):sender --source test 推 drone/<serial>。
+  # 無實體相機下驗證影像鏈;真相機(Jetson)為 Phase 1 硬體。
+  simcam:
+    build:
+      context: ../../..
+      dockerfile: onboard/video_pipeline/docker/Dockerfile.sender
+    profiles: ["simcam"]
+    environment:
+      SIMCAM_SERIAL: "${SIMCAM_SERIAL:-sim-1}"
+      VIDEO_PUBLISH_USER: "${VIDEO_PUBLISH_USER:-publisher}"
+      VIDEO_PUBLISH_PASS: "${VIDEO_PUBLISH_PASS:-dronedev-publish}"
+    depends_on:
+      mediamtx:
+        condition: service_started
+    restart: unless-stopped
+
   webconsole:
     build:
       context: ../../..
