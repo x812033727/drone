@@ -97,8 +97,9 @@ def test_publish_uses_unique_identifier_per_call():
     assert len(ids) == 20
     assert len(set(ids)) == 20, "client-id 必須每次連線唯一(否則並發互踢)"
     assert all(i.startswith("mission-svc-pub-") for i in ids)
-    assert all(topic == f"fleet/d{n}/cmd/mission" for n, (topic, _, _) in enumerate(_FakeClient.published))
-    assert all(qos == 1 for _, _, qos in _FakeClient.published)
+    for n, (topic, _, qos) in enumerate(_FakeClient.published):
+        assert topic == f"fleet/d{n}/cmd/mission"
+        assert qos == 1
 
 
 def test_command_publish_unique_identifier_prefix():
