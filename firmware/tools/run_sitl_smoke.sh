@@ -61,7 +61,7 @@ python3 "${DIR}/tools/smoke/assert_geofence.py" --port "${HEARTBEAT_PORT}" \
 # --- out-of-tree 模組斷言(SMOKE_MODULES 逗號分隔;預設 payload_sim)---
 # px4-<cmd> 為 SITL client shim,連上運行中的 instance 0。
 BIN_DIR="${PX4_SRC}/build/px4_sitl_default/bin"
-SMOKE_MODULES="${SMOKE_MODULES:-payload_sim}"
+SMOKE_MODULES="${SMOKE_MODULES:-payload_sim,drone_spray}"
 SMOKE_TOPICS="${SMOKE_TOPICS:-drone_payload_status,drone_spray_status,drone_battery_detail}"
 IFS=',' read -ra MODS <<< "${SMOKE_MODULES}"
 for mod in "${MODS[@]}"; do
@@ -94,4 +94,7 @@ if [[ ! -f "${DIALECTS_DIR}/drone_sitl.py" ]]; then
 fi
 python3 "${DIR}/tools/smoke/assert_custom_messages.py" --port "${HEARTBEAT_PORT}" --timeout 60
 
-echo "[sitl-smoke] PASS:自建 px4_sitl(SIH)起機 + heartbeat + out-of-tree 模組/uORB + 自訂訊息實收"
+# --- drone_spray 斷藥觸發條件(確定性,免飛行)---
+bash "${DIR}/tools/smoke/assert_spray_empty.sh" "${BIN_DIR}"
+
+echo "[sitl-smoke] PASS:自建 px4_sitl(SIH)起機 + heartbeat + out-of-tree 模組/uORB + 自訂訊息實收 + 噴灑斷藥觸發"

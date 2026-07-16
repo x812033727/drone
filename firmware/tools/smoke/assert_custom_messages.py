@@ -32,10 +32,14 @@ def sanity(name: str, msg) -> str | None:
         if msg.state != 3:  # ACTIVE
             return f"state={msg.state}(應 3)"
     elif name == "SPRAY_TELEMETRY":
-        if not (msg.flow_rate > 0):
-            return f"flow_rate={msg.flow_rate}(應 >0)"
-        if msg.pump_state != 2:  # ACTIVE
-            return f"pump_state={msg.pump_state}(應 2)"
+        # drone_spray 為源:未作業(未 armed)flow=0/pump=OFF 為正確語意;
+        # 作業中 flow>0/pump=ACTIVE。驗一致性而非固定值。
+        if msg.pump_state == 2 and not (msg.flow_rate > 0):
+            return f"pump ACTIVE 但 flow_rate={msg.flow_rate}"
+        if msg.pump_state == 0 and msg.flow_rate != 0:
+            return f"pump OFF 但 flow_rate={msg.flow_rate}"
+        if msg.pump_state not in (0, 2):
+            return f"pump_state={msg.pump_state}(應 0 或 2)"
     elif name == "BATTERY_DETAIL":
         if msg.cell_count != 12:
             return f"cell_count={msg.cell_count}(應 12)"
