@@ -8,8 +8,8 @@
 | 路徑 | 內容 | 狀態 |
 |------|------|------|
 | `VERSION.md` | QGC 版本 pin(版號 + 官方下載連結 + 升版驗證清單) | ✅ 本 PR |
-| `params/` | PA-1 參數預設檔(`.params`,QGC 可直接載入;格式同 [tools/flight_ops/params/](../../tools/flight_ops/params/)) | ⬜ 後續 PR |
-| `plans/` | 標準任務範本(`.plan`:矩形測繪、定點巡檢) | ⬜ 後續 PR |
+| `params/` | 參數預設檔指標(單一事實來源=[tools/flight_ops/params/](../../tools/flight_ops/params/),不複製;PA-1 專屬包待 rev A 定容) | ✅ |
+| `plans/` | 標準任務範本(`.plan`:矩形測繪 `survey-rect-demo`、定點巡檢 `inspect-point-demo`;結構由 `tools/tests/test_qgc_plans.py` 守門) | ✅ |
 | 本檔 §台灣圖源 | NLSC 圖源設定步驟(stock 自訂圖源 URL 途徑) | ✅ 本 PR |
 
 ## QGC 版本 pin
