@@ -164,6 +164,49 @@
 ### P1/P2 — 需設計決策或外部
 precision_land 狀態機、租戶/使用者管理模型、token 安全(localStorage/refresh)、多環境 values profile、HPA、SOC2/UN38.3/SORA(外部認證)、真實深度感知(硬體)。
 
+## 7.1 第二輪四軌補強(2026-07-16~17,#135–#165)
+
+> §7 的「程式可達缺口」清零後,開新戰線把四個原本停在規劃/POC 的維度推進到
+> SITL/合成源可驗。CI 綠自動合併,逐 PR 推進,共 **32 支全數合併**。
+
+### 韌體軌(firmware/,原僅 README → PX4 客製可建可驗)
+- F1 建置鷹架 + firmware-ci(釘版 PX4 v1.15.4 shallow clone + ccache,path-gate)
+- F2 out-of-tree 模組機制(EXTERNAL_MODULES_LOCATION;payload_sim + 3 自訂 uORB)
+- F3 drone_sitl dialect 上機(wrapper + inject + patch 0001)
+- **F4 三自訂訊息 SITL 實收里程碑**(streams patch 0002;pymavlink 實收欄位往返)
+- F5 PA-1 SIH airframe(patch 0003 + 參數包回讀)· F6 失效保護矩陣對 §4 回歸
+- F7 geofence GeoJSON→PX4 圍欄轉換器 · F8 圍欄上傳-回讀 SITL 容量實測
+- F9 drone_spray 農噴模組(流量閉環 + 斷藥觸發,標準 vehicle_command 不動狀態機)
+- 誠實延後:SMBus BMS 驅動本體、FC-H7 board bring-up、armed-飛行 RTL 行為(nightly gazebo 層)
+
+### 影像軌(POC → 合成源閉環)
+- V1 常駐棧 webrtc + drone/<serial> path · V2 web-console VideoPanel(原生 WHEP)
+- V3 fleet JWT ↔ MediaMTX 認證橋(org 隔離)· V4 simcam 合成相機容器
+- V5 Helm mediamtx template · **V6 aiortc 媒體面探針**(ICE/DTLS/SRTP 收幀 + 解像素時戳)
+
+### 穩健度軌(可商用 → 可扛量/可信賴,不加新功能)
+- R1 loadgen 基座 · R2 SSE 訂閱者 gauge + 壓測 · R3 load-smoke(PR 可用性 + nightly)
+- R4 chaos 三場景(DB 重啟/DLQ/MQTT 重連)· R5 Playwright tier-1(blocking)· R6 tier-2 真棧
+- R7 schemathesis fuzz(**抓到並修 offset int8 溢位 500**)· R8 hypothesis 屬性測試 · R9 基準回填
+
+### GCS 軌(web-console 深化 + dialect 消費鏈;不深 fork QGC)
+- G1 README 對齊 S16 決策 · G2 mavlink-ci dialect 守門 · G3 qgc-profiles 參數/範本
+- G4 QGC .plan 轉換器 + dispatch --plan · G5 地圖點擊繪航點
+- **G6-G8 dialect 消費鏈**:payload.proto + drone_agent payload_listener + ingest 落庫 + console
+
+### 端到端里程碑
+SITL(payload_sim → streams → MAVLink)→ drone_agent(pymavlink 解碼)→ MQTT →
+ingest → TimescaleDB → console 全鏈路實測通;aiortc WHEP 媒體面全鏈路實證(收幀 + 時戳)。
+
+### nightly/weekly 觀測(continue-on-error + 失敗開 issue)
+sitl-integration(02:30)· load-smoke(03:10)· chaos-drill(03:40)·
+video-probe(03:50)· web-e2e-stack(04:10)· api-fuzz(weekly)。連綠兩週後逐項評估升 blocking。
+
+### 誠實邊界(仍需外部/硬體)
+實體飛控板/FC-H7 bring-up、SMBus BMS 驅動、真相機(Jetson)、TURN/NAT、
+UN38.3/SORA/SOC2 認證、金流正式憑證——不在 SITL/合成可達範圍。負載基準數字
+為共用開發機實測僅供迴歸對照,正式容量規劃須專屬硬體重跑。
+
 ## 8. 版本紀錄
 
 | rev | 日期 | 變更 |
@@ -172,3 +215,4 @@ precision_land 狀態機、租戶/使用者管理模型、token 安全(localStor
 | 2 | 2026-07-13 | Wave 0–6 交付後對齊:§2 現況/§3 波次狀態更新為實際合併(#52–#75)、§4 改為 as-built(mosquitto/openssl/單一 timescaledb+前向 SQL,取代 EMQX/step-ca/PostGIS+Alembic)、新增 §7 as-built 缺口登錄(五維架構稽核,P0 G1–G10 逐項補齊) |
 | 4 | 2026-07-13 | 全數清零:最終波 G11+G11b 多租戶(REST+SSE)、G23 OTA、G27 dialect、G28 派遣 proto、G30 用量/配額/限流、G31 前端 runtime 注入全部合併;所有程式可達缺口補足,唯餘 payment 串接+外部認證+硬體 |
 | 3 | 2026-07-13 | §7 缺口補齊:P0 G1–G10 全數完成(可直接部署達標,#87–#99);P1 完成 12 項(#100–#103:備份/migration hook/NetworkPolicy+PDB/可觀測性/cosign/CHANGELOG/分頁/保留/ingest healthz+DLQ/OpenAPI 契約);標註剩餘程式可達 P1 與需產品決策項 |
+| 5 | 2026-07-17 | 新增 §7.1 第二輪四軌補強(#135–#165,32 支全合):韌體 F1–F9(PX4 客製 SITL 可驗)、影像 V1–V6(合成源閉環 + aiortc 媒體面實證)、穩健 R1–R9(壓測/混沌/E2E/fuzz/hypothesis)、GCS G1–G8(dialect 消費鏈 + 地圖規劃);SITL→agent→MQTT→DB→console 全鏈路通;5 支 nightly 觀測期 |
