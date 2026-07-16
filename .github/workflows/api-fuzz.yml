@@ -1,0 +1,115 @@
+name: api-fuzz
+
+# schemathesis 契約模糊測試(R7,auth-aware):對 fleet-svc/mission-svc live server
+# 打。觀測期 continue-on-error(沿 security.yml 前例)——fuzz 首波必翻出 422/500
+# 邊角,收訊修完再升 blocking。unauth 保護斷言(assert_unauth.py)為確定性,直接紅。
+# PR 短跑 25 examples(path-gate);weekly 深跑 300。billing callback 以 --exclude 排除。
+
+on:
+  pull_request:
+    paths:
+      - "cloud/**"
+      - ".github/workflows/api-fuzz.yml"
+  schedule:
+    - cron: "20 19 * * 1" # 週一台北 03:20
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  fuzz:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    continue-on-error: true
+    env:
+      JWT_SECRET: ci-fuzz-secret-0123456789abcdef0123456789
+      PG_DSN: postgresql://drone:dronedev@127.0.0.1:5432/drone
+      MAX_EXAMPLES: 25
+    services:
+      timescaledb:
+        image: timescale/timescaledb:latest-pg16
+        env:
+          POSTGRES_USER: drone
+          POSTGRES_PASSWORD: dronedev
+          POSTGRES_DB: drone
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U drone -d drone"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.10"
+
+      - name: weekly 深跑檔位
+        if: github.event_name != 'pull_request'
+        run: echo "MAX_EXAMPLES=300" >> "$GITHUB_ENV"
+
+      - name: 依賴
+        run: |
+          pip install schemathesis PyJWT
+          pip install -e interfaces/proto/gen/python -e cloud/common
+          pip install -r cloud/fleet_svc/requirements.txt
+          pip install -r cloud/mission_svc/requirements.txt
+
+      - name: 起服務(uvicorn;啟動自跑 migration)
+        env:
+          MQTT_HOST: 127.0.0.1
+        run: |
+          python -m uvicorn fleet_svc.main:app --host 127.0.0.1 --port 8091 \
+            --app-dir cloud/fleet_svc &
+          python -m uvicorn mission_svc.main:app --host 127.0.0.1 --port 8092 \
+            --app-dir cloud/mission_svc &
+          for p in 8091 8092; do
+            for _ in $(seq 1 30); do
+              curl -fsS "http://127.0.0.1:$p/healthz" >/dev/null 2>&1 && break; sleep 1
+            done
+          done
+
+      - name: 鑄 token(admin / operator)
+        run: |
+          python - <<'PY' >> "$GITHUB_ENV"
+          import os, time, jwt
+          s = os.environ["JWT_SECRET"]
+          now = int(time.time())
+          def mk(role):
+              return jwt.encode({"sub":"fuzz","role":role,"org":"fuzz","iat":now,"exp":now+3600}, s, algorithm="HS256")
+          print(f"TOK_ADMIN={mk('admin')}")
+          print(f"TOK_OPERATOR={mk('operator')}")
+          PY
+
+      - name: unauth 保護斷言(確定性,blocking 語意——見下註)
+        run: |
+          python tools/loadgen/assert_unauth.py --base http://127.0.0.1:8091 --openapi cloud/fleet_svc/openapi.json
+          python tools/loadgen/assert_unauth.py --base http://127.0.0.1:8092 --openapi cloud/mission_svc/openapi.json
+
+      - name: schemathesis(admin;not_a_server_error + schema 一致)
+        run: |
+          for svc in "fleet_svc:8091" "mission_svc:8092"; do
+            name="${svc%%:*}"; port="${svc##*:}"
+            st run "cloud/${name}/openapi.json" --url "http://127.0.0.1:${port}" \
+              -H "Authorization: Bearer ${TOK_ADMIN}" \
+              --checks not_a_server_error,response_schema_conformance \
+              --max-examples "${MAX_EXAMPLES}" \
+              --exclude-path /api/v1/billing/callback || true
+          done
+
+      - name: schemathesis(operator;402/429 為合法回應)
+        run: |
+          st run cloud/fleet_svc/openapi.json --url http://127.0.0.1:8091 \
+            -H "Authorization: Bearer ${TOK_OPERATOR}" \
+            --checks not_a_server_error --max-examples "${MAX_EXAMPLES}" \
+            --exclude-path /api/v1/billing/callback || true
+
+      - name: weekly 失敗開 issue
+        if: failure() && github.event_name != 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh issue create \
+            --title "api-fuzz weekly 失敗($(date -u +%F))" \
+            --body "run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
+            --label bug || true

@@ -1303,6 +1303,7 @@
             "required": false,
             "schema": {
               "default": 0,
+              "maximum": 1000000000,
               "minimum": 0,
               "title": "Offset",
               "type": "integer"
@@ -1381,6 +1382,7 @@
             "required": false,
             "schema": {
               "default": 0,
+              "maximum": 1000000000,
               "minimum": 0,
               "title": "Offset",
               "type": "integer"
@@ -1562,6 +1564,7 @@
             "required": false,
             "schema": {
               "default": 0,
+              "maximum": 1000000000,
               "minimum": 0,
               "title": "Offset",
               "type": "integer"
@@ -2087,6 +2090,7 @@
             "required": false,
             "schema": {
               "default": 0,
+              "maximum": 1000000000,
               "minimum": 0,
               "title": "Offset",
               "type": "integer"
@@ -2302,6 +2306,7 @@
             "required": false,
             "schema": {
               "default": 0,
+              "maximum": 1000000000,
               "minimum": 0,
               "title": "Offset",
               "type": "integer"

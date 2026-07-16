@@ -146,6 +146,9 @@ async def _guard_write(conn: asyncpg.Connection, principal: Principal) -> Org | 
 # 不改 response_model、不破壞既有測試/煙霧。
 PAGE_LIMIT_DEFAULT = 100
 PAGE_LIMIT_MAX = 1000
+# offset 上界:防超過 PG int8 範圍造成 asyncpg 500(schemathesis R7 抓到);
+# 遠大於任何真實分頁需求。
+PAGE_OFFSET_MAX = 1_000_000_000
 
 
 def _set_page_headers(response: Response, total: int, limit: int, offset: int) -> None:
@@ -191,7 +194,7 @@ async def list_fleets(
     response: Response,
     org: str | None = Query(default=None, description="僅 admin:限定單一租戶(略則看全部)"),
     limit: int = Query(default=PAGE_LIMIT_DEFAULT, ge=1, le=PAGE_LIMIT_MAX),
-    offset: int = Query(default=0, ge=0),
+    offset: int = Query(default=0, ge=0, le=PAGE_OFFSET_MAX),
     principal: Principal = VIEWER,
 ) -> list[Fleet]:
     scope = read_org(principal, org)  # 非 admin 一律限本 org;admin 可跨/指定
@@ -245,7 +248,7 @@ async def list_devices(
     fleet_id: UUID | None = Query(default=None),
     org: str | None = Query(default=None, description="僅 admin:限定單一租戶(略則看全部)"),
     limit: int = Query(default=PAGE_LIMIT_DEFAULT, ge=1, le=PAGE_LIMIT_MAX),
-    offset: int = Query(default=0, ge=0),
+    offset: int = Query(default=0, ge=0, le=PAGE_OFFSET_MAX),
     principal: Principal = VIEWER,
 ) -> list[Device]:
     scope = read_org(principal, org)
@@ -418,7 +421,7 @@ async def list_alerts(
     kind: str | None = Query(default=None, description="過濾類型:cert(憑證到期)/ ota(OTA 進度)"),
     org: str | None = Query(default=None, description="僅 admin:限定單一租戶(略則看全部)"),
     limit: int = Query(default=PAGE_LIMIT_DEFAULT, ge=1, le=PAGE_LIMIT_MAX),
-    offset: int = Query(default=0, ge=0),
+    offset: int = Query(default=0, ge=0, le=PAGE_OFFSET_MAX),
     principal: Principal = VIEWER,
 ) -> list[AlertEntry]:
     # 多租戶(G11):非 admin 一律限本 org 裝置的告警;admin 可跨/指定 org。
@@ -483,7 +486,7 @@ async def list_orgs(
     response: Response,
     status: str | None = Query(default=None, description="依狀態過濾:active / suspended"),
     limit: int = Query(default=PAGE_LIMIT_DEFAULT, ge=1, le=PAGE_LIMIT_MAX),
-    offset: int = Query(default=0, ge=0),
+    offset: int = Query(default=0, ge=0, le=PAGE_OFFSET_MAX),
     claims: dict = ADMIN,
 ) -> list[Org]:
     async with _pool(app).acquire() as conn:
@@ -655,7 +658,7 @@ async def list_audit(
     response: Response,
     resource_type: str | None = Query(default=None),
     limit: int = Query(default=PAGE_LIMIT_DEFAULT, ge=1, le=PAGE_LIMIT_MAX),
-    offset: int = Query(default=0, ge=0),
+    offset: int = Query(default=0, ge=0, le=PAGE_OFFSET_MAX),
 ) -> list[AuditEntry]:
     async with _pool(app).acquire() as conn:
         total = await repo.count_audit(conn, resource_type)
