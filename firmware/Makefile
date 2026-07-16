@@ -20,8 +20,9 @@ deps: ## 建置用 python 依賴(釘版,裝進 firmware/.venv-px4)
 	@test -d $(VENV) || python3 -m venv $(VENV)
 	$(PIP) install -q -r tools/requirements-px4-build.txt
 
-patch: fetch ## 套用 patches/*.patch(git apply --3way,冪等)
+patch: fetch ## 套用 patches/*.patch + 注入自訂 dialect(皆冪等)
 	bash tools/apply_patches.sh
+	bash tools/inject_dialect.sh
 
 EXT_DIR := $(CURDIR)/ext
 BUILD_CACHE := $(PX4_SRC)/build/px4_sitl_default/CMakeCache.txt

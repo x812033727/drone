@@ -1,0 +1,13 @@
+diff --git a/boards/px4/sitl/default.px4board b/boards/px4/sitl/default.px4board
+index 7dd7ce4..b8a4877 100644
+--- a/boards/px4/sitl/default.px4board
++++ b/boards/px4/sitl/default.px4board
+@@ -34,7 +34,7 @@ CONFIG_MODULES_LOGGER=y
+ CONFIG_MODULES_MAG_BIAS_ESTIMATOR=y
+ CONFIG_MODULES_MANUAL_CONTROL=y
+ CONFIG_MODULES_MAVLINK=y
+-CONFIG_MAVLINK_DIALECT="development"
++CONFIG_MAVLINK_DIALECT="drone_sitl"
+ CONFIG_MODULES_MC_ATT_CONTROL=y
+ CONFIG_MODULES_MC_AUTOTUNE_ATTITUDE_CONTROL=y
+ CONFIG_MODULES_MC_HOVER_THRUST_ESTIMATOR=y

@@ -25,6 +25,16 @@ cleanup() {
 }
 trap cleanup EXIT
 
+# --- dialect 生成標頭斷言(patch 0001 + inject_dialect 的建置期硬證)---
+GEN_DIR="${PX4_SRC}/build/px4_sitl_default/mavlink"
+for h in spray_telemetry battery_detail payload_status; do
+    if ! find "${GEN_DIR}" -name "mavlink_msg_${h}.h" | grep -q .; then
+        echo "[sitl-smoke] 自訂 dialect 標頭未生成:mavlink_msg_${h}.h(${GEN_DIR})" >&2
+        exit 1
+    fi
+done
+echo "[sitl-smoke] dialect 生成標頭 OK(drone_sitl)"
+
 echo "[sitl-smoke] 起 SIH(headless,log=${PX4_LOG})"
 (
     cd "${PX4_SRC}"
