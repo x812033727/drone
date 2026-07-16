@@ -139,10 +139,11 @@ jobs:
           exit 1
       - name: WHEP 信令 201(帶讀取帳密)
         run: |
-          OFFER=$(printf 'v=0\r\no=- 0 0 IN IP4 127.0.0.1\r\ns=-\r\nt=0 0\r\na=group:BUNDLE 0\r\na=ice-ufrag:cisimcam\r\na=ice-pwd:cisimcamcisimcamcisimcam\r\na=fingerprint:sha-256 4A:AD:B9:B1:3F:82:18:3B:54:02:12:DF:3E:5D:49:6B:19:E5:7C:AB:11:22:33:44:55:66:77:88:99:AA:BB:CC\r\nm=video 9 UDP/TLS/RTP/SAVPF 96\r\nc=IN IP4 0.0.0.0\r\na=mid:0\r\na=recvonly\r\na=rtpmap:96 H264/90000\r\na=fmtp:96 packetization-mode=1;profile-level-id=42e01f\r\na=setup:actpass\r\na=rtcp-mux\r\n')
-          CODE=$(printf '%s' "$OFFER" | curl -s -o /dev/null -w '%{http_code}' \
+          # 直接寫檔:$(printf) 命令替換會剝尾端 CRLF → SDP 缺結尾 → 400(實測)
+          printf 'v=0\r\no=- 0 0 IN IP4 127.0.0.1\r\ns=-\r\nt=0 0\r\na=group:BUNDLE 0\r\na=ice-ufrag:cisimcam\r\na=ice-pwd:cisimcamcisimcamcisimcam\r\na=fingerprint:sha-256 4A:AD:B9:B1:3F:82:18:3B:54:02:12:DF:3E:5D:49:6B:19:E5:7C:AB:11:22:33:44:55:66:77:88:99:AA:BB:CC\r\nm=video 9 UDP/TLS/RTP/SAVPF 96\r\nc=IN IP4 0.0.0.0\r\na=mid:0\r\na=recvonly\r\na=rtpmap:96 H264/90000\r\na=fmtp:96 packetization-mode=1;profile-level-id=42e01f\r\na=setup:actpass\r\na=rtcp-mux\r\n' > /tmp/offer.sdp
+          CODE=$(curl -s -o /dev/null -w '%{http_code}' \
             -u reader:dronedev-read -X POST -H 'Content-Type: application/sdp' \
-            --data-binary @- "http://127.0.0.1:8889/drone/sim-1/whep")
+            --data-binary @/tmp/offer.sdp "http://127.0.0.1:8889/drone/sim-1/whep")
           echo "WHEP: $CODE"
           test "$CODE" = "201"
       - name: 失敗傾印
