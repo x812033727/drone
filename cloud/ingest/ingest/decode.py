@@ -14,7 +14,14 @@ import json
 from datetime import datetime, timezone
 from typing import Any
 
-from drone.v1 import device_pb2, events_pb2, mission_pb2, sensors_pb2, telemetry_pb2
+from drone.v1 import (
+    device_pb2,
+    events_pb2,
+    mission_pb2,
+    payload_pb2,
+    sensors_pb2,
+    telemetry_pb2,
+)
 from google.protobuf import json_format
 
 TELEMETRY_COLUMNS = (
@@ -277,4 +284,54 @@ def sensor_local_position_row(payload: bytes | str) -> tuple:
         msg.vy,
         msg.vz,
         msg.heading,
+    )
+
+
+# ---- 酬載/智慧電池遙測(G8:fleet/{id}/payload/*;契約 payload.proto)----
+PAYLOAD_STATUS_COLUMNS = (
+    "time", "drone_id", "time_boot_ms", "payload_type", "payload_id", "state",
+    "fault_flags", "temperature_cdegc", "firmware_version", "vendor_status",
+)
+SPRAY_TELEMETRY_COLUMNS = (
+    "time", "drone_id", "time_boot_ms", "flow_rate_ml_s", "flow_rate_setpoint_ml_s",
+    "volume_remaining_ml", "volume_consumed_ml", "application_rate_ml_m2",
+    "pump_pressure_bar", "boom_width_m", "spray_flags", "pump_state", "nozzles_active",
+)
+BATTERY_DETAIL_COLUMNS = (
+    "time", "drone_id", "time_boot_ms", "fault_flags", "capacity_full_charge_mah",
+    "capacity_remaining_mah", "cell_voltages_mv", "cycle_count", "temperature_cdegc",
+    "current_ca", "battery_id", "cell_count", "state_of_health", "state_of_charge",
+)
+
+
+def payload_status_row(payload: bytes | str) -> tuple:
+    """fleet/{id}/payload/status → payload_status 表 row。"""
+    msg = json_format.Parse(payload, payload_pb2.PayloadStatus())
+    return (
+        _ms_to_dt(msg.unix_time_ms), msg.drone_id, msg.time_boot_ms,
+        msg.payload_type, msg.payload_id, msg.state, msg.fault_flags,
+        msg.temperature_cdegc, msg.firmware_version, msg.vendor_status,
+    )
+
+
+def spray_telemetry_row(payload: bytes | str) -> tuple:
+    """fleet/{id}/payload/spray → spray_telemetry 表 row(NaN 原樣落庫)。"""
+    msg = json_format.Parse(payload, payload_pb2.SprayTelemetry())
+    return (
+        _ms_to_dt(msg.unix_time_ms), msg.drone_id, msg.time_boot_ms,
+        msg.flow_rate_ml_s, msg.flow_rate_setpoint_ml_s, msg.volume_remaining_ml,
+        msg.volume_consumed_ml, msg.application_rate_ml_m2, msg.pump_pressure_bar,
+        msg.boom_width_m, msg.spray_flags, msg.pump_state, msg.nozzles_active,
+    )
+
+
+def battery_detail_row(payload: bytes | str) -> tuple:
+    """fleet/{id}/payload/battery → battery_detail 表 row(未用槽位 UINT16_MAX 原樣)。"""
+    msg = json_format.Parse(payload, payload_pb2.BatteryDetail())
+    return (
+        _ms_to_dt(msg.unix_time_ms), msg.drone_id, msg.time_boot_ms, msg.fault_flags,
+        msg.capacity_full_charge_mah, msg.capacity_remaining_mah,
+        list(msg.cell_voltages_mv), msg.cycle_count, msg.temperature_cdegc,
+        msg.current_ca, msg.id, msg.cell_count, msg.state_of_health,
+        msg.state_of_charge,
     )

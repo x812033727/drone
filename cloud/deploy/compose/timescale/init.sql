@@ -136,6 +136,60 @@ CREATE TABLE device_alerts (
 CREATE INDEX ON device_alerts (drone_id, time DESC);
 CREATE INDEX ON device_alerts (time DESC);
 
+-- 酬載/智慧電池遙測(dialect 消費鏈 G8:fleet/{id}/payload/*,1 Hz 級 QoS 0;
+-- 契約 = interfaces/proto payload.proto;無效值原樣落庫:整數型別最大值/浮點 NaN)
+CREATE TABLE payload_status (
+    time              timestamptz NOT NULL,
+    drone_id          text        NOT NULL,
+    time_boot_ms      bigint,
+    payload_type      integer,
+    payload_id        integer,
+    state             integer,
+    fault_flags       bigint,
+    temperature_cdegc integer,
+    firmware_version  bigint,
+    vendor_status     integer
+);
+SELECT create_hypertable('payload_status', 'time');
+CREATE INDEX ON payload_status (drone_id, time DESC);
+
+CREATE TABLE spray_telemetry (
+    time                    timestamptz NOT NULL,
+    drone_id                text        NOT NULL,
+    time_boot_ms            bigint,
+    flow_rate_ml_s          real,
+    flow_rate_setpoint_ml_s real,
+    volume_remaining_ml     real,
+    volume_consumed_ml      real,
+    application_rate_ml_m2  real,
+    pump_pressure_bar       real,
+    boom_width_m            real,
+    spray_flags             integer,
+    pump_state              integer,
+    nozzles_active          integer
+);
+SELECT create_hypertable('spray_telemetry', 'time');
+CREATE INDEX ON spray_telemetry (drone_id, time DESC);
+
+CREATE TABLE battery_detail (
+    time                     timestamptz NOT NULL,
+    drone_id                 text        NOT NULL,
+    time_boot_ms             bigint,
+    fault_flags              bigint,
+    capacity_full_charge_mah bigint,
+    capacity_remaining_mah   bigint,
+    cell_voltages_mv         integer[],
+    cycle_count              integer,
+    temperature_cdegc        integer,
+    current_ca               integer,
+    battery_id               integer,
+    cell_count               integer,
+    state_of_health          integer,
+    state_of_charge          integer
+);
+SELECT create_hypertable('battery_detail', 'time');
+CREATE INDEX ON battery_detail (drone_id, time DESC);
+
 -- ============================================================================
 -- 資料保留 / 壓縮政策(G20)—— 只對高頻遙測/感測器 hypertable。
 --
@@ -159,6 +213,11 @@ ALTER TABLE telemetry SET (
 );
 SELECT add_compression_policy('telemetry', INTERVAL '7 days', if_not_exists => true);
 SELECT add_retention_policy('telemetry', INTERVAL '90 days', if_not_exists => true);
+
+-- payload/spray/battery(1 Hz 級)—— 比照 telemetry 90 天保留
+SELECT add_retention_policy('payload_status', INTERVAL '90 days', if_not_exists => true);
+SELECT add_retention_policy('spray_telemetry', INTERVAL '90 days', if_not_exists => true);
+SELECT add_retention_policy('battery_detail', INTERVAL '90 days', if_not_exists => true);
 
 -- sensor_attitude(高頻,5 Hz)
 ALTER TABLE sensor_attitude SET (

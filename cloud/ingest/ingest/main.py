@@ -64,6 +64,9 @@ SENSOR_GPS_SQL = _insert_sql("sensor_gps", decode.SENSOR_GPS_COLUMNS)
 SENSOR_LOCAL_POSITION_SQL = _insert_sql(
     "sensor_local_position", decode.SENSOR_LOCAL_POSITION_COLUMNS
 )
+PAYLOAD_STATUS_SQL = _insert_sql("payload_status", decode.PAYLOAD_STATUS_COLUMNS)
+SPRAY_TELEMETRY_SQL = _insert_sql("spray_telemetry", decode.SPRAY_TELEMETRY_COLUMNS)
+BATTERY_DETAIL_SQL = _insert_sql("battery_detail", decode.BATTERY_DETAIL_COLUMNS)
 # 告警閉環:detail 欄為 jsonb,需 ::jsonb 轉(payload 純 JSON,同 fleet_svc audit 慣例);
 # 故不走 _insert_sql（那產無轉型的 $n），改手寫把最後一欄 cast 成 jsonb。
 DEVICE_ALERT_SQL = (
@@ -82,6 +85,9 @@ ROUTES: dict[str, tuple[str, Callable[[bytes | str], tuple]]] = {
     "sensors/attitude": (SENSOR_ATTITUDE_SQL, decode.sensor_attitude_row),
     "sensors/gps": (SENSOR_GPS_SQL, decode.sensor_gps_row),
     "sensors/local_position": (SENSOR_LOCAL_POSITION_SQL, decode.sensor_local_position_row),
+    "payload/status": (PAYLOAD_STATUS_SQL, decode.payload_status_row),
+    "payload/spray": (SPRAY_TELEMETRY_SQL, decode.spray_telemetry_row),
+    "payload/battery": (BATTERY_DETAIL_SQL, decode.battery_detail_row),
 }
 
 # 告警閉環路由(proto 契約外的純 JSON;payload 可能不含 drone_id,故 row 函式多收
@@ -246,6 +252,8 @@ async def run() -> None:
                 await client.subscribe("fleet/+/heartbeat", qos=1)
                 # v0.4.0 高頻感測器流:QoS 0 容失(與 1 Hz 摘要 QoS 1 區隔)
                 await client.subscribe("fleet/+/sensors/+", qos=0)
+                # 酬載/電池遙測(G8;1 Hz 級,QoS 0 容失同 sensors)
+                await client.subscribe("fleet/+/payload/+", qos=0)
                 # 告警閉環(proto 契約外純 JSON,QoS 1 at-least-once):
                 # cert 到期告警(cert_monitor.py)+ OTA 進度(ota.py)——原雲端無訂閱者。
                 await client.subscribe("fleet/+/alerts", qos=1)
