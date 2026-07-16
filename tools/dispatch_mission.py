@@ -9,6 +9,11 @@
     python dispatch_mission.py --drone-id dev-1 --mission plan.json \
         --mqtt-host broker.internal --mqtt-port 1883
 
+    # 直接派遣 QGC .plan(經 flight_ops.qgc_plan 轉 MissionPlan;需 --mission-id)
+    python dispatch_mission.py --drone-id dev-1 \
+        --plan ../gcs/qgc-profiles/plans/survey-rect-demo.plan \
+        --mission-id survey-demo-1 --wait
+
     # 任務控制(S23):對執行中任務發 PAUSE/RESUME/ABORT
     # (MissionCommand → fleet/{drone_id}/cmd/mission_ctrl;fire-and-forget,
     #  結果看 progress 主題:PAUSE → STATE_PAUSED、ABORT → RTL + STATE_FAILED)
@@ -32,6 +37,7 @@ broker 為 anonymous、無 TLS/ACL——開發內網上任何人都能對任何�
 
 import argparse
 import asyncio
+import json
 import sys
 import time
 from pathlib import Path
@@ -69,6 +75,17 @@ def load_plan(path: str | Path) -> tuple[mission_pb2.MissionPlan, str]:
         raise ValueError(f"任務檔 {path} 不是合法的 MissionPlan JSON:{e}") from e
     if not plan.mission_id:
         raise ValueError("任務檔驗證失敗:mission_id 不可為空")
+    return plan, text
+
+
+def load_qgc_plan(path: str | Path, mission_id: str) -> tuple[mission_pb2.MissionPlan, str]:
+    """QGC .plan → MissionPlan(經 flight_ops.qgc_plan 轉換,再走 proto Parse 驗證)。"""
+    from flight_ops.qgc_plan import to_mission_plan  # 延遲匯入:僅 --plan 模式需要
+
+    plan_dict = to_mission_plan(path, mission_id)
+    text = json.dumps(plan_dict, ensure_ascii=False)
+    plan = mission_pb2.MissionPlan()
+    json_format.Parse(text, plan)  # 轉換器輸出必須過契約 Parse(壞了直接炸)
     return plan, text
 
 
@@ -130,7 +147,10 @@ async def _run(args: argparse.Namespace) -> int:
             plan, _ = load_plan(args.mission)
             mission_id = plan.mission_id
         return await _send_ctrl(args, mission_id)
-    plan, plan_json = load_plan(args.mission)
+    if args.plan:
+        plan, plan_json = load_qgc_plan(args.plan, args.mission_id)
+    else:
+        plan, plan_json = load_plan(args.mission)
     print(f"已載入任務 {plan.mission_id}({len(plan.waypoints)} 個航點)", flush=True)
     try:
         return await asyncio.wait_for(
@@ -149,6 +169,11 @@ def main() -> None:
         default=None,
         help="任務檔路徑(MissionPlan proto3 JSON);派遣模式必填,"
         "--ctrl 模式可代替 --mission-id(取檔內 missionId)",
+    )
+    parser.add_argument(
+        "--plan",
+        default=None,
+        help="QGC .plan 檔路徑(自動轉 MissionPlan;與 --mission 互斥,需 --mission-id)",
     )
     parser.add_argument(
         "--ctrl",
@@ -182,8 +207,13 @@ def main() -> None:
             parser.error("--ctrl 模式需要 --mission-id 或 --mission(取檔內 missionId)")
         if args.wait:
             parser.error("--ctrl 模式不支援 --wait(結果請看 progress 主題)")
+    elif args.plan:
+        if args.mission:
+            parser.error("--plan 與 --mission 互斥")
+        if not args.mission_id:
+            parser.error("--plan 模式需要 --mission-id(雲端派遣語意:識別碼由派遣端產生)")
     elif not args.mission:
-        parser.error("派遣模式需要 --mission")
+        parser.error("派遣模式需要 --mission 或 --plan")
     try:
         code = asyncio.run(_run(args))
     except ValueError as e:
