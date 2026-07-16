@@ -101,6 +101,9 @@ def _pool(app: FastAPI) -> asyncpg.Pool:
 # (X-Total-Count 等),回應本體仍是既有陣列——向後相容,不動 response_model。
 PAGE_LIMIT_DEFAULT = 100
 PAGE_LIMIT_MAX = 1000
+# offset 上界:防超過 PG int8 範圍造成 asyncpg 500(schemathesis R7 抓到);
+# 遠大於任何真實分頁需求。
+PAGE_OFFSET_MAX = 1_000_000_000
 
 
 def _set_page_headers(response: Response, total: int, limit: int, offset: int) -> None:
@@ -142,7 +145,7 @@ async def list_routes(
     response: Response,
     org: str | None = Query(default=None, description="僅 admin:限定單一租戶(略則看全部)"),
     limit: int = Query(default=PAGE_LIMIT_DEFAULT, ge=1, le=PAGE_LIMIT_MAX),
-    offset: int = Query(default=0, ge=0),
+    offset: int = Query(default=0, ge=0, le=PAGE_OFFSET_MAX),
     principal: Principal = VIEWER,
 ) -> list[Route]:
     scope = read_org(principal, org)
@@ -203,7 +206,7 @@ async def list_missions(
     drone_id: str | None = Query(default=None),
     org: str | None = Query(default=None, description="僅 admin:限定單一租戶(略則看全部)"),
     limit: int = Query(default=PAGE_LIMIT_DEFAULT, ge=1, le=PAGE_LIMIT_MAX),
-    offset: int = Query(default=0, ge=0),
+    offset: int = Query(default=0, ge=0, le=PAGE_OFFSET_MAX),
     principal: Principal = VIEWER,
 ) -> list[Mission]:
     scope = read_org(principal, org)
@@ -303,7 +306,7 @@ async def list_audit(
     response: Response,
     resource_type: str | None = Query(default=None),
     limit: int = Query(default=PAGE_LIMIT_DEFAULT, ge=1, le=PAGE_LIMIT_MAX),
-    offset: int = Query(default=0, ge=0),
+    offset: int = Query(default=0, ge=0, le=PAGE_OFFSET_MAX),
 ) -> list[AuditEntry]:
     async with _pool(app).acquire() as conn:
         total = await repo.count_audit(conn, resource_type)
