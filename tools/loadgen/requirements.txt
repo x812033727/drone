@@ -1,6 +1,9 @@
 # tools/loadgen 專用依賴——刻意不併入 tools/requirements.txt:
 # ci.yml 的依賴白名單不裝本檔,locust 生態不進主 CI(負載工具只在本機/專屬機跑)。
 locust>=2.32,<3
+# locust→gevent 的隱性相依,某些環境 pip 不自動拉入(CI 實測 ModuleNotFoundError)
+zope.event>=5.0
+zope.interface>=6.0
 PyJWT>=2.9,<3
 # mqtt_fanin.py(與 tools/requirements.txt 同款,standalone 安裝用)
 paho-mqtt>=2.1.0,<3
