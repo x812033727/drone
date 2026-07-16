@@ -62,6 +62,9 @@ jobs:
       - name: 套用 patch series
         run: bash firmware/tools/apply_patches.sh
 
+      - name: 注入自訂 dialect
+        run: bash firmware/tools/inject_dialect.sh
+
       - name: 建置 px4_sitl_default(含 out-of-tree 模組 ext/)
         run: |
           # PX4 cmake 偵測到 ccache 即自動使用(CMAKE_<LANG>_COMPILER_LAUNCHER)

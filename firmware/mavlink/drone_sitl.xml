@@ -1,0 +1,19 @@
+<?xml version="1.0"?>
+<!--
+  SITL 建置用 dialect wrapper(非契約;契約單一事實來源 = interfaces/mavlink/
+  drone_custom.xml)。SITL 預設 dialect 為 development,直接換成僅含 common 的
+  drone_custom 會丟失 development 訊息 → wrapper 兩者兼收。
+  由 tools/inject_dialect.sh 連同 drone_custom.xml 複製進 PX4 mavlink submodule
+  的 message_definitions/v1.0/,patch 0001 將 CONFIG_MAVLINK_DIALECT 指向本檔。
+  mavlink-ci 的 dialect-gate 對 drone_custom.xml 守門;本 wrapper 由 firmware-ci
+  的實際建置驗證。
+-->
+<mavlink>
+  <include>development.xml</include>
+  <include>drone_custom.xml</include>
+  <version>1</version>
+  <dialect>1</dialect>
+  <!-- schema 要求至少一個 enums/messages 子元素;wrapper 本身不定義任何訊息 -->
+  <enums/>
+  <messages/>
+</mavlink>
