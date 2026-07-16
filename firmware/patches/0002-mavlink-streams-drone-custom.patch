@@ -1,0 +1,229 @@
+diff --git a/src/modules/mavlink/mavlink_messages.cpp b/src/modules/mavlink/mavlink_messages.cpp
+index 3356010..4666d6b 100644
+--- a/src/modules/mavlink/mavlink_messages.cpp
++++ b/src/modules/mavlink/mavlink_messages.cpp
+@@ -124,6 +124,17 @@
+ #include "streams/FIGURE_EIGHT_EXECUTION_STATUS.hpp"
+ #endif // MAVLINK_MSG_ID_FIGURE_EIGHT_EXECUTION_STATUS
+ 
++// drone_custom dialect(drone_sitl wrapper 選定時才存在)
++#if defined(MAVLINK_MSG_ID_PAYLOAD_STATUS)
++#include "streams/PAYLOAD_STATUS.hpp"
++#endif // MAVLINK_MSG_ID_PAYLOAD_STATUS
++#if defined(MAVLINK_MSG_ID_SPRAY_TELEMETRY)
++#include "streams/SPRAY_TELEMETRY.hpp"
++#endif // MAVLINK_MSG_ID_SPRAY_TELEMETRY
++#if defined(MAVLINK_MSG_ID_BATTERY_DETAIL)
++#include "streams/BATTERY_DETAIL.hpp"
++#endif // MAVLINK_MSG_ID_BATTERY_DETAIL
++
+ #ifdef MAVLINK_MSG_ID_AVAILABLE_MODES // Only defined if development.xml is used
+ #include "streams/AVAILABLE_MODES.hpp"
+ #include "streams/CURRENT_MODE.hpp"
+@@ -424,6 +435,15 @@ static const StreamListItem streams_list[] = {
+ #if defined(WIND_COV_HPP)
+ 	create_stream_list_item<MavlinkStreamWindCov>(),
+ #endif // WIND_COV_HPP
++#if defined(PAYLOAD_STATUS_HPP)
++	create_stream_list_item<MavlinkStreamDronePayloadStatus>(),
++#endif // PAYLOAD_STATUS_HPP
++#if defined(SPRAY_TELEMETRY_HPP)
++	create_stream_list_item<MavlinkStreamSprayTelemetry>(),
++#endif // SPRAY_TELEMETRY_HPP
++#if defined(BATTERY_DETAIL_HPP)
++	create_stream_list_item<MavlinkStreamBatteryDetail>(),
++#endif // BATTERY_DETAIL_HPP
+ #if defined(MOUNT_ORIENTATION_HPP)
+ 	create_stream_list_item<MavlinkStreamMountOrientation>(),
+ #endif // MOUNT_ORIENTATION_HPP
+diff --git a/src/modules/mavlink/streams/BATTERY_DETAIL.hpp b/src/modules/mavlink/streams/BATTERY_DETAIL.hpp
+new file mode 100644
+index 0000000..a629f90
+--- /dev/null
++++ b/src/modules/mavlink/streams/BATTERY_DETAIL.hpp
+@@ -0,0 +1,62 @@
++#ifndef BATTERY_DETAIL_HPP
++#define BATTERY_DETAIL_HPP
++
++// drone_custom dialect(24152):智慧電池電芯級詳情;資料源 =
++// drone_battery_detail topic(firmware/ext;實機由 SMBus BMS 驅動發布,硬體階段)。
++
++#include <uORB/topics/drone_battery_detail.h>
++
++class MavlinkStreamBatteryDetail : public MavlinkStream
++{
++public:
++	static MavlinkStream *new_instance(Mavlink *mavlink) { return new MavlinkStreamBatteryDetail(mavlink); }
++
++	static constexpr const char *get_name_static() { return "BATTERY_DETAIL"; }
++	static constexpr uint16_t get_id_static() { return MAVLINK_MSG_ID_BATTERY_DETAIL; }
++
++	const char *get_name() const override { return get_name_static(); }
++	uint16_t get_id() override { return get_id_static(); }
++
++	unsigned get_size() override
++	{
++		return _sub.advertised() ? MAVLINK_MSG_ID_BATTERY_DETAIL_LEN + MAVLINK_NUM_NON_PAYLOAD_BYTES : 0;
++	}
++
++private:
++	explicit MavlinkStreamBatteryDetail(Mavlink *mavlink) : MavlinkStream(mavlink) {}
++
++	uORB::Subscription _sub{ORB_ID(drone_battery_detail)};
++
++	bool send() override
++	{
++		drone_battery_detail_s s;
++
++		if (_sub.update(&s)) {
++			mavlink_battery_detail_t msg{};
++
++			msg.time_boot_ms = s.timestamp / 1000;
++			msg.fault_flags = s.fault_flags;
++			msg.capacity_full_charge = s.capacity_full_charge_mah;
++			msg.capacity_remaining = s.capacity_remaining_mah;
++
++			for (unsigned i = 0; i < 14; ++i) {
++				msg.cell_voltages[i] = s.cell_voltages_mv[i];
++			}
++
++			msg.cycle_count = s.cycle_count;
++			msg.temperature = s.temperature_cdegc;
++			msg.current = s.current_ca;
++			msg.id = s.id;
++			msg.cell_count = s.cell_count;
++			msg.state_of_health = s.state_of_health;
++			msg.state_of_charge = s.state_of_charge;
++
++			mavlink_msg_battery_detail_send_struct(_mavlink->get_channel(), &msg);
++			return true;
++		}
++
++		return false;
++	}
++};
++
++#endif // BATTERY_DETAIL_HPP
+diff --git a/src/modules/mavlink/streams/PAYLOAD_STATUS.hpp b/src/modules/mavlink/streams/PAYLOAD_STATUS.hpp
+new file mode 100644
+index 0000000..6799eaa
+--- /dev/null
++++ b/src/modules/mavlink/streams/PAYLOAD_STATUS.hpp
+@@ -0,0 +1,54 @@
++#ifndef PAYLOAD_STATUS_HPP
++#define PAYLOAD_STATUS_HPP
++
++// drone_custom dialect(24150):酬載通用狀態;資料源 = out-of-tree
++// drone_payload_status topic(firmware/ext,SITL 由 payload_sim 發布)。
++
++#include <uORB/topics/drone_payload_status.h>
++
++class MavlinkStreamDronePayloadStatus : public MavlinkStream
++{
++public:
++	static MavlinkStream *new_instance(Mavlink *mavlink) { return new MavlinkStreamDronePayloadStatus(mavlink); }
++
++	static constexpr const char *get_name_static() { return "PAYLOAD_STATUS"; }
++	static constexpr uint16_t get_id_static() { return MAVLINK_MSG_ID_PAYLOAD_STATUS; }
++
++	const char *get_name() const override { return get_name_static(); }
++	uint16_t get_id() override { return get_id_static(); }
++
++	unsigned get_size() override
++	{
++		return _sub.advertised() ? MAVLINK_MSG_ID_PAYLOAD_STATUS_LEN + MAVLINK_NUM_NON_PAYLOAD_BYTES : 0;
++	}
++
++private:
++	explicit MavlinkStreamDronePayloadStatus(Mavlink *mavlink) : MavlinkStream(mavlink) {}
++
++	uORB::Subscription _sub{ORB_ID(drone_payload_status)};
++
++	bool send() override
++	{
++		drone_payload_status_s s;
++
++		if (_sub.update(&s)) {
++			mavlink_payload_status_t msg{};
++
++			msg.time_boot_ms = s.timestamp / 1000;
++			msg.fault_flags = s.fault_flags;
++			msg.firmware_version = s.firmware_version;
++			msg.temperature = s.temperature_cdegc;
++			msg.payload_type = s.payload_type;
++			msg.payload_id = s.payload_id;
++			msg.state = s.state;
++			msg.vendor_status = s.vendor_status;
++
++			mavlink_msg_payload_status_send_struct(_mavlink->get_channel(), &msg);
++			return true;
++		}
++
++		return false;
++	}
++};
++
++#endif // PAYLOAD_STATUS_HPP
+diff --git a/src/modules/mavlink/streams/SPRAY_TELEMETRY.hpp b/src/modules/mavlink/streams/SPRAY_TELEMETRY.hpp
+new file mode 100644
+index 0000000..9ba5999
+--- /dev/null
++++ b/src/modules/mavlink/streams/SPRAY_TELEMETRY.hpp
+@@ -0,0 +1,57 @@
++#ifndef SPRAY_TELEMETRY_HPP
++#define SPRAY_TELEMETRY_HPP
++
++// drone_custom dialect(24151):噴灑作業遙測(PB-1);資料源 =
++// drone_spray_status topic(firmware/ext;SITL 由 payload_sim/drone_spray 發布)。
++
++#include <uORB/topics/drone_spray_status.h>
++
++class MavlinkStreamSprayTelemetry : public MavlinkStream
++{
++public:
++	static MavlinkStream *new_instance(Mavlink *mavlink) { return new MavlinkStreamSprayTelemetry(mavlink); }
++
++	static constexpr const char *get_name_static() { return "SPRAY_TELEMETRY"; }
++	static constexpr uint16_t get_id_static() { return MAVLINK_MSG_ID_SPRAY_TELEMETRY; }
++
++	const char *get_name() const override { return get_name_static(); }
++	uint16_t get_id() override { return get_id_static(); }
++
++	unsigned get_size() override
++	{
++		return _sub.advertised() ? MAVLINK_MSG_ID_SPRAY_TELEMETRY_LEN + MAVLINK_NUM_NON_PAYLOAD_BYTES : 0;
++	}
++
++private:
++	explicit MavlinkStreamSprayTelemetry(Mavlink *mavlink) : MavlinkStream(mavlink) {}
++
++	uORB::Subscription _sub{ORB_ID(drone_spray_status)};
++
++	bool send() override
++	{
++		drone_spray_status_s s;
++
++		if (_sub.update(&s)) {
++			mavlink_spray_telemetry_t msg{};
++
++			msg.time_boot_ms = s.timestamp / 1000;
++			msg.flow_rate = s.flow_rate_ml_s;
++			msg.flow_rate_setpoint = s.flow_rate_setpoint_ml_s;
++			msg.volume_remaining = s.volume_remaining_ml;
++			msg.volume_consumed = s.volume_consumed_ml;
++			msg.application_rate = s.application_rate_ml_m2;
++			msg.pump_pressure = s.pump_pressure_bar;
++			msg.boom_width = s.boom_width_m;
++			msg.spray_flags = s.spray_flags;
++			msg.pump_state = s.pump_state;
++			msg.nozzles_active = s.nozzles_active;
++
++			mavlink_msg_spray_telemetry_send_struct(_mavlink->get_channel(), &msg);
++			return true;
++		}
++
++		return false;
++	}
++};
++
++#endif // SPRAY_TELEMETRY_HPP
