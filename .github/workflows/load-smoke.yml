@@ -1,0 +1,132 @@
+name: load-smoke
+
+# 負載煙霧(R3):tools/loadgen 對隔離棧短跑,blocking 斷言只有「可用性」——
+# 零非預期錯誤(402/429 為預期)、healthz 綠、遙測落庫率 ≥90%、SSE gauge 歸零、
+# 容器零重啟。延遲/吞吐數字只上傳 artifact **永不設門檻**(2-core runner 上
+# 絕對數字無意義,見 docs/50-project/phase1/perf-baseline.md §1)。
+# nightly(台北 03:10,錯開 sitl 02:30 / chaos 03:40)跑大檔位,觀測 + 失敗開 issue。
+
+on:
+  pull_request:
+    paths:
+      - "cloud/**"
+      - "tools/loadgen/**"
+      - ".github/workflows/load-smoke.yml"
+  schedule:
+    - cron: "10 19 * * *" # 台北 03:10
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+env:
+  JWT_SECRET: ci-load-secret-0123456789abcdef0123456789
+  # 檔位:PR 短跑;nightly/manual 於 step 內放大
+  LOCUST_USERS: 10
+  LOCUST_TIME: 60s
+  FANIN_DRONES: 30
+  FANIN_RATE: 5
+  FANIN_SECONDS: 45
+  SSE_CLIENTS: 100
+  SSE_SECONDS: 60
+
+jobs:
+  load:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    continue-on-error: ${{ github.event_name != 'pull_request' }}
+    defaults:
+      run:
+        working-directory: cloud/deploy/compose
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: nightly 檔位放大
+        if: github.event_name != 'pull_request'
+        run: |
+          {
+            echo "LOCUST_USERS=50"
+            echo "LOCUST_TIME=10m"
+            echo "FANIN_DRONES=100"
+            echo "FANIN_RATE=5"
+            echo "FANIN_SECONDS=300"
+            echo "SSE_CLIENTS=300"
+            echo "SSE_SECONDS=300"
+          } >> "$GITHUB_ENV"
+
+      - name: 起棧(帶 JWT_SECRET;dev 模式壓不到配額/限流/org 路徑)
+        run: docker compose up -d --build --wait mosquitto timescaledb ingest fleetsvc missionsvc
+
+      - name: loadgen 依賴(乾淨 venv;避開系統 zope 命名空間汙染 locust)
+        working-directory: .
+        run: |
+          python -m venv /tmp/loadvenv
+          /tmp/loadvenv/bin/pip install -q -U pip
+          /tmp/loadvenv/bin/pip install -q -r tools/loadgen/requirements.txt
+          /tmp/loadvenv/bin/pip install -q -e interfaces/proto/gen/python
+
+      - name: REST + 派遣流(locust;402/429 為預期,其餘失敗即紅)
+        working-directory: .
+        run: |
+          FLEET_BASE=http://127.0.0.1:8091 MISSION_BASE=http://127.0.0.1:8092 \
+          /tmp/loadvenv/bin/locust -f tools/loadgen/locustfile.py --headless \
+            -u "$LOCUST_USERS" -r 2 -t "$LOCUST_TIME" --csv /tmp/loadgen --exit-code-on-error 1
+
+      - name: 遙測 fan-in
+        working-directory: .
+        run: |
+          /tmp/loadvenv/bin/python tools/loadgen/mqtt_fanin.py \
+            --drones "$FANIN_DRONES" --rate "$FANIN_RATE" --seconds "$FANIN_SECONDS" \
+            | tee /tmp/fanin.out
+
+      - name: 斷言落庫率 ≥ 90%
+        run: |
+          sleep 5
+          PUB=$(grep -o '實發 [0-9]*' /tmp/fanin.out | grep -o '[0-9]*')
+          ROWS=$(docker compose exec -T timescaledb psql -U drone -d drone -tAc \
+            "SELECT count(*) FROM telemetry WHERE drone_id LIKE 'loadgen-%'")
+          echo "published=$PUB rows=$ROWS"
+          python3 -c "import sys; sys.exit(0 if int('$ROWS') >= 0.9*int('$PUB') else 1)"
+
+      - name: SSE 蜂群(normal/slow/abort;結束 gauge 歸零)
+        working-directory: .
+        run: |
+          /tmp/loadvenv/bin/python tools/loadgen/sse_swarm.py --port 8091 \
+            --clients "$SSE_CLIENTS" --slow $((SSE_CLIENTS / 5)) --abort $((SSE_CLIENTS / 5)) \
+            --seconds "$SSE_SECONDS" --settle 25
+
+      - name: 可用性斷言(healthz 綠 + 容器零重啟)
+        run: |
+          curl -fsS http://127.0.0.1:8091/healthz >/dev/null
+          curl -fsS http://127.0.0.1:8092/healthz >/dev/null
+          for svc in fleetsvc missionsvc; do
+            RC=$(docker inspect --format '{{.RestartCount}}' "$(docker compose ps -q $svc)")
+            echo "$svc restarts=$RC"; test "$RC" = "0"
+          done
+
+      - name: 上傳延遲數字(僅觀測,永不設門檻)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: loadgen-stats-${{ github.run_id }}
+          path: /tmp/loadgen*
+          retention-days: 14
+
+      - name: nightly 失敗開 issue
+        if: failure() && github.event_name != 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh issue create \
+            --title "load-smoke nightly 失敗($(date -u +%F))" \
+            --body "run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
+            --label bug || true
+
+      - name: 失敗傾印
+        if: failure()
+        run: docker compose logs --tail 100 fleetsvc missionsvc
+
+      - name: 收攤
+        if: always()
+        run: docker compose down -v
