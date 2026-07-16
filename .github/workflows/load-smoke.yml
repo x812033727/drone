@@ -58,27 +58,25 @@ jobs:
       - name: 起棧(帶 JWT_SECRET;dev 模式壓不到配額/限流/org 路徑)
         run: docker compose up -d --build --wait mosquitto timescaledb ingest fleetsvc missionsvc
 
-      - name: loadgen 依賴
+      - name: loadgen 依賴(乾淨 venv;避開系統 zope 命名空間汙染 locust)
         working-directory: .
         run: |
-          # 系統 dist-packages 有 zope.interface,pip 裝的 zope.event 落在別處,
-          # zope 命名空間套件不合併 → locust import 炸(CI 實測);--ignore-installed
-          # 強制兩者同處。
-          pip install --ignore-installed zope.event zope.interface
-          pip install -r tools/loadgen/requirements.txt
-          pip install -e interfaces/proto/gen/python
+          python -m venv /tmp/loadvenv
+          /tmp/loadvenv/bin/pip install -q -U pip
+          /tmp/loadvenv/bin/pip install -q -r tools/loadgen/requirements.txt
+          /tmp/loadvenv/bin/pip install -q -e interfaces/proto/gen/python
 
       - name: REST + 派遣流(locust;402/429 為預期,其餘失敗即紅)
         working-directory: .
         run: |
           FLEET_BASE=http://127.0.0.1:8091 MISSION_BASE=http://127.0.0.1:8092 \
-          locust -f tools/loadgen/locustfile.py --headless \
+          /tmp/loadvenv/bin/locust -f tools/loadgen/locustfile.py --headless \
             -u "$LOCUST_USERS" -r 2 -t "$LOCUST_TIME" --csv /tmp/loadgen --exit-code-on-error 1
 
       - name: 遙測 fan-in
         working-directory: .
         run: |
-          python tools/loadgen/mqtt_fanin.py \
+          /tmp/loadvenv/bin/python tools/loadgen/mqtt_fanin.py \
             --drones "$FANIN_DRONES" --rate "$FANIN_RATE" --seconds "$FANIN_SECONDS" \
             | tee /tmp/fanin.out
 
@@ -94,7 +92,7 @@ jobs:
       - name: SSE 蜂群(normal/slow/abort;結束 gauge 歸零)
         working-directory: .
         run: |
-          python tools/loadgen/sse_swarm.py --port 8091 \
+          /tmp/loadvenv/bin/python tools/loadgen/sse_swarm.py --port 8091 \
             --clients "$SSE_CLIENTS" --slow $((SSE_CLIENTS / 5)) --abort $((SSE_CLIENTS / 5)) \
             --seconds "$SSE_SECONDS" --settle 25
 
