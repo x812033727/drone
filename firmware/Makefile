@@ -23,8 +23,17 @@ deps: ## 建置用 python 依賴(釘版,裝進 firmware/.venv-px4)
 patch: fetch ## 套用 patches/*.patch(git apply --3way,冪等)
 	bash tools/apply_patches.sh
 
-build: patch ## 建置 px4_sitl_default(啟用 ccache 若可用)
-	. $(VENV)/bin/activate && $(MAKE) -C $(PX4_SRC) px4_sitl_default
+EXT_DIR := $(CURDIR)/ext
+BUILD_CACHE := $(PX4_SRC)/build/px4_sitl_default/CMakeCache.txt
+
+build: patch ## 建置 px4_sitl_default + out-of-tree 模組(ext/)
+	@# PX4 限制:首次帶 EXTERNAL_MODULES_LOCATION 時 build dir 不得已存在
+	@if [ -f "$(BUILD_CACHE)" ] && ! grep -q "EXTERNAL_MODULES_LOCATION.*=$(EXT_DIR)" "$(BUILD_CACHE)"; then \
+		echo "[build] 既有 build dir 未帶 ext,重置(全量重建一次)"; \
+		rm -rf "$(PX4_SRC)/build/px4_sitl_default"; \
+	fi
+	. $(VENV)/bin/activate && \
+		$(MAKE) -C $(PX4_SRC) px4_sitl_default EXTERNAL_MODULES_LOCATION=$(EXT_DIR)
 
 smoke: ## SIH 起機 + heartbeat 煙霧(需先 build)
 	. $(VENV)/bin/activate && bash tools/run_sitl_smoke.sh
