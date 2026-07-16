@@ -1,10 +1,12 @@
 #!/usr/bin/env bash
 # S21 影像錄存回放煙霧測試(本地/CI 共用):
-#   起 mediamtx → ffmpeg 推 10 秒測試流 → 回放 /list 有時段 → /get 下載片段
-#   → ffprobe 驗 h264 且時長 ≥ 8 s → down -v 清理。
+#   起 mediamtx → ffmpeg 推 10 秒測試流到 drone/ci-1 → 回放 /list 有時段 →
+#   /get 下載片段 → ffprobe 驗 h264 且時長 ≥ 8 s → WHEP 信令斷言
+#   (帶讀取帳密 201 + m=video / 無帳密非 201 / 不存在路徑 400|404)→ down -v 清理。
 # 需要:docker compose plugin、ffmpeg/ffprobe、curl、python3。
 # 本地跑請用隔離埠與獨特 project 名(CLAUDE.md 鐵則 8),例:
 #   RTSP_PORT=38554 PLAYBACK_PORT=39996 MTX_API_PORT=39997 \
+#   WEBRTC_PORT=38889 WEBRTC_UDP_PORT=38189 \
 #     COMPOSE_PROJECT=vsmoke-$$ ./video_smoke.sh
 set -euo pipefail
 
@@ -12,6 +14,10 @@ DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 RTSP_PORT="${RTSP_PORT:-8554}"
 PLAYBACK_PORT="${PLAYBACK_PORT:-9996}"
 MTX_API_PORT="${MTX_API_PORT:-9997}"
+WEBRTC_PORT="${WEBRTC_PORT:-8889}"
+WEBRTC_UDP_PORT="${WEBRTC_UDP_PORT:-8189}"
+# 串流命名慣例:drone/<serial>(正則 path,serial = fleet 裝置序號)
+STREAM_PATH="drone/ci-1"
 PROJECT="${COMPOSE_PROJECT:-video-smoke}"
 WORK="$(mktemp -d)"
 
@@ -33,6 +39,7 @@ fi
 
 compose() {
     RTSP_PORT="${RTSP_PORT}" PLAYBACK_PORT="${PLAYBACK_PORT}" MTX_API_PORT="${MTX_API_PORT}" \
+        WEBRTC_PORT="${WEBRTC_PORT}" WEBRTC_UDP_PORT="${WEBRTC_UDP_PORT}" \
         VIDEO_PUBLISH_USER="${VIDEO_PUBLISH_USER}" VIDEO_PUBLISH_PASS="${VIDEO_PUBLISH_PASS}" \
         VIDEO_READ_USER="${VIDEO_READ_USER}" VIDEO_READ_PASS="${VIDEO_READ_PASS}" \
         "${COMPOSE[@]}" -f "${DIR}/docker-compose.yml" --project-directory "${DIR}" \
@@ -74,13 +81,13 @@ echo "[video-smoke] MediaMTX 就緒,推 10 秒測試流"
 ffmpeg -hide_banner -loglevel error -re -f lavfi -i testsrc2=size=1280x720:rate=30 \
     -t 10 -c:v libx264 -preset ultrafast -tune zerolatency \
     -f rtsp -rtsp_transport tcp \
-    "rtsp://${VIDEO_PUBLISH_USER}:${VIDEO_PUBLISH_PASS}@127.0.0.1:${RTSP_PORT}/stream"
+    "rtsp://${VIDEO_PUBLISH_USER}:${VIDEO_PUBLISH_PASS}@127.0.0.1:${RTSP_PORT}/${STREAM_PATH}"
 
 # 收流結束後 mediamtx 需片刻把最後的 part 落盤
 sleep 2
 
 # --- 回放 /list:應回非空時段陣列 ---
-LIST="$(curl -fsS "http://127.0.0.1:${PLAYBACK_PORT}/list?path=stream")"
+LIST="$(curl -fsS "http://127.0.0.1:${PLAYBACK_PORT}/list?path=${STREAM_PATH}")"
 echo "[video-smoke] /list → ${LIST}"
 START="$(python3 -c '
 import json, sys
@@ -94,7 +101,7 @@ echo "[video-smoke] 錄存時段 start=${START}"
 
 # --- 回放 /get:下載片段(start 含時區/毫秒,一律 URL-encode)---
 curl -fsS -G -o "${WORK}/seg.mp4" \
-    --data-urlencode "path=stream" \
+    --data-urlencode "path=${STREAM_PATH}" \
     --data-urlencode "start=${START}" \
     --data-urlencode "duration=10" \
     --data-urlencode "format=mp4" \
@@ -110,4 +117,49 @@ echo "[video-smoke] ffprobe:codec=${CODEC} duration=${DUR}s"
 python3 -c "import sys; sys.exit(0 if float('${DUR}') >= 8.0 else 1)" \
     || { echo "[video-smoke] 片段時長 ${DUR}s < 8s" >&2; exit 1; }
 
-echo "[video-smoke] PASS:推流→錄存→/list→/get→ffprobe 全通"
+# --- WHEP 信令斷言(寫法移植 onboard/video_pipeline/run_poc.sh §4)---
+# 錄存流已結束(path 不再 ready),另推一條短流保持 ready 供 WHEP 協商。
+ffmpeg -hide_banner -loglevel error -re -f lavfi -i testsrc2=size=640x360:rate=15 \
+    -t 8 -c:v libx264 -preset ultrafast -tune zerolatency \
+    -f rtsp -rtsp_transport tcp \
+    "rtsp://${VIDEO_PUBLISH_USER}:${VIDEO_PUBLISH_PASS}@127.0.0.1:${RTSP_PORT}/${STREAM_PATH}" &
+FF_PID=$!
+READY=""
+for _ in $(seq 1 50); do
+    R=$(curl -fsS "http://127.0.0.1:${MTX_API_PORT}/v3/paths/get/${STREAM_PATH}" 2>/dev/null \
+        | python3 -c 'import json,sys; print(json.load(sys.stdin).get("ready"))' 2>/dev/null || true)
+    [[ "${R}" == "True" ]] && { READY=1; break; }
+    sleep 0.2
+done
+[[ -n "${READY}" ]] || { echo "[video-smoke] WHEP 前置:path 未就緒" >&2; kill ${FF_PID} 2>/dev/null || true; exit 1; }
+
+OFFER=$'v=0\r\no=- 0 0 IN IP4 127.0.0.1\r\ns=-\r\nt=0 0\r\na=group:BUNDLE 0\r\n'
+OFFER+=$'a=ice-ufrag:cismoke1\r\na=ice-pwd:cismokecismokecismokecis\r\n'
+OFFER+=$'a=fingerprint:sha-256 4A:AD:B9:B1:3F:82:18:3B:54:02:12:DF:3E:5D:49:6B:19:E5:7C:AB:11:22:33:44:55:66:77:88:99:AA:BB:CC\r\n'
+OFFER+=$'m=video 9 UDP/TLS/RTP/SAVPF 96\r\nc=IN IP4 0.0.0.0\r\na=mid:0\r\na=recvonly\r\n'
+OFFER+=$'a=rtpmap:96 H264/90000\r\na=fmtp:96 packetization-mode=1;profile-level-id=42e01f\r\n'
+OFFER+=$'a=setup:actpass\r\na=rtcp-mux\r\n'
+
+WHEP_ANSWER="${WORK}/whep_answer.sdp"
+WHEP_CODE=$(printf '%s' "${OFFER}" | curl -s -o "${WHEP_ANSWER}" -w '%{http_code}' \
+    -u "${VIDEO_READ_USER}:${VIDEO_READ_PASS}" \
+    -X POST -H 'Content-Type: application/sdp' --data-binary @- \
+    "http://127.0.0.1:${WEBRTC_PORT}/${STREAM_PATH}/whep")
+NOAUTH_CODE=$(printf '%s' "${OFFER}" | curl -s -o /dev/null -w '%{http_code}' \
+    -X POST -H 'Content-Type: application/sdp' --data-binary @- \
+    "http://127.0.0.1:${WEBRTC_PORT}/${STREAM_PATH}/whep")
+NOSTREAM_CODE=$(printf '%s' "${OFFER}" | curl -s -o /dev/null -w '%{http_code}' \
+    -u "${VIDEO_READ_USER}:${VIDEO_READ_PASS}" \
+    -X POST -H 'Content-Type: application/sdp' --data-binary @- \
+    "http://127.0.0.1:${WEBRTC_PORT}/drone/no-such/whep")
+kill ${FF_PID} 2>/dev/null || true; wait ${FF_PID} 2>/dev/null || true
+echo "[video-smoke] WHEP:帶帳密 ${WHEP_CODE}(應 201)/ 無帳密 ${NOAUTH_CODE}(應非 201)/" \
+     "不存在路徑 ${NOSTREAM_CODE}(應 400|404)"
+if [[ "${WHEP_CODE}" != "201" ]] || ! grep -q '^m=video' "${WHEP_ANSWER}" \
+    || [[ "${NOAUTH_CODE}" == "201" ]] \
+    || [[ "${NOSTREAM_CODE}" != "400" && "${NOSTREAM_CODE}" != "404" ]]; then
+    echo "[video-smoke] WHEP 斷言未通過" >&2
+    exit 1
+fi
+
+echo "[video-smoke] PASS:推流→錄存→/list→/get→ffprobe→WHEP(201/未授權/404)全通"

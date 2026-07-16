@@ -226,9 +226,16 @@ services:
       MTX_AUTHINTERNALUSERS_2_PERMISSIONS_0_ACTION: "api"
       MTX_AUTHINTERNALUSERS_3_USER: "any"
       MTX_AUTHINTERNALUSERS_3_PERMISSIONS_0_ACTION: "playback"
+      # ICE 單一 UDP 埠:容器內埠與宿主映射恆同號(candidate 通告容器內埠)
+      MTX_WEBRTCLOCALUDPADDRESS: ":${WEBRTC_UDP_PORT:-8189}"
     ports:
       # RTSP 收流(機上推流入口)—— 需 publish 帳密
       - "${RTSP_PORT:-8554}:8554"
+      # WebRTC/WHEP(操作端訂閱)—— 信令 HTTP + 單一 ICE UDP 埠。
+      # ICE candidate 通告容器內埠:WEBRTC_UDP_PORT 同時決定宿主與容器埠
+      # (上方 MTX_WEBRTCLOCALUDPADDRESS 跟著同號),隔離跑直接換高位埠即可。
+      - "${WEBRTC_PORT:-8889}:8889"
+      - "${WEBRTC_UDP_PORT:-8189}:${WEBRTC_UDP_PORT:-8189}/udp"
       # 回放 API 與管理 API 只綁 loopback:Phase 0 無認證,不對外網開
       # (security.md §8 內網豁免)
       - "127.0.0.1:${PLAYBACK_PORT:-9996}:9996"

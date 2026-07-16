@@ -234,7 +234,11 @@ helm rollback drone <REVISION>          # PVC 資料保留;回滾只換工作負
 ## 3. 常見問題(FAQ)
 
 - **RTSP 推流 401 / ANNOUNCE failed**:關匿名後推流未帶帳密。用
-  `rtsp://<VIDEO_PUBLISH_USER>:<VIDEO_PUBLISH_PASS>@host:8554/stream`;帳密與部署時注入的一致。
+  `rtsp://<VIDEO_PUBLISH_USER>:<VIDEO_PUBLISH_PASS>@host:8554/drone/<serial>`
+  (串流命名 `drone/<serial>`,serial = fleet 裝置序號);帳密與部署時注入的一致。
+- **WHEP/WebRTC 看不到畫面(信令 201 但無媒體)**:ICE candidate 通告容器內 UDP 埠,
+  `WEBRTC_UDP_PORT` 的宿主映射必須同號(compose 已自動同號);跨機觀看要以
+  `MTX_WEBRTCADDITIONALHOSTS` 通告宿主對外 IP。
 - **回放 `/list` / `/get` 打不通**:playback(9996)與 api(9997)只綁 loopback(內網豁免);
   對外請走 Web 指揮中心或另加反代 + 認證,勿直接外露這兩埠。
 - **fleet/mission API 回 401/403**:設了 `JWT_SECRET`/`JWT_JWKS_URL` 即啟用 RBAC(viewer 讀 / operator 改);
