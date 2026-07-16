@@ -54,6 +54,10 @@ python3 "${DIR}/tools/smoke/assert_params.py" \
 # --- 失效保護矩陣參數口徑回歸(對 docs/03-safety-analysis §4)---
 python3 "${DIR}/tools/smoke/assert_failsafe_matrix.py" --port "${HEARTBEAT_PORT}"
 
+# --- GeoFence 上傳-回讀(firmware.md §2 設計口徑 32 多邊形/128 頂點的一個代表案例)---
+python3 "${DIR}/tools/smoke/assert_geofence.py" --port "${HEARTBEAT_PORT}" \
+    --polygons 1 --vertices 32
+
 # --- out-of-tree 模組斷言(SMOKE_MODULES 逗號分隔;預設 payload_sim)---
 # px4-<cmd> 為 SITL client shim,連上運行中的 instance 0。
 BIN_DIR="${PX4_SRC}/build/px4_sitl_default/bin"
