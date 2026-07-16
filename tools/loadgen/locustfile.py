@@ -109,12 +109,18 @@ class DispatchUser(HttpUser):
         # 跨租戶防護要求 mission 的 drone_id 屬本 org:先以 admin(帶 org claim)
         # 冪等建立測試機。409/撞名視為已存在。
         admin = _hdr("admin")
-        self.client.post(
+        with self.client.post(
             "/api/v1/devices",
             json={"serial": DEVICE_SERIAL, "model": "loadgen-sim"},
             headers=admin,
             name="/api/v1/devices [setup]",
-        )
+            catch_response=True,
+        ) as resp:
+            # 409 = serial 已存在(多使用者併發 on_start 的冪等情況)
+            if resp.status_code in (201, 409):
+                resp.success()
+            else:
+                resp.failure(f"setup {resp.status_code}")
 
     @task
     def dispatch_flow(self):
