@@ -234,7 +234,12 @@ helm rollback drone <REVISION>          # PVC 資料保留;回滾只換工作負
 `cloud/deploy/compose/chaos_drill.sh`:對隔離棧注入三種基礎設施故障並斷言自癒
 (DB 重啟 → asyncpg pool 自癒不重啟服務;DB 長停 → DLQ JSONL 落地、恢復後續落庫;
 MQTT 重啟 → 重連恢復、斷線期間 dispatch 有限時回應)。CI 為 nightly
-`chaos-drill.yml`(觀測期,失敗自動開 issue)。
+`chaos-drill.yml`(觀測期,失敗自動開 issue)。實測恢復數字見
+[perf-baseline.md §3.4](perf-baseline.md)。
+
+負載/容量基準(REST 延遲、遙測 fan-in 落庫率、SSE 訂閱者容量)見
+[perf-baseline.md](perf-baseline.md);⚠️ 該表數字為共用開發機實測,僅供迴歸
+對照——正式容量規劃須在專屬硬體以同一方法論(loadgen)重跑。
 ⚠️ 已知語意:ingest 的 db-ready 旗標在「下一次成功寫入」才翻回——DB 恢復後
 /healthz 仍 503 屬正常,發一筆遙測即恢復;僅覆蓋單機 compose,不含 k8s 多副本。
 
