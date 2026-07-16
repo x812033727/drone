@@ -28,7 +28,11 @@ from mint_token import mint  # noqa: E402
 
 def _gauge(host: str, port: int, name: str) -> float | None:
     try:
-        with urllib.request.urlopen(f"http://{host}:{port}/metrics", timeout=5) as r:
+        # URL 為本工具自組的固定 http scheme(host/port 來自 CLI 參數),
+        # 非外部輸入;B310 針對 file:/ 自訂 scheme 的風險不適用。
+        with urllib.request.urlopen(  # nosec B310
+            f"http://{host}:{port}/metrics", timeout=5
+        ) as r:
             for line in r.read().decode().splitlines():
                 if line.startswith(name + " "):
                     return float(line.split()[1])
