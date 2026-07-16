@@ -13,6 +13,8 @@ export interface AppRuntimeConfig {
   oidcRedirectUri?: string;
   oidcScope?: string;
   mapStyle?: string;
+  videoBase?: string;
+  videoAuth?: string;
 }
 
 declare global {
@@ -42,4 +44,7 @@ export const config = {
   oidcRedirectUri: pick(RUNTIME.oidcRedirectUri, import.meta.env.VITE_OIDC_REDIRECT_URI),
   oidcScope: pick(RUNTIME.oidcScope, import.meta.env.VITE_OIDC_SCOPE) ?? "openid profile",
   mapStyle: pick(RUNTIME.mapStyle, import.meta.env.VITE_MAP_STYLE),
+  // 即時影像(WHEP):反代前綴與 dev 用讀取帳密(user:pass;JWT 橋接後改帶 token)
+  videoBase: pick(RUNTIME.videoBase, import.meta.env.VITE_VIDEO_BASE) ?? "/video",
+  videoAuth: pick(RUNTIME.videoAuth, import.meta.env.VITE_VIDEO_AUTH),
 };

@@ -251,8 +251,11 @@ services:
       dockerfile: gcs/web-console/Dockerfile
     ports:
       - "${WEBCONSOLE_PORT:-8080}:80"
-    # nginx 反代 /api → fleetsvc,/api/v1/{routes,missions} → missionsvc(見 nginx.conf)
+    # nginx 反代 /api → fleetsvc,/api/v1/{routes,missions} → missionsvc,
+    # /video/ → mediamtx WHEP(見 nginx.conf;mediamtx 無 healthcheck,僅排序)
     depends_on:
+      mediamtx:
+        condition: service_started
       fleetsvc:
         condition: service_healthy
       missionsvc:

@@ -17,6 +17,7 @@ import { Login } from "./components/Login";
 import { MissionManager } from "./components/MissionManager";
 import { TenantManager } from "./components/TenantManager";
 import { UsageView } from "./components/UsageView";
+import { VideoPanel } from "./components/VideoPanel";
 import { useToasts } from "./components/Toasts";
 import { handleCallback } from "./oidc";
 import type { DeviceStatusView } from "./types";
@@ -257,6 +258,7 @@ export function App() {
         <div className="main">
           <aside className="sidebar">
             <FleetList devices={list} selected={selected} onSelect={setSelected} />
+            <VideoPanel serial={selected} />
           </aside>
           <div className="map">
             <FleetMap devices={list} selected={selected} onSelect={setSelected} />

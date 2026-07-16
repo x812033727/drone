@@ -22,6 +22,8 @@ window.__APP_CONFIG__ = {
   oidcRedirectUri: "$(js_escape "${APP_OIDC_REDIRECT_URI:-}")",
   oidcScope: "$(js_escape "${APP_OIDC_SCOPE:-}")",
   mapStyle: "$(js_escape "${APP_MAP_STYLE:-}")",
+  videoBase: "$(js_escape "${APP_VIDEO_BASE:-}")",
+  videoAuth: "$(js_escape "${APP_VIDEO_AUTH:-}")",
 };
 EOF
 
