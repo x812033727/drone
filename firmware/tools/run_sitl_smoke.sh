@@ -59,4 +59,18 @@ for topic in "${TOPICS[@]}"; do
     echo "[sitl-smoke] uORB ${topic} OK"
 done
 
-echo "[sitl-smoke] PASS:自建 px4_sitl(SIH)起機 + heartbeat + out-of-tree 模組/uORB"
+# --- 自訂 dialect 訊息實收(F4 里程碑)---
+# 生成 drone_sitl Python 綁定到 pymavlink dialects(冪等;defs 用注入後的
+# submodule 目錄,含 common/development/drone_custom/drone_sitl 全套)
+DIALECTS_DIR="$(python3 -c 'import pymavlink, pathlib; print(pathlib.Path(pymavlink.__file__).parent / "dialects" / "v20")')"
+if [[ ! -f "${DIALECTS_DIR}/drone_sitl.py" ]]; then
+    # 用 PX4 submodule 自帶的 mavgen(與其 XML 版本天然配對;pip 版 mavgen 會
+    # 拒絕 PX4 樹內 common.xml 的 FENCE_TYPE_ALL 等值,實測)
+    python3 "${PX4_SRC}/src/modules/mavlink/mavlink/pymavlink/tools/mavgen.py" \
+        --lang=Python --wire-protocol=2.0 \
+        --output="${DIALECTS_DIR}/drone_sitl.py" \
+        "${PX4_SRC}/src/modules/mavlink/mavlink/message_definitions/v1.0/drone_sitl.xml"
+fi
+python3 "${DIR}/tools/smoke/assert_custom_messages.py" --port "${HEARTBEAT_PORT}" --timeout 60
+
+echo "[sitl-smoke] PASS:自建 px4_sitl(SIH)起機 + heartbeat + out-of-tree 模組/uORB + 自訂訊息實收"
