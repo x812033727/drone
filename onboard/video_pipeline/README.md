@@ -91,6 +91,21 @@ MediaMTX v1.12.3、**同機 loopback**、1080p30、x264 ultrafast+zerolatency
 | run 1 | 13.5 ms | 17.4 ms | 24.1 ms | 25.7 ms | 0/300 |
 | run 2 | 13.2 ms | 18.6 ms | 29.5 ms | 46.9 ms | 0/300 |
 
+### WHEP 媒體面探針(V6)
+
+`whep_probe.py`:aiortc headless WHEP 客戶端,完成 ICE/DTLS/SRTP → 收 H.264 幀 →
+`decode_stamp` 讀回像素時戳。這是無瀏覽器下**最誠實的 WebRTC 驗證**——信令 201
+只證協商可建,本探針證「畫面真的流過來且可解」。掛 nightly `video-probe.yml`
+(對 simcam 合成源;`webrtcAdditionalHosts=127.0.0.1` 讓探針可達 ICE host)。
+```bash
+pip install aiortc av aiohttp numpy
+python onboard/video_pipeline/whep_probe.py \
+  --whep http://127.0.0.1:8889/drone/sim-1/whep --user reader --password <pass> --frames 5
+```
+⚠️ 跨機/NAT 需 TURN(Phase 1);真相機曝光/Jetson 編碼延遲仍是 Phase 1 實測主體。
+
+### run_poc.sh 的信令檢查
+
 WebRTC 腿:同一路流的 WHEP endpoint(`POST /stream/whep`)以手工 SDP offer
 協商 → **HTTP 201 + 含 `m=video` H264 的 answer**(信令層可協商);
 不存在路徑正確回 4xx。ICE/DTLS/媒體面播放為 Phase 1 實機項(方法論同上)。
