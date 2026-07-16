@@ -34,12 +34,17 @@ GCS ↔ PX4 數傳鏈路上,upstream `common.xml` 沒有的自家訊息:
 `drone_custom.xml` 已用 pymavlink/mavgen 驗證可生成 C 與 Python 綁定,並通過
 三則訊息的 encode→wire→decode 往返;訊息 ID 落在私有區段、不重複,各訊息欄位名
 唯一,bitmask enum 值皆為 2 的冪。本機重現(需 `pip install pymavlink`,將
-upstream `common.xml`/`standard.xml`/`minimal.xml` 與本檔置於同目錄):
+upstream `common.xml`/`standard.xml`/`minimal.xml` 與本檔置於同目錄;
+⚠️ pip 包的 mavgen 入口是 console script,`pymavlink.tools` 不隨包發佈;
+upstream XML 需用與 pymavlink 版本配對的 commit,master 最新 schema 元素舊版
+mavgen 會拒絕——配對值見 `.github/workflows/mavlink-ci.yml`):
 
 ```bash
-python -m pymavlink.tools.mavgen --lang=C --wire-protocol=2.0 \
-  --output=/tmp/out drone_custom.xml
+mavgen.py --lang=C --wire-protocol=2.0 --output=/tmp/out drone_custom.xml
 ```
+
+CI 守門:`mavlink-ci.yml`(靜態檢查 `check_dialect.py` + mavgen C/Python
+dry-run),path-gated 於 `interfaces/mavlink/**`。
 
 ## 預計 schema
 
@@ -64,7 +69,7 @@ python -m pymavlink.tools.mavgen --lang=C --wire-protocol=2.0 \
 1. ✅ 欄位定案 rev 1(型別/單位/命名/無效值語意) — 本 PR
 2. ⬜ FC-H7 rev A 板級 bring-up 完成,自訂模組(噴灑/智慧電池)韌體開始送這些訊息
 3. ⬜ 首個消費端(QGC custom-build 或 drone-agent)接上並回饋
-4. ⬜ CI 加入 dialect XML 驗證(mavgen dry-run)與 ID 區段占用檢查
+4. ✅ CI 加入 dialect XML 驗證(mavgen dry-run)與 ID 區段占用檢查 — `mavlink-ci.yml` + `check_dialect.py`
 
 > 欄位一經釋出即凍結;後續調整循「欄位只增不改 / 改欄位開新訊息」規則,
 > dialect `<version>` 隨之遞增。
