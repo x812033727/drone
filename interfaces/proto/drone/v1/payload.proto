@@ -1,0 +1,101 @@
+// 酬載/智慧電池遙測契約 v0.5.0(dialect 消費鏈 G6/G7)
+//
+// 來源:PX4 drone_custom MAVLink dialect(interfaces/mavlink,rev 1)——
+// PAYLOAD_STATUS(24150)/ SPRAY_TELEMETRY(24151)/ BATTERY_DETAIL(24152),
+// 由 onboard/drone_agent 的 payload_listener 解碼後外發。
+// 傳輸:MQTT 主題 `fleet/{drone_id}/payload/status|spray|battery`,
+// 低頻(1 Hz 級)**QoS 0**(容失,同 sensors 流語意)。
+// 編碼:Phase 0 proto3 JSON mapping。
+// 共通欄位:
+// - unix_time_ms:agent 收樣當下 wall clock(Unix epoch 毫秒,UTC)
+// - time_boot_ms:機上原始時戳(boot 起算毫秒,**非** epoch),原樣保留
+// 無效值語意沿 dialect 慣例(整數型別最大值 / 浮點 NaN),契約不轉譯。
+syntax = "proto3";
+
+package drone.v1;
+
+// 酬載通用狀態(對 dialect PAYLOAD_STATUS;enum 值域見 drone_custom.xml)。
+message PayloadStatus {
+  // 機隊內唯一機身識別碼(同 MQTT 主題中的 {drone_id})。
+  string drone_id = 1;
+  // agent 收樣時間,Unix epoch 毫秒(UTC)。
+  int64 unix_time_ms = 2;
+  // 機上時戳,boot 起算毫秒(非 epoch)。
+  uint32 time_boot_ms = 3;
+  // 酬載類型(DRONE_PAYLOAD_TYPE)。
+  uint32 payload_type = 4;
+  // 酬載實例編號(單掛點固定 0)。
+  uint32 payload_id = 5;
+  // 通用作業狀態(DRONE_PAYLOAD_STATE)。
+  uint32 state = 6;
+  // 故障旗標點陣(DRONE_PAYLOAD_FAULT_FLAGS);0 = 無故障。
+  uint32 fault_flags = 7;
+  // 酬載內部溫度,cdegC;INT16_MAX 表未知。
+  int32 temperature_cdegc = 8;
+  // 酬載韌體版本((major<<24)|(minor<<16)|(patch<<8)|type);0 = 未知。
+  uint32 firmware_version = 9;
+  // 廠商自定子狀態。
+  uint32 vendor_status = 10;
+}
+
+// 噴灑作業遙測(對 dialect SPRAY_TELEMETRY;PB-1)。
+message SprayTelemetry {
+  // 機隊內唯一機身識別碼。
+  string drone_id = 1;
+  // agent 收樣時間,Unix epoch 毫秒(UTC)。
+  int64 unix_time_ms = 2;
+  // 機上時戳,boot 起算毫秒(非 epoch)。
+  uint32 time_boot_ms = 3;
+  // 目前流量,ml/s。
+  float flow_rate_ml_s = 4;
+  // 目標流量,ml/s;NaN 表無設定值。
+  float flow_rate_setpoint_ml_s = 5;
+  // 藥箱剩餘,ml;NaN 表無液位感測。
+  float volume_remaining_ml = 6;
+  // 本次作業累計噴出,ml。
+  float volume_consumed_ml = 7;
+  // 單位面積施用量,ml/m2;NaN 表未量測。
+  float application_rate_ml_m2 = 8;
+  // 泵出口壓力,bar;NaN 表無感測。
+  float pump_pressure_bar = 9;
+  // 有效噴幅,m。
+  float boom_width_m = 10;
+  // 噴灑旗標點陣(DRONE_SPRAY_FLAGS);0 = 正常。
+  uint32 spray_flags = 11;
+  // 泵狀態(DRONE_SPRAY_PUMP_STATE)。
+  uint32 pump_state = 12;
+  // 作用中噴頭數。
+  uint32 nozzles_active = 13;
+}
+
+// 智慧電池電芯級詳情(對 dialect BATTERY_DETAIL;SMBus BMS)。
+message BatteryDetail {
+  // 機隊內唯一機身識別碼。
+  string drone_id = 1;
+  // agent 收樣時間,Unix epoch 毫秒(UTC)。
+  int64 unix_time_ms = 2;
+  // 機上時戳,boot 起算毫秒(非 epoch)。
+  uint32 time_boot_ms = 3;
+  // BMS 故障旗標點陣(DRONE_BATTERY_FAULT_FLAGS);0 = 無故障。
+  uint32 fault_flags = 4;
+  // 滿充容量,mAh;0 表未知。
+  uint32 capacity_full_charge_mah = 5;
+  // 剩餘容量,mAh;0 表未知。
+  uint32 capacity_remaining_mah = 6;
+  // 各電芯電壓,mV(至 14 槽;未用槽位 UINT16_MAX)。
+  repeated uint32 cell_voltages_mv = 7;
+  // 循環數;UINT16_MAX 表未知。
+  uint32 cycle_count = 8;
+  // 電池組溫度,cdegC;INT16_MAX 表未知。
+  int32 temperature_cdegc = 9;
+  // 電池組電流,cA(放電正/充電負);INT16_MAX 表未知。
+  int32 current_ca = 10;
+  // 電池編號(對 BATTERY_STATUS.id)。
+  uint32 id = 11;
+  // 有效電芯數;UINT8_MAX 表未知。
+  uint32 cell_count = 12;
+  // 健康度 SoH 0-100;UINT8_MAX 表未知。
+  uint32 state_of_health = 13;
+  // 剩餘電量 SoC 0-100;UINT8_MAX 表未知。
+  uint32 state_of_charge = 14;
+}
