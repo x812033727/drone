@@ -4,6 +4,7 @@
 // 認證:Phase 0 internal-users 模式用 config.videoAuth(user:pass,dev 用途);
 // fleet JWT 認證橋(authMethod http)由後續 PR 接上後改帶 token。
 import { useCallback, useEffect, useRef, useState } from "react";
+import { getToken } from "../auth";
 import { config } from "../config";
 
 interface Props {
@@ -58,7 +59,7 @@ export function VideoPanel({ serial }: Props) {
       await pc.setLocalDescription(offer);
       await waitIceComplete(pc);
 
-      const whepUrl = `${videoBase()}/drone/${encodeURIComponent(serial)}/whep`;
+      const whepUrl = `${videoBase()}/drone/${encodeURIComponent(serial)}/whep${jwtQuery()}`;
       const resp = await fetch(whepUrl, {
         method: "POST",
         headers: { "Content-Type": "application/sdp", ...authHeaders() },
@@ -74,9 +75,10 @@ export function VideoPanel({ serial }: Props) {
       // Location 為 mediamtx 根路徑相對值;經反代後以 videoBase 前綴解析
       const loc = resp.headers.get("Location");
       if (loc) {
-        sessionRef.current = loc.startsWith("http")
+        const base = loc.startsWith("http")
           ? loc
           : `${videoBase()}${loc.startsWith("/") ? "" : "/"}${loc}`;
+        sessionRef.current = `${base}${jwtQuery()}`;
       }
       await pc.setRemoteDescription({ type: "answer", sdp: await resp.text() });
     } catch (e) {
@@ -113,10 +115,17 @@ function videoBase(): string {
 }
 
 function authHeaders(): Record<string, string> {
-  // Phase 0(internal users):dev 部署可經 runtime config 注入讀取帳密。
-  // JWT 認證橋接上後,這裡改為附掛 fleet token(?jwt= / Bearer)。
+  // internal-users 模式:runtime config 注入讀取帳密(dev 用)。
   if (config.videoAuth) return { Authorization: `Basic ${btoa(config.videoAuth)}` };
   return {};
+}
+
+// videoauth overlay(authMethod http)模式:帶 fleet JWT(?jwt= 為最穩管道,
+// 必進 MediaMTX auth 回呼的 payload.query)。internal-users 模式帶了也無害。
+function jwtQuery(): string {
+  if (config.videoAuth) return ""; // Basic 模式不疊 token
+  const token = getToken();
+  return token ? `?jwt=${encodeURIComponent(token)}` : "";
 }
 
 function waitIceComplete(pc: RTCPeerConnection): Promise<void> {

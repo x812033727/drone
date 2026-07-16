@@ -1178,6 +1178,58 @@
         ],
         "title": "ValidationError",
         "type": "object"
+      },
+      "VideoAuthRequest": {
+        "description": "MediaMTX authHTTPAddress 的 POST payload(欄位皆可缺)。",
+        "properties": {
+          "action": {
+            "default": "",
+            "title": "Action",
+            "type": "string"
+          },
+          "id": {
+            "default": "",
+            "title": "Id",
+            "type": "string"
+          },
+          "ip": {
+            "default": "",
+            "title": "Ip",
+            "type": "string"
+          },
+          "password": {
+            "default": "",
+            "title": "Password",
+            "type": "string"
+          },
+          "path": {
+            "default": "",
+            "title": "Path",
+            "type": "string"
+          },
+          "protocol": {
+            "default": "",
+            "title": "Protocol",
+            "type": "string"
+          },
+          "query": {
+            "default": "",
+            "title": "Query",
+            "type": "string"
+          },
+          "token": {
+            "default": "",
+            "title": "Token",
+            "type": "string"
+          },
+          "user": {
+            "default": "",
+            "title": "User",
+            "type": "string"
+          }
+        },
+        "title": "VideoAuthRequest",
+        "type": "object"
       }
     },
     "securitySchemes": {
@@ -2593,6 +2645,38 @@
           }
         ],
         "summary": "Get Usage"
+      }
+    },
+    "/api/v1/video/auth": {
+      "post": {
+        "description": "MediaMTX authHTTPAddress 回呼(authMethod: http;策略見 video_auth 模組)。\n\n本端點由 MediaMTX 於 compose 內網呼叫,不掛使用者 RBAC;\n對外仍安全:publish 憑證 constant-time、read 走 fleet JWT + org 隔離。",
+        "operationId": "video_auth_callback_api_v1_video_auth_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VideoAuthRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Video Auth Callback"
       }
     },
     "/healthz": {

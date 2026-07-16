@@ -1,0 +1,26 @@
+# 影像認證橋 overlay:MediaMTX authMethod=http → fleet-svc /api/v1/video/auth。
+# 疊加用法(與 mtls overlay 同模式):
+#   docker-compose -f docker-compose.yml -f docker-compose.videoauth.yml -p <名> up -d
+# 語意:
+# - publish(機上推流)仍走 VIDEO_PUBLISH_USER/PASS(由 fleet-svc constant-time 比對)
+# - read(WHEP/RTSP 訂閱)改走 fleet JWT(?jwt= / Basic pass 位)+ org-device 隔離
+# - playback/api/metrics/pprof 由 authHTTPExclude 排除(宿主埠僅綁 loopback,內網豁免)
+# 注意:authMethod=http 後 base compose 注入的 MTX_AUTHINTERNALUSERS_* 不再生效;
+# fleet-svc 掛掉時推/拉流的認證回呼會失敗(拒絕)——internal 模式為降級路徑。
+services:
+  mediamtx:
+    environment:
+      MTX_AUTHMETHOD: "http"
+      MTX_AUTHHTTPADDRESS: "http://fleetsvc:8091/api/v1/video/auth"
+      MTX_AUTHHTTPEXCLUDE_0_ACTION: "api"
+      MTX_AUTHHTTPEXCLUDE_1_ACTION: "playback"
+      MTX_AUTHHTTPEXCLUDE_2_ACTION: "metrics"
+      MTX_AUTHHTTPEXCLUDE_3_ACTION: "pprof"
+    depends_on:
+      fleetsvc:
+        condition: service_healthy
+
+  fleetsvc:
+    environment:
+      VIDEO_PUBLISH_USER: "${VIDEO_PUBLISH_USER:-publisher}"
+      VIDEO_PUBLISH_PASS: "${VIDEO_PUBLISH_PASS:-dronedev-publish}"
