@@ -61,6 +61,10 @@ jobs:
       - name: loadgen 依賴
         working-directory: .
         run: |
+          # 系統 dist-packages 有 zope.interface,pip 裝的 zope.event 落在別處,
+          # zope 命名空間套件不合併 → locust import 炸(CI 實測);--ignore-installed
+          # 強制兩者同處。
+          pip install --ignore-installed zope.event zope.interface
           pip install -r tools/loadgen/requirements.txt
           pip install -e interfaces/proto/gen/python
 
