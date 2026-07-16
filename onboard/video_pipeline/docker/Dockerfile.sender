@@ -1,0 +1,40 @@
+# 合成相機容器(V4 simcam):sender.py --source test 推 RTSP 到常駐棧 mediamtx。
+# 用途:無實體相機(Jetson+相機屬 Phase 1)下驗證影像鏈整條管線;
+# compose 以 profiles:["simcam"] 選配(預設不起)。
+FROM debian:bookworm-slim
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+# GStreamer + python3-gi(sender.py 的 x264 編碼與 rtspclientsink)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        python3 \
+        python3-gi \
+        python3-numpy \
+        gir1.2-gst-rtsp-server-1.0 \
+        gstreamer1.0-plugins-base \
+        gstreamer1.0-plugins-good \
+        gstreamer1.0-plugins-bad \
+        gstreamer1.0-plugins-ugly \
+        gstreamer1.0-rtsp \
+        gstreamer1.0-tools \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+COPY onboard/video_pipeline/sender.py onboard/video_pipeline/pipelines.py \
+     onboard/video_pipeline/stamp.py ./
+
+# 推流目標與畫質由環境變數注入(compose 設定;帳密走 VIDEO_PUBLISH_*)
+ENV SIMCAM_SERIAL=sim-1 \
+    SIMCAM_WIDTH=1280 \
+    SIMCAM_HEIGHT=720 \
+    SIMCAM_FPS=25 \
+    SIMCAM_BITRATE=3000 \
+    MEDIAMTX_HOST=mediamtx \
+    MEDIAMTX_RTSP_PORT=8554 \
+    VIDEO_PUBLISH_USER=publisher \
+    VIDEO_PUBLISH_PASS=dronedev-publish
+
+CMD ["sh", "-c", "exec python3 sender.py --source test \
+    --width ${SIMCAM_WIDTH} --height ${SIMCAM_HEIGHT} --fps ${SIMCAM_FPS} \
+    --bitrate ${SIMCAM_BITRATE} \
+    --rtsp-url rtsp://${VIDEO_PUBLISH_USER}:${VIDEO_PUBLISH_PASS}@${MEDIAMTX_HOST}:${MEDIAMTX_RTSP_PORT}/drone/${SIMCAM_SERIAL}"]
