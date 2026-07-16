@@ -26,6 +26,16 @@ data:
         proxy_buffering off;
         proxy_read_timeout 3600s;
       }
+      {{- if .Values.mediamtx.enabled }}
+      # /video/ → mediamtx WHEP(信令;媒體面走 WebRTC UDP 不經 nginx)
+      location /video/ {
+        proxy_pass http://{{ include "drone.fullname" . }}-mediamtx:8889/;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_buffering off;
+        proxy_read_timeout 60s;
+      }
+      {{- end }}
       location / {
         try_files $uri $uri/ /index.html;
       }

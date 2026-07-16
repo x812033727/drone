@@ -30,6 +30,15 @@ jobs:
           helm template drone cloud/deploy/helm/drone-platform \
             --set secrets.jwtSecret=abcdefghijklmnopqrstuvwxyz123456 \
             --set ingress.enabled=true --set ingress.host=drone.example.com > /dev/null
+      - name: helm template(影像 http 認證 + simcam + 跨機通告)
+        run: |
+          helm template drone cloud/deploy/helm/drone-platform \
+            --set mediamtx.auth.mode=http --set mediamtx.simcam.enabled=true \
+            --set mediamtx.webrtcAdditionalHosts="{203.0.113.5}" > /dev/null
+      - name: helm template(影像關閉)
+        run: |
+          helm template drone cloud/deploy/helm/drone-platform \
+            --set mediamtx.enabled=false > /dev/null
       - name: helm template(mTLS 啟用)
         run: |
           helm template drone cloud/deploy/helm/drone-platform \

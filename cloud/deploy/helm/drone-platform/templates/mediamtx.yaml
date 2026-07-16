@@ -1,0 +1,211 @@
+{{- if .Values.mediamtx.enabled }}
+# MediaMTX 影像串流(RTSP 收流 + WebRTC/WHEP 訂閱 + 錄存)。
+# 認證兩模式(values.mediamtx.auth.mode):
+#   internal — authInternalUsers(publish/read 帳密由 secret 注入)
+#   http     — authHTTPAddress 指向 fleet-svc /api/v1/video/auth(JWT + org 隔離)
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "drone.fullname" . }}-mediamtx
+  labels:
+    {{- include "drone.labels" . | nindent 4 }}
+    app.kubernetes.io/component: mediamtx
+data:
+  mediamtx.yml: |
+    logLevel: info
+    authInternalUsers: []
+    api: yes
+    apiAddress: :9997
+    playback: yes
+    playbackAddress: :9996
+    rtsp: yes
+    rtspAddress: :8554
+    rtmp: no
+    hls: no
+    srt: no
+    webrtc: yes
+    webrtcAddress: :8889
+    webrtcLocalUDPAddress: :8189
+    {{- with .Values.mediamtx.webrtcAdditionalHosts }}
+    webrtcAdditionalHosts: {{ toYaml . | nindent 6 }}
+    {{- end }}
+    paths:
+      "~^drone/[A-Za-z0-9_-]+$":
+        record: yes
+        recordPath: /recordings/%path/%Y-%m-%d_%H-%M-%S-%f
+        recordFormat: fmp4
+        recordPartDuration: 1s
+        recordSegmentDuration: 15m
+        recordDeleteAfter: {{ .Values.mediamtx.recordRetention | quote }}
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "drone.fullname" . }}-mediamtx
+  labels:
+    {{- include "drone.labels" . | nindent 4 }}
+    app.kubernetes.io/component: mediamtx
+spec:
+  serviceName: {{ include "drone.fullname" . }}-mediamtx
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: {{ .Release.Name }}
+      app.kubernetes.io/component: mediamtx
+  template:
+    metadata:
+      labels:
+        {{- include "drone.labels" . | nindent 8 }}
+        app.kubernetes.io/component: mediamtx
+    spec:
+      securityContext:
+        {{- include "drone.podSecurityContext" . | nindent 8 }}
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: mediamtx
+          image: {{ .Values.mediamtx.image | quote }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext:
+            {{- include "drone.containerSecurityContext" . | nindent 12 }}
+          env:
+            {{- if eq .Values.mediamtx.auth.mode "http" }}
+            - name: MTX_AUTHMETHOD
+              value: "http"
+            - name: MTX_AUTHHTTPADDRESS
+              value: "http://{{ include "drone.fullname" . }}-fleetsvc:8091/api/v1/video/auth"
+            - name: MTX_AUTHHTTPEXCLUDE_0_ACTION
+              value: "api"
+            - name: MTX_AUTHHTTPEXCLUDE_1_ACTION
+              value: "playback"
+            - name: MTX_AUTHHTTPEXCLUDE_2_ACTION
+              value: "metrics"
+            {{- end }}
+            {{- if eq .Values.mediamtx.auth.mode "internal" }}
+            - name: MTX_AUTHINTERNALUSERS_0_USER
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "drone.secretName" . }}
+                  key: VIDEO_PUBLISH_USER
+            - name: MTX_AUTHINTERNALUSERS_0_PASS
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "drone.secretName" . }}
+                  key: VIDEO_PUBLISH_PASS
+            - name: MTX_AUTHINTERNALUSERS_0_PERMISSIONS_0_ACTION
+              value: "publish"
+            - name: MTX_AUTHINTERNALUSERS_1_USER
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "drone.secretName" . }}
+                  key: VIDEO_READ_USER
+            - name: MTX_AUTHINTERNALUSERS_1_PASS
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "drone.secretName" . }}
+                  key: VIDEO_READ_PASS
+            - name: MTX_AUTHINTERNALUSERS_1_PERMISSIONS_0_ACTION
+              value: "read"
+            - name: MTX_AUTHINTERNALUSERS_2_USER
+              value: "any"
+            - name: MTX_AUTHINTERNALUSERS_2_PERMISSIONS_0_ACTION
+              value: "api"
+            - name: MTX_AUTHINTERNALUSERS_3_USER
+              value: "any"
+            - name: MTX_AUTHINTERNALUSERS_3_PERMISSIONS_0_ACTION
+              value: "playback"
+            {{- end }}
+          ports:
+            - { name: rtsp, containerPort: 8554 }
+            - { name: webrtc, containerPort: 8889 }
+            - { name: webrtc-ice, containerPort: 8189, protocol: UDP }
+            - { name: api, containerPort: 9997 }
+            - { name: playback, containerPort: 9996 }
+          resources:
+            {{- toYaml .Values.mediamtx.resources | nindent 12 }}
+          volumeMounts:
+            - { name: config, mountPath: /mediamtx.yml, subPath: mediamtx.yml }
+            - { name: recordings, mountPath: /recordings }
+      volumes:
+        - name: config
+          configMap:
+            name: {{ include "drone.fullname" . }}-mediamtx
+  volumeClaimTemplates:
+    - metadata:
+        name: recordings
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        {{- with .Values.mediamtx.storageClassName }}
+        storageClassName: {{ . | quote }}
+        {{- end }}
+        resources:
+          requests:
+            storage: {{ .Values.mediamtx.storage }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "drone.fullname" . }}-mediamtx
+  labels:
+    {{- include "drone.labels" . | nindent 4 }}
+    app.kubernetes.io/component: mediamtx
+spec:
+  selector:
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/component: mediamtx
+  ports:
+    - { name: rtsp, port: 8554, targetPort: 8554 }
+    - { name: webrtc, port: 8889, targetPort: 8889 }
+    - { name: webrtc-ice, port: 8189, targetPort: 8189, protocol: UDP }
+    - { name: playback, port: 9996, targetPort: 9996 }
+{{- end }}
+{{- if and .Values.mediamtx.enabled .Values.mediamtx.simcam.enabled }}
+---
+# 合成相機(V4;選配 demo/驗收):推 drone/<serial> 到 mediamtx。
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "drone.fullname" . }}-simcam
+  labels:
+    {{- include "drone.labels" . | nindent 4 }}
+    app.kubernetes.io/component: simcam
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: {{ .Release.Name }}
+      app.kubernetes.io/component: simcam
+  template:
+    metadata:
+      labels:
+        {{- include "drone.labels" . | nindent 8 }}
+        app.kubernetes.io/component: simcam
+    spec:
+      securityContext:
+        {{- include "drone.podSecurityContext" . | nindent 8 }}
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: simcam
+          image: {{ include "drone.image" (list . "sender") | quote }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext:
+            {{- include "drone.containerSecurityContext" . | nindent 12 }}
+          env:
+            - name: SIMCAM_SERIAL
+              value: {{ .Values.mediamtx.simcam.serial | quote }}
+            - name: MEDIAMTX_HOST
+              value: {{ include "drone.fullname" . }}-mediamtx
+            - name: VIDEO_PUBLISH_USER
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "drone.secretName" . }}
+                  key: VIDEO_PUBLISH_USER
+            - name: VIDEO_PUBLISH_PASS
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "drone.secretName" . }}
+                  key: VIDEO_PUBLISH_PASS
+{{- end }}

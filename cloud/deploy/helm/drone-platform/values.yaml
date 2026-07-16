@@ -114,6 +114,31 @@ webconsole:
     requests: { cpu: 50m, memory: 64Mi }
     limits: { cpu: 500m, memory: 256Mi }
 
+# 影像串流(V5):RTSP 收流 + WebRTC/WHEP 訂閱 + 錄存。
+mediamtx:
+  enabled: true
+  image: bluenviron/mediamtx:1.12.3
+  # 認證模式:internal(帳密)或 http(fleet-svc /api/v1/video/auth,JWT+org 隔離)
+  auth:
+    mode: internal
+  # internal 模式的預設帳密(正式部署務必覆寫或用 existingSecret)
+  publishUser: publisher
+  publishPass: dronedev-publish
+  readUser: reader
+  readPass: dronedev-read
+  # 跨機/NAT 觀看:通告對外可達的宿主/LB IP(WebRTC ICE candidate)
+  webrtcAdditionalHosts: []
+  recordRetention: 72h
+  storage: 20Gi
+  storageClassName: ""
+  resources:
+    requests: { cpu: 100m, memory: 128Mi }
+    limits: { cpu: "1", memory: 512Mi }
+  # 選配合成相機(V4;demo/驗收用,正式部署關閉)
+  simcam:
+    enabled: false
+    serial: sim-1
+
 grafana:
   enabled: true
   image: grafana/grafana:11.4.0
