@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import logging
 from typing import Any
+from uuid import uuid4
 
 import aiomqtt
 from drone.v1 import mission_pb2
@@ -70,21 +71,35 @@ def progress_state_name(state_value: int) -> str:
     return _STATE.Name(state_value)
 
 
+def _pub_identifier(prefix: str) -> str:
+    """每次連線用唯一 client-id。派遣為短連線,固定 client-id 在並發時會互相
+    踢線(MQTT broker 同 id 只留最新一條)→ QoS1 PUBACK 遺失 → publish 逾時 500。
+    保留描述性前綴供 log/ACL 前綴辨識,尾綴唯一以避免踢線。"""
+    return f"{prefix}-{uuid4().hex[:12]}"
+
+
+async def _publish_once(
+    host: str, port: int, identifier_prefix: str, topic: str, payload: str
+) -> None:
+    async with aiomqtt.Client(
+        host, port, identifier=_pub_identifier(identifier_prefix), tls_params=_mqtt_tls()
+    ) as client:
+        await client.publish(topic, payload, qos=1)
+
+
 async def publish_mission_plan(
     host: str, port: int, drone_id: str, plan_json: str
 ) -> None:
-    async with aiomqtt.Client(
-        host, port, identifier="mission-svc-pub", tls_params=_mqtt_tls()
-    ) as client:
-        await client.publish(f"fleet/{drone_id}/cmd/mission", plan_json, qos=1)
+    await _publish_once(
+        host, port, "mission-svc-pub", f"fleet/{drone_id}/cmd/mission", plan_json
+    )
     log.info("已派遣任務至 fleet/%s/cmd/mission", drone_id)
 
 
 async def publish_mission_command(
     host: str, port: int, drone_id: str, cmd_json: str
 ) -> None:
-    async with aiomqtt.Client(
-        host, port, identifier="mission-svc-ctrl", tls_params=_mqtt_tls()
-    ) as client:
-        await client.publish(f"fleet/{drone_id}/cmd/mission_ctrl", cmd_json, qos=1)
+    await _publish_once(
+        host, port, "mission-svc-ctrl", f"fleet/{drone_id}/cmd/mission_ctrl", cmd_json
+    )
     log.info("已發送任務命令至 fleet/%s/cmd/mission_ctrl", drone_id)
