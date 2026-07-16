@@ -1,0 +1,72 @@
+name: firmware-ci
+
+# 韌體軌守門:釘版 PX4(px4.lock)+ patch series + out-of-tree 模組的
+# px4_sitl_default 建置 + SIH 起機/heartbeat 煙霧。
+# 帳單控制:path-gated、concurrency cancel、ccache(冷建置 ~20 min、熱 ~5-7 min)。
+# dialect XML 的 mavgen 守門在 mavlink-ci.yml,此處不重跑;但 dialect 變更
+# 會觸發本 workflow(dialect 進 PX4 建置後要驗整體可建)。
+
+on:
+  pull_request:
+    paths:
+      - "firmware/**"
+      - "interfaces/mavlink/**"
+      - ".github/workflows/firmware-ci.yml"
+  push:
+    branches: [main]
+    paths:
+      - "firmware/**"
+      - "interfaces/mavlink/**"
+      - ".github/workflows/firmware-ci.yml"
+
+concurrency:
+  group: firmware-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  px4-sitl:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      PX4_SRC: ${{ github.workspace }}/.px4-src
+      CCACHE_DIR: ${{ github.workspace }}/.ccache
+      CCACHE_MAXSIZE: 1G
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: ccache 快取
+        uses: actions/cache@v5
+        with:
+          path: .ccache
+          # key 綁 upstream 版本 + 樹內 patch/外掛模組內容;restore-keys 讓
+          # patch/ext 變更仍能部分命中(絕大多數 upstream object 不變)
+          key: px4-ccache-${{ hashFiles('firmware/px4.lock') }}-${{ hashFiles('firmware/patches/**', 'firmware/ext/**', 'firmware/mavlink/**') }}
+          restore-keys: |
+            px4-ccache-${{ hashFiles('firmware/px4.lock') }}-
+
+      - name: 系統依賴
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends ccache ninja-build
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.10"
+
+      - name: 建置依賴(釘版)
+        run: pip install -r firmware/tools/requirements-px4-build.txt
+
+      - name: 抓 PX4(釘版 shallow clone)
+        run: bash firmware/tools/fetch_px4.sh
+
+      - name: 套用 patch series
+        run: bash firmware/tools/apply_patches.sh
+
+      - name: 建置 px4_sitl_default
+        run: |
+          # PX4 cmake 偵測到 ccache 即自動使用(CMAKE_<LANG>_COMPILER_LAUNCHER)
+          make -C "$PX4_SRC" px4_sitl_default
+          ccache -s | head -8
+
+      - name: SIH 煙霧(起機 + heartbeat)
+        run: bash firmware/tools/run_sitl_smoke.sh
