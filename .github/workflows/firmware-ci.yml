@@ -62,11 +62,12 @@ jobs:
       - name: 套用 patch series
         run: bash firmware/tools/apply_patches.sh
 
-      - name: 建置 px4_sitl_default
+      - name: 建置 px4_sitl_default(含 out-of-tree 模組 ext/)
         run: |
           # PX4 cmake 偵測到 ccache 即自動使用(CMAKE_<LANG>_COMPILER_LAUNCHER)
-          make -C "$PX4_SRC" px4_sitl_default
+          make -C "$PX4_SRC" px4_sitl_default \
+            EXTERNAL_MODULES_LOCATION="$GITHUB_WORKSPACE/firmware/ext"
           ccache -s | head -8
 
-      - name: SIH 煙霧(起機 + heartbeat)
+      - name: SIH 煙霧(起機 + heartbeat + out-of-tree 模組/uORB)
         run: bash firmware/tools/run_sitl_smoke.sh
