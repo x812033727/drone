@@ -20,6 +20,7 @@ from prometheus_client import (
     CONTENT_TYPE_LATEST,
     CollectorRegistry,
     Counter,
+    Gauge,
     GCCollector,
     Histogram,
     PlatformCollector,
@@ -47,6 +48,14 @@ http_request_duration_seconds = Histogram(
     "http_request_duration_seconds",
     "HTTP 請求處理延遲(秒,依方法 / 路由樣板)",
     ["method", "path"],
+    registry=registry,
+)
+
+# SSE 訂閱者數:lifespan 以 set_function 接 hub.subscriber_count(即時值)。
+# 沒有它,外部壓測(sse_swarm)無法斷言「斷線後歸零 = 無洩漏」。
+sse_subscribers = Gauge(
+    "fleet_sse_subscribers",
+    "SSE /api/v1/stream 目前訂閱者數(全部斷線後應歸零)",
     registry=registry,
 )
 
