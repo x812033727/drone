@@ -3,5 +3,6 @@
 # 模組鏡像 PX4 樹結構(src/modules/<name>),uORB 訊息在 msg/。
 set(config_module_list_external
 	modules/payload_sim
+	modules/drone_spray
 	PARENT_SCOPE
 )

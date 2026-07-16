@@ -16,7 +16,6 @@
 #include <uORB/Publication.hpp>
 #include <uORB/topics/drone_battery_detail.h>
 #include <uORB/topics/drone_payload_status.h>
-#include <uORB/topics/drone_spray_status.h>
 
 using namespace time_literals;
 
@@ -39,7 +38,6 @@ private:
 	void Run() override;
 
 	uORB::Publication<drone_payload_status_s> _payload_pub{ORB_ID(drone_payload_status)};
-	uORB::Publication<drone_spray_status_s> _spray_pub{ORB_ID(drone_spray_status)};
 	uORB::Publication<drone_battery_detail_s> _battery_pub{ORB_ID(drone_battery_detail)};
 
 	uint32_t _tick{0};
@@ -67,20 +65,6 @@ void PayloadSim::Run()
 	payload.vendor_status = 0;
 	_payload_pub.publish(payload);
 
-	drone_spray_status_s spray{};
-	spray.timestamp = now;
-	spray.flow_rate_ml_s = 120.0f;
-	spray.flow_rate_setpoint_ml_s = 120.0f;
-	spray.volume_remaining_ml = 10000.0f - 120.0f * static_cast<float>(_tick);
-	if (spray.volume_remaining_ml < 0.0f) { spray.volume_remaining_ml = 0.0f; }
-	spray.volume_consumed_ml = 120.0f * static_cast<float>(_tick);
-	spray.application_rate_ml_m2 = NAN; // 無效值慣例:未量測
-	spray.pump_pressure_bar = 2.5f;
-	spray.boom_width_m = 4.0f;
-	spray.spray_flags = 0;
-	spray.pump_state = 2;      // DRONE_SPRAY_PUMP_ACTIVE
-	spray.nozzles_active = 8;
-	_spray_pub.publish(spray);
 
 	drone_battery_detail_s battery{};
 	battery.timestamp = now;
