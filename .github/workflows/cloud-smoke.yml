@@ -53,6 +53,26 @@ jobs:
             test "${COUNT}" -ge 1
           done
 
+      - name: 打 5 輪假酬載遙測(G8:payload/status|spray|battery)
+        working-directory: .
+        run: python tools/publish_fake_payload.py --drone-id ci-1 --rate 5 --count 5
+
+      - name: 斷言 payload 三表落庫(dialect 消費鏈下游)
+        run: |
+          sleep 3
+          for table in payload_status spray_telemetry battery_detail; do
+            COUNT=$(docker compose exec -T timescaledb \
+              psql -U drone -d drone -tAc "SELECT count(*) FROM ${table} WHERE drone_id='ci-1'")
+            echo "${table} rows: ${COUNT}"
+            test "${COUNT}" -ge 1
+          done
+          # NaN 原樣落庫(spray.application_rate_ml_m2)
+          NAN=$(docker compose exec -T timescaledb \
+            psql -U drone -d drone -tAc \
+            "SELECT count(*) FROM spray_telemetry WHERE drone_id='ci-1' AND application_rate_ml_m2 = 'NaN'::real")
+          echo "NaN rows: ${NAN}"
+          test "${NAN}" -ge 1
+
       - name: 斷言 mission_progress / flight_events / device_heartbeat 落庫(ingest 五訂閱全覆蓋)
         run: |
           for table in mission_progress flight_events device_heartbeat; do

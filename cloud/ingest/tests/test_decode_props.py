@@ -8,11 +8,15 @@ from __future__ import annotations
 
 import json
 
-from hypothesis import given, settings
+from hypothesis import HealthCheck, given, settings
 from hypothesis import strategies as st
 from ingest import decode
 
-settings.register_profile("ci", derandomize=True, max_examples=200)
+# suppress too_slow:首跑 protobuf Parse 初始化會觸發(實測,首跑必紅次跑過)
+settings.register_profile(
+    "ci", derandomize=True, max_examples=200,
+    suppress_health_check=[HealthCheck.too_slow],
+)
 settings.load_profile("ci")
 
 
