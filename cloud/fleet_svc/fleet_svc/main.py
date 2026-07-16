@@ -93,6 +93,7 @@ async def lifespan(app: FastAPI):
     hub = TelemetryHub()
     app.state.pool = pool
     app.state.hub = hub
+    metrics.sse_subscribers.set_function(lambda: hub.subscriber_count)
     consumer = asyncio.create_task(run_consumer(pool, hub, MQTT_HOST, MQTT_PORT))
     try:
         yield
