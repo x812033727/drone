@@ -1,0 +1,38 @@
+name: chaos-drill
+
+# 混沌演練(R4):DB 重啟/長停、MQTT 重啟下的自癒斷言(chaos_drill.sh)。
+# nightly(台北 03:40,錯開 sitl 02:30 / 未來 load 03:10)+ 手動;
+# 觀測期 continue-on-error(沿 security.yml 前例),失敗自動開 issue
+# (觀測 job 紅了不擋合併,無 issue 就形同虛設);連綠兩週後升 blocking。
+
+on:
+  schedule:
+    - cron: "40 19 * * *" # 台北 03:40
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  chaos:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: 混沌演練(三場景)
+        id: drill
+        run: |
+          COMPOSE_PROJECT=chaos-ci cloud/deploy/compose/chaos_drill.sh
+
+      - name: 失敗開 issue
+        if: failure() || steps.drill.outcome == 'failure'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh issue create \
+            --title "chaos-drill nightly 失敗($(date -u +%F))" \
+            --body "run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}——三場景(DB 重啟自癒/DLQ/MQTT 重連)任一未過,詳 job log。" \
+            --label bug || true
