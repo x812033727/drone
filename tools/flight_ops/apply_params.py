@@ -18,8 +18,10 @@ import asyncio
 import sys
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TYPE_CHECKING
 
-from mavsdk import System
+if TYPE_CHECKING:  # 執行期延遲匯入(connect 內):parse_params_file 的消費端
+    from mavsdk import System  # (firmware 煙霧)不需要 mavsdk/grpc 重依賴
 
 #: 套件內建參數檔(--file 預設值)
 DEFAULT_PARAMS_FILE = Path(__file__).resolve().parent / "params" / "dev-machine-v1.params"
@@ -123,7 +125,9 @@ def print_table(rows: list[Row], *, dry_run: bool) -> None:
     print(f"共 {len(rows)} 項,OK {len(rows) - n_diff}、DIFF {n_diff}")
 
 
-async def connect(url: str, grpc_port: int, timeout_s: float = 60.0) -> System:
+async def connect(url: str, grpc_port: int, timeout_s: float = 60.0) -> "System":
+    from mavsdk import System  # 延遲匯入:僅寫入/核對飛控時需要
+
     drone = System(port=grpc_port)
     print(f"連線中:{url}(gRPC {grpc_port})", flush=True)
 

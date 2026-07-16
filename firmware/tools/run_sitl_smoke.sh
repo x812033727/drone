@@ -38,7 +38,7 @@ echo "[sitl-smoke] dialect 生成標頭 OK(drone_sitl)"
 echo "[sitl-smoke] 起 SIH(headless,log=${PX4_LOG})"
 (
     cd "${PX4_SRC}"
-    exec env HEADLESS=1 PX4_SYS_AUTOSTART=10040 PX4_SIM_MODEL=sihsim_quadx \
+    exec env HEADLESS=1 PX4_SYS_AUTOSTART="${SIH_AIRFRAME:-10990}" PX4_SIM_MODEL=sihsim_quadx \
         setsid make px4_sitl sihsim_quadx
 ) </dev/null >"${PX4_LOG}" 2>&1 &
 PX4_PID=$!
@@ -46,6 +46,10 @@ PX4_PID=$!
 echo "[sitl-smoke] 等 heartbeat(udpin:${HEARTBEAT_PORT},上限 ${HEARTBEAT_TIMEOUT}s)"
 python3 "${DIR}/tools/smoke/wait_heartbeat.py" \
     --port "${HEARTBEAT_PORT}" --timeout "${HEARTBEAT_TIMEOUT}"
+
+# --- PA-1 參數包回讀核對(patch 0003 airframe 內建值 vs .params 檔)---
+python3 "${DIR}/tools/smoke/assert_params.py" \
+    --params-file "${DIR}/airframes/pa1/pa1-sitl-v1.params" --port "${HEARTBEAT_PORT}"
 
 # --- out-of-tree 模組斷言(SMOKE_MODULES 逗號分隔;預設 payload_sim)---
 # px4-<cmd> 為 SITL client shim,連上運行中的 instance 0。
