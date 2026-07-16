@@ -1,0 +1,15 @@
+# PX4 v1.15 建置的 python 依賴(釘版;對齊 onboard/ros2_ws/docker/
+# Dockerfile.px4-sitl-dds 的實測通過清單,理由見該檔註解:
+# empy 4.x 與 PX4 1.15 不相容、numpy 2.x 實測可建)。
+empy==3.3.4
+future==1.0.0
+jinja2==3.1.6
+jsonschema==4.26.0
+kconfiglib==14.1.0
+numpy==2.2.6
+packaging==26.2
+pyros-genmsg==0.5.8
+pyyaml==6.0.3
+toml==0.10.2
+# SIH 煙霧(wait_heartbeat.py)
+pymavlink==2.4.49

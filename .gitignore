@@ -36,3 +36,7 @@ flight-logs/
 .coverage
 coverage.xml
 htmlcov/
+
+# firmware(PX4 upstream 現抓,不進版控)
+firmware/.px4/
+firmware/.venv-px4/

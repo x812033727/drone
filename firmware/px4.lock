@@ -1,0 +1,8 @@
+# PX4 upstream 釘版(單一事實來源:fetch_px4.sh 與 firmware-ci 都讀這裡)。
+# 升版流程:改本檔 → 本地 make -C firmware all 全通 → PR(CI 冷建置會久,正常)。
+PX4_URL=https://github.com/PX4/PX4-Autopilot.git
+PX4_TAG=v1.15.4
+# --shallow-submodules 的 NuttX 不帶 tag,版本頭產生器會 IndexError(實測,
+# 見 onboard/ros2_ws/docker/Dockerfile.px4-sitl-dds);SITL 不編 NuttX,
+# 補本地 tag 滿足之。PX4 1.15 基底 = NuttX 11.0.0。
+NUTTX_LOCAL_TAG=nuttx-11.0.0
