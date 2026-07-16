@@ -1,0 +1,67 @@
+name: mavlink-ci
+
+# 自訂 dialect 守門(interfaces/mavlink/README「Phase 1 啟用條件 4」):
+# 靜態檢查(ID 區段/唯一性/bitmask)+ mavgen C/Python dry-run 生成。
+# 輕量(<2 min)、path-gated,與 firmware 建置 CI 分離。
+
+on:
+  pull_request:
+    paths:
+      - "interfaces/mavlink/**"
+      - ".github/workflows/mavlink-ci.yml"
+  push:
+    branches: [main]
+    paths:
+      - "interfaces/mavlink/**"
+      - ".github/workflows/mavlink-ci.yml"
+
+jobs:
+  dialect-gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.10"
+
+      - name: 安裝 pymavlink(釘版)
+        run: pip install pymavlink==2.4.49
+
+      - name: 靜態檢查(ID 區段/唯一性/bitmask/version)
+        run: python interfaces/mavlink/check_dialect.py interfaces/mavlink/drone_custom.xml
+
+      - name: mavgen dry-run(C + Python 綁定生成)
+        # mavgen 以 XML 所在目錄解析 <include>;pymavlink pip 包不含 upstream
+        # 定義檔(實測),故自 mavlink/mavlink 釘死 commit 抓 common/standard/minimal
+        # 與本 dialect 併到同一暫存目錄(README「驗證」章的重現步驟)。
+        env:
+          # 與 pymavlink 2.4.49(2025-08 發布)配對的 mavlink/mavlink commit——
+          # master 最新 common.xml 已用新 <superseded> 元素,舊版 mavgen schema
+          # 會拒絕(實測);升 pymavlink 時要一起換成該版發布當時的 commit。
+          MAVLINK_DEFS_REF: f459afd493766c4fe9e905e90c3a68d3ea7d0d53
+        run: |
+          set -eu
+          WORK="$(mktemp -d)"
+          BASE="https://raw.githubusercontent.com/mavlink/mavlink/${MAVLINK_DEFS_REF}/message_definitions/v1.0"
+          for f in common.xml standard.xml minimal.xml; do
+            curl -fsSL -o "$WORK/$f" "$BASE/$f"
+          done
+          cp interfaces/mavlink/drone_custom.xml "$WORK/"
+          # pymavlink pip 包的 mavgen 入口是 console script(pymavlink.tools 不隨包發佈)
+          mavgen.py --lang=C --wire-protocol=2.0 \
+            --output="$WORK/out_c" "$WORK/drone_custom.xml"
+          mavgen.py --lang=Python --wire-protocol=2.0 \
+            --output="$WORK/out_py.py" "$WORK/drone_custom.xml"
+          # 三則訊息的 C 標頭必須生成
+          for h in payload_status spray_telemetry battery_detail; do
+            test -f "$WORK/out_c/drone_custom/mavlink_msg_${h}.h" \
+              || { echo "缺少生成標頭:${h}"; exit 1; }
+          done
+          echo "mavgen dry-run 通過"
+
+      - name: 守門邏輯自測(pytest)
+        run: |
+          pip install pytest
+          python -m pytest tools/tests/test_check_dialect.py -q
