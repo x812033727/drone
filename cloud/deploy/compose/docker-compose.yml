@@ -228,6 +228,8 @@ services:
       MTX_AUTHINTERNALUSERS_3_PERMISSIONS_0_ACTION: "playback"
       # ICE 單一 UDP 埠:容器內埠與宿主映射恆同號(candidate 通告容器內埠)
       MTX_WEBRTCLOCALUDPADDRESS: ":${WEBRTC_UDP_PORT:-8189}"
+      # 跨機/headless 探針:通告可達 host(V6 aiortc 探針設 127.0.0.1);預設空
+      MTX_WEBRTCADDITIONALHOSTS: "${MTX_WEBRTCADDITIONALHOSTS:-}"
     ports:
       # RTSP 收流(機上推流入口)—— 需 publish 帳密
       - "${RTSP_PORT:-8554}:8554"

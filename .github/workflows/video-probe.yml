@@ -1,0 +1,73 @@
+name: video-probe
+
+# 影像媒體面探針(V6):aiortc headless WHEP → 收 H.264 幀 → 解像素時戳。
+# 信令 201(cloud-smoke 的 video/simcam)只證協商;本探針證「畫面真的流過來」。
+# nightly(台北 03:50,錯開其他 nightly)+ 手動;觀測期 continue-on-error。
+# ⚠️ ICE:mediamtx 通告的是容器內 host,探針要求 webrtcAdditionalHosts=127.0.0.1。
+
+on:
+  schedule:
+    - cron: "50 19 * * *" # 台北 03:50
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    continue-on-error: true
+    defaults:
+      run:
+        working-directory: cloud/deploy/compose
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.10"
+
+      - name: 起 mediamtx(通告 127.0.0.1)+ simcam
+        env:
+          MTX_WEBRTCADDITIONALHOSTS: "127.0.0.1"
+        run: docker compose --profile simcam up -d --build --wait mediamtx simcam
+
+      - name: 等 path ready(drone/sim-1)
+        run: |
+          for i in $(seq 1 60); do
+            READY=$(curl -fsS "http://127.0.0.1:9997/v3/paths/get/drone%2Fsim-1" 2>/dev/null \
+              | python3 -c 'import json,sys; print(json.load(sys.stdin).get("ready"))' 2>/dev/null || true)
+            [ "$READY" = "True" ] && exit 0
+            sleep 1
+          done
+          echo "path 未就緒" >&2; docker compose logs --tail 50 simcam mediamtx >&2; exit 1
+
+      - name: aiortc 探針依賴
+        working-directory: .
+        run: pip install aiortc av aiohttp numpy
+
+      - name: WHEP 媒體面探針(收幀 + 解像素時戳)
+        working-directory: .
+        run: |
+          python onboard/video_pipeline/whep_probe.py \
+            --whep http://127.0.0.1:8889/drone/sim-1/whep \
+            --user reader --password dronedev-read --frames 5 --timeout 40
+
+      - name: 失敗開 issue
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh issue create \
+            --title "video-probe nightly 失敗($(date -u +%F))" \
+            --body "run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}——WHEP 媒體面探針未收到有效像素時戳。" \
+            --label bug || true
+
+      - name: 失敗傾印
+        if: failure()
+        run: docker compose logs --tail 80 mediamtx simcam
+
+      - name: 收攤
+        if: always()
+        run: docker compose --profile simcam down -v
