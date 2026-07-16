@@ -21,7 +21,7 @@ Fork **PX4 v1.15(或當時最新 stable)**,客製範圍刻意最小化:
 | 貨物管理 | 貨箱鎖固狀態機、重量異常偵測(PB-1) | 0.5 人月 |
 | 失效保護策略 | 依場景客製:農噴斷藥返航、物流鏈路分級降級、降落傘觸發介面 | 1 人月 |
 | 自訂 MAVLink | 酬載狀態、噴灑遙測、電池詳情等 dialect | 0.5 人月 |
-| GeoFence 禁航區 | 多邊形 + 圓形複合圍欄(PX4 內建圍欄引擎,不改核心):禁航區圖資→機上圍欄格式轉換與容量規劃(≥ 32 多邊形 / 128 頂點級,設計值 rev A 實測定容)、機上檢核 ≥ 1 Hz、觸發行為沿用「不穿越圍欄 > 10 m」既有口徑(REQ-NAV-04 / REQ-NAV-06);圖資來源與 GCS/雲端分工見 [ground-station.md §5](ground-station.md) | 0.5 人月 |
+| GeoFence 禁航區 | 多邊形 + 圓形複合圍欄(PX4 內建圍欄引擎,不改核心):禁航區圖資→機上圍欄格式轉換與容量規劃(≥ 32 多邊形 / 128 頂點級,設計值 rev A 實測定容;**SITL posix dataman 代理量測**(`firmware/tools/smoke/assert_geofence.py`):單一多邊形上傳-回讀往返在 ≤ 64 頂點通過、128 頂點被拒,多邊形維度 8×8=64 total 通過——posix dataman 容量 ≠ FC-H7 flash,實機容量 rev A 定容)、機上檢核 ≥ 1 Hz、觸發行為沿用「不穿越圍欄 > 10 m」既有口徑(REQ-NAV-04 / REQ-NAV-06);圖資來源與 GCS/雲端分工見 [ground-station.md §5](ground-station.md) | 0.5 人月 |
 
 ## 3. 調參與飛測流程(每機型)
 
