@@ -51,6 +51,9 @@ python3 "${DIR}/tools/smoke/wait_heartbeat.py" \
 python3 "${DIR}/tools/smoke/assert_params.py" \
     --params-file "${DIR}/airframes/pa1/pa1-sitl-v1.params" --port "${HEARTBEAT_PORT}"
 
+# --- 失效保護矩陣參數口徑回歸(對 docs/03-safety-analysis §4)---
+python3 "${DIR}/tools/smoke/assert_failsafe_matrix.py" --port "${HEARTBEAT_PORT}"
+
 # --- out-of-tree 模組斷言(SMOKE_MODULES 逗號分隔;預設 payload_sim)---
 # px4-<cmd> 為 SITL client shim,連上運行中的 instance 0。
 BIN_DIR="${PX4_SRC}/build/px4_sitl_default/bin"
