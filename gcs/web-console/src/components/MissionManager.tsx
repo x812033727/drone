@@ -10,6 +10,7 @@ import {
 import { AuthError } from "../auth";
 import type { CommandKind, Mission, MissionStatus, Route, Waypoint } from "../types";
 import { Modal } from "./DeviceManager";
+import { WaypointMap, type LatLon } from "./WaypointMap";
 import { useToasts } from "./Toasts";
 
 type Props = {
@@ -302,6 +303,36 @@ function RouteForm({
   const addRow = () => setRows((prev) => [...prev, { lat: "", lon: "", alt: "" }]);
   const delRow = (i: number) => setRows((prev) => prev.filter((_, j) => j !== i));
 
+  // 地圖 ↔ 表單雙向同步:已填妥經緯度的列 → 地圖標記;地圖操作 → 表單列。
+  const mapPoints: LatLon[] = rows
+    .map((r) => ({ lat: Number(r.lat), lon: Number(r.lon) }))
+    .filter(
+      (p) =>
+        Number.isFinite(p.lat) &&
+        Number.isFinite(p.lon) &&
+        p.lat >= -90 &&
+        p.lat <= 90 &&
+        p.lon >= -180 &&
+        p.lon <= 180 &&
+        !(p.lat === 0 && p.lon === 0),
+    );
+  const addFromMap = (p: LatLon) =>
+    setRows((prev) => {
+      const wp = { lat: p.lat.toFixed(6), lon: p.lon.toFixed(6), alt: "30" };
+      // 若最後一列是空白列(初始或按了「新增航點」),填入它;否則附加
+      const last = prev[prev.length - 1];
+      if (last && last.lat.trim() === "" && last.lon.trim() === "") {
+        return prev.map((r, j) => (j === prev.length - 1 ? wp : r));
+      }
+      return [...prev, wp];
+    });
+  const moveFromMap = (index: number, p: LatLon) =>
+    setRows((prev) =>
+      prev.map((r, j) =>
+        j === index ? { ...r, lat: p.lat.toFixed(6), lon: p.lon.toFixed(6) } : r,
+      ),
+    );
+
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     const waypoints: Waypoint[] = [];
@@ -343,9 +374,9 @@ function RouteForm({
           <input value={name} onChange={(e) => setName(e.target.value)} required />
         </label>
         <div className="wp-head">
-          <span>航點(緯度 / 經度 / 相對高度 m)</span>
-          {/* TODO:地圖點擊繪製航點屬互動設計決策,暫以表單輸入。 */}
+          <span>航點(緯度 / 經度 / 相對高度 m)——點地圖加點、拖曳移動</span>
         </div>
+        <WaypointMap points={mapPoints} onAdd={addFromMap} onMove={moveFromMap} />
         <div className="wp-rows">
           {rows.map((r, i) => (
             <div className="wp-row" key={i}>

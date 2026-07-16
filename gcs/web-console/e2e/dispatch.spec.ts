@@ -67,3 +67,22 @@ test("viewer 看不到寫入按鈕(前端 RBAC gating)", async ({ page }) => {
   await page.getByRole("button", { name: "任務" }).click();
   await expect(page.getByRole("button", { name: "+ 新增航線" })).toHaveCount(0);
 });
+
+
+test("地圖點擊新增航點 → 表單同步", async ({ page }) => {
+  await loginAs(page, "operator");
+  await mockApi(page);
+  await page.goto("/");
+  await page.getByRole("button", { name: "任務" }).click();
+  await page.getByRole("button", { name: "+ 新增航線" }).click();
+  // 點小地圖容器中心 → 首列經緯度被填入(maplibre WebGL canvas 在 headless
+  // 不一定被判 visible,直接對 .wp-map 容器取 box 點擊)
+  const mapEl = page.locator(".wp-map");
+  await mapEl.waitFor({ state: "attached" });
+  await page.waitForTimeout(500); // 讓 maplibre 完成初始化綁定 click
+  const box = await mapEl.boundingBox();
+  if (!box) throw new Error("no map box");
+  await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+  await expect(page.getByPlaceholder("lat").first()).not.toHaveValue("");
+  await expect(page.getByPlaceholder("lon").first()).not.toHaveValue("");
+});
