@@ -91,6 +91,10 @@ jobs:
           python tools/loadgen/assert_unauth.py --base http://127.0.0.1:8091 --openapi cloud/fleet_svc/openapi.json
           python tools/loadgen/assert_unauth.py --base http://127.0.0.1:8092 --openapi cloud/mission_svc/openapi.json
 
+      # --no-shrink:偵測到 server error 就回報,不做「收斂到最小反例」。已知的待分流
+      # 500 輸入(surrogate serial/超大整數)每個都觸發昂貴 shrinking,300 examples ×
+      # 3 個 st run 會把 weekly 深跑拖到逾時(即使 50m 也撞牆)。關掉 shrink 後仍偵測
+      # 到同樣的錯誤(反例非最小但足供分流),執行時間收斂到數分鐘。
       - name: schemathesis(admin;not_a_server_error + schema 一致)
         run: |
           for svc in "fleet_svc:8091" "mission_svc:8092"; do
@@ -98,7 +102,7 @@ jobs:
             st run "cloud/${name}/openapi.json" --url "http://127.0.0.1:${port}" \
               -H "Authorization: Bearer ${TOK_ADMIN}" \
               --checks not_a_server_error,response_schema_conformance \
-              --max-examples "${MAX_EXAMPLES}" \
+              --max-examples "${MAX_EXAMPLES}" --no-shrink \
               --exclude-path /api/v1/billing/callback || true
           done
 
@@ -106,7 +110,7 @@ jobs:
         run: |
           st run cloud/fleet_svc/openapi.json --url http://127.0.0.1:8091 \
             -H "Authorization: Bearer ${TOK_OPERATOR}" \
-            --checks not_a_server_error --max-examples "${MAX_EXAMPLES}" \
+            --checks not_a_server_error --max-examples "${MAX_EXAMPLES}" --no-shrink \
             --exclude-path /api/v1/billing/callback || true
 
       - name: weekly 失敗開 issue
