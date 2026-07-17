@@ -21,7 +21,12 @@ permissions:
 jobs:
   fuzz:
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    # PR 短跑(25 examples)數分鐘內收工;weekly/dispatch 深跑(300 examples)遇
+    # 已知會觸發 500 的輸入(surrogate serial/超大整數)時 schemathesis 進入收斂
+    # (shrinking)會很慢,25 分鐘不夠→job 逾時→GitHub 標記 cancelled(逾時是
+    # 取消,continue-on-error 吸收不到)→觀測 run 轉「非綠」。放寬到 50 分鐘讓深跑
+    # 完成,交由 continue-on-error 吸收模糊測試發現(那些發現本就列為待分流)。
+    timeout-minutes: 50
     continue-on-error: true
     env:
       JWT_SECRET: ci-fuzz-secret-0123456789abcdef0123456789
