@@ -39,14 +39,40 @@ class OrgStatus(str, Enum):
     suspended = "suspended"
 
 
+# PostgreSQL int4 上界。超過此值的整數 pydantic(unbounded)收得下,但 asyncpg 綁定到
+# integer 欄位時 OverflowError→asyncpg DataError→500。配額欄位以 le 擋在驗證層(422)。
+INT4_MAX = 2_147_483_647
+
+
 def _non_blank(v: str, field: str) -> str:
     if not v or not v.strip():
         raise ValueError(f"{field} 不可為空")
     return v.strip()
 
 
+class _WriteModel(BaseModel):
+    """所有可寫入(Create/Update)模型的基底。
+
+    任何字串欄位(必填或選填)若含 lone Unicode surrogate,pydantic 的 str 型別收得下,
+    但一路傳到 asyncpg 綁定 text 欄位做 UTF-8 編碼時會 UnicodeEncodeError→DataError→500。
+    用 model_validator(after) 掃描所有字串欄位值一次擋掉,轉成 422,避免逐欄位漏網。
+    (注意:base 上的 field_validator("*") 在 pydantic v2 不會套用到子類新增的欄位,
+     故改用 model_validator——它會被繼承且看得到子類欄位。)
+    """
+
+    @model_validator(mode="after")
+    def _reject_surrogate_strings(self) -> _WriteModel:
+        for name, value in self.__dict__.items():
+            if isinstance(value, str):
+                try:
+                    value.encode("utf-8")
+                except UnicodeEncodeError as e:
+                    raise ValueError(f"{name} 含無效的 Unicode(surrogate)字元") from e
+        return self
+
+
 # ---- fleet ----
-class FleetCreate(BaseModel):
+class FleetCreate(_WriteModel):
     """建立機隊。org_id 不在此——租戶由呼叫者 JWT claim 決定(不採信 client 傳入)。"""
 
     name: str
@@ -65,7 +91,7 @@ class Fleet(BaseModel):
 
 
 # ---- device ----
-class DeviceCreate(BaseModel):
+class DeviceCreate(_WriteModel):
     serial: str
     name: str | None = None
     fleet_id: UUID | None = None
@@ -77,7 +103,7 @@ class DeviceCreate(BaseModel):
         return _non_blank(v, "serial")
 
 
-class DeviceUpdate(BaseModel):
+class DeviceUpdate(_WriteModel):
     """PATCH:所有欄位可選,只更新有給的。"""
 
     name: str | None = None
@@ -100,7 +126,7 @@ class Device(BaseModel):
 
 
 # ---- firmware ----
-class FirmwareCreate(BaseModel):
+class FirmwareCreate(_WriteModel):
     component: Component
     version: str
     released_at: datetime | None = None
@@ -228,7 +254,7 @@ class DeviceStatusView(BaseModel):
 
 
 # ---- 租戶註冊表 / 每租戶配額(計費控制面,admin only) ----
-class OrgCreate(BaseModel):
+class OrgCreate(_WriteModel):
     """建立租戶。org_id 為租戶主鍵(對應 JWT `org` claim);plan 決定預設配額。
 
     max_devices / max_fleets 為配額「覆寫」——省略/None 表示用 plan 預設。
@@ -238,8 +264,8 @@ class OrgCreate(BaseModel):
     name: str
     plan: OrgPlan = OrgPlan.free
     status: OrgStatus = OrgStatus.active
-    max_devices: int | None = Field(default=None, ge=0)
-    max_fleets: int | None = Field(default=None, ge=0)
+    max_devices: int | None = Field(default=None, ge=0, le=INT4_MAX)
+    max_fleets: int | None = Field(default=None, ge=0, le=INT4_MAX)
 
     @field_validator("org_id")
     @classmethod
@@ -252,14 +278,14 @@ class OrgCreate(BaseModel):
         return _non_blank(v, "name")
 
 
-class OrgUpdate(BaseModel):
+class OrgUpdate(_WriteModel):
     """PATCH 租戶:所有欄位可選,只更新有給的(max_* 顯式給 null 可清除覆寫)。"""
 
     name: str | None = None
     plan: OrgPlan | None = None
     status: OrgStatus | None = None
-    max_devices: int | None = Field(default=None, ge=0)
-    max_fleets: int | None = Field(default=None, ge=0)
+    max_devices: int | None = Field(default=None, ge=0, le=INT4_MAX)
+    max_fleets: int | None = Field(default=None, ge=0, le=INT4_MAX)
 
     @field_validator("name")
     @classmethod

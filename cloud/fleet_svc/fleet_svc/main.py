@@ -17,6 +17,8 @@ from uuid import UUID
 
 import asyncpg
 from fastapi import Depends, FastAPI, HTTPException, Query, Request, Response
+from fastapi.encoders import jsonable_encoder
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import PlainTextResponse, StreamingResponse
 
 from fleet_svc import audit, billing, limits, metrics, ota, repo, video_auth
@@ -108,6 +110,20 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="fleet-svc", lifespan=lifespan)
 metrics.instrument(app)  # /metrics(Prometheus)+ HTTP 指標 middleware(G13)
+
+
+@app.exception_handler(RequestValidationError)
+async def _validation_error_handler(request: Request, exc: RequestValidationError) -> Response:
+    """驗證錯誤回 422,但以 ensure_ascii 序列化。
+
+    預設處理器會把違規輸入(可能含 lone Unicode surrogate)原樣塞進 error 的 `input`
+    欄位,JSONResponse 以 ensure_ascii=False 再 .encode("utf-8") 時會 UnicodeEncodeError
+    →整個 422 回應炸成 500。改用 ensure_ascii=True 把 surrogate 跳脫成 \\udXXX(純從
+    碼位跳脫、不做 UTF-8 編碼),回穩定 422。"""
+    body = json.dumps(
+        {"detail": jsonable_encoder(exc.errors())}, ensure_ascii=True
+    ).encode("utf-8")
+    return Response(body, status_code=422, media_type="application/json")
 
 if not AUTH_ENABLED:
     log.warning("⚠ JWT 認證未啟用(dev 模式,全放行)——正式部署須設 JWT_SECRET 或 JWT_JWKS_URL")
