@@ -51,7 +51,11 @@ jobs:
 
       - name: weekly 深跑檔位
         if: github.event_name != 'pull_request'
-        run: echo "MAX_EXAMPLES=300" >> "$GITHUB_ENV"
+        # 深跑 120 examples(仍為 PR 25 的近 5 倍)。實測 300 examples 即使加 --no-shrink
+        # 也是 volume-bound(單 admin 步 2 服務 × schema 一致檢查、對已知會回 500 的端點
+        # 反覆命中),26 分鐘還卡在 admin,逼近 50m 天花板→對 runner 變異脆弱。120 讓三個
+        # st run 合計約 15 分鐘完成、留足餘裕穩定綠;覆蓋度仍足供觀測期分流。
+        run: echo "MAX_EXAMPLES=120" >> "$GITHUB_ENV"
 
       - name: 依賴
         run: |
