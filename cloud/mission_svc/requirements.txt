@@ -1,5 +1,5 @@
 # mission-svc 執行依賴(釘版:對齊 cloud/fleet_svc、cloud/log_svc)
-fastapi==0.139.0
+fastapi==0.139.2
 uvicorn==0.51.0
 asyncpg==0.31.0
 pydantic>=2.13.4,<3

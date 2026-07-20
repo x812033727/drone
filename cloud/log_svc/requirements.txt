@@ -1,5 +1,5 @@
 # log-svc 執行依賴(釘版:雲端服務映像求可重現建置)
-fastapi==0.139.0
+fastapi==0.139.2
 uvicorn==0.51.0
 python-multipart==0.0.32   # FastAPI UploadFile(multipart)解析
 asyncpg==0.31.0
