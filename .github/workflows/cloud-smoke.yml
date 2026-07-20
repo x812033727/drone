@@ -24,7 +24,7 @@ jobs:
       - name: 起雲端最小棧(等待 healthcheck)
         run: docker compose up -d --build --wait --wait-timeout 180
 
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
 
