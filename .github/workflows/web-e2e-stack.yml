@@ -21,12 +21,12 @@ jobs:
     continue-on-error: true
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@v7
         with:
           node-version: "22"
           cache: npm
           cache-dependency-path: gcs/web-console/package-lock.json
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.10"
 
@@ -47,7 +47,7 @@ jobs:
             --drones 2 --rate 2 --seconds 300 >/tmp/fanin.log 2>&1 &
 
       - name: Playwright chromium 快取
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: ~/.cache/ms-playwright
           key: playwright-${{ runner.os }}-${{ hashFiles('gcs/web-console/package-lock.json') }}
