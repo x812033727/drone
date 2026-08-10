@@ -35,7 +35,7 @@ jobs:
       - uses: actions/checkout@v7
 
       - name: ccache 快取
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: .ccache
           # key 綁 upstream 版本 + 樹內 patch/外掛模組內容;restore-keys 讓
@@ -49,7 +49,7 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y --no-install-recommends ccache ninja-build
 
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.10"
 

@@ -37,7 +37,7 @@ jobs:
         # 預設 bridge 網路即可,毋須 --network host(本機與 runner 皆實測可用)。
         run: docker run --rm -d --name px4-sitl jonasvautherin/px4-gazebo-headless:1.15.4
 
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
 
@@ -91,7 +91,7 @@ jobs:
         # 同 mission-sitl:此 image 主動送 MAVLink 到 host,監聽即可,不做埠映射。
         run: docker run --rm -d --name px4-failsafe jonasvautherin/px4-gazebo-headless:1.15.4
 
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
 
@@ -159,7 +159,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
 
