@@ -1,9 +1,9 @@
 # mission-svc 執行依賴(釘版:對齊 cloud/fleet_svc、cloud/log_svc)
-fastapi==0.139.0
-uvicorn==0.51.0
+fastapi==0.141.1
+uvicorn==0.52.4
 asyncpg==0.31.0
-pydantic>=2.13.4,<3
+pydantic>=2.13.5,<3
 aiomqtt>=2.5.1,<3    # 派遣發布 + 進度消費(對齊 cloud/ingest)
-protobuf>=7.35.1,<8  # drone-proto 契約組裝/解析
+protobuf>=7.36.0,<8  # drone-proto 契約組裝/解析
 pyjwt[crypto]>=2.13.0,<3  # JWT 認證(HS256 dev / JWKS RS256 生產)
-prometheus-client==0.25.0  # /metrics 可觀測性(G13,對齊 fleet/log/ingest)
+prometheus-client==0.26.0  # /metrics 可觀測性(G13,對齊 fleet/log/ingest)
