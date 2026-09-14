@@ -1,9 +1,9 @@
 # fleet-svc 執行依賴(釘版:雲端服務映像求可重現建置,對齊 cloud/log_svc)
-fastapi==0.139.0
-uvicorn==0.51.0
+fastapi==0.141.1
+uvicorn==0.52.4
 asyncpg==0.31.0
-pydantic>=2.13.4,<3   # 由 fastapi 帶入,顯式約束大版本
+pydantic>=2.13.5,<3   # 由 fastapi 帶入,顯式約束大版本
 aiomqtt>=2.5.1,<3    # 遙測消費者(對齊 cloud/ingest)
-protobuf>=7.35.1,<8  # drone-proto 契約解析(對齊 cloud/ingest)
-pyjwt[crypto]>=2.13.0,<3  # JWT 認證(HS256 dev / JWKS RS256 生產)
-prometheus-client==0.25.0  # /metrics 可觀測性(G13,對齊 mission/log/ingest)
+protobuf>=7.36.1,<8  # drone-proto 契約解析(對齊 cloud/ingest)
+pyjwt[crypto]>=2.14.0,<3  # JWT 認證(HS256 dev / JWKS RS256 生產)
+prometheus-client==0.26.0  # /metrics 可觀測性(G13,對齊 mission/log/ingest)
